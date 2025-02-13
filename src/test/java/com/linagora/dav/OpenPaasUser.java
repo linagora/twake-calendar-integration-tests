@@ -26,7 +26,12 @@
 
 package com.linagora.dav;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import org.bson.Document;
+
+import io.netty.handler.codec.http.HttpHeaders;
 
 public record OpenPaasUser(String id, String firstname, String lastname, String email, String password) {
     public static OpenPaasUser fromDocument(Document document) {
@@ -37,5 +42,14 @@ public record OpenPaasUser(String id, String firstname, String lastname, String 
             document.getList("accounts", Document.class)
                 .getFirst().getList("emails", String.class).getFirst(),
             document.getString("password"));
+    }
+
+    HttpHeaders basicAuth(HttpHeaders headers) {
+        String userPassword = email + ":" + password;
+        byte[] base64UserPassword = Base64
+            .getEncoder()
+            .encode(userPassword.getBytes(StandardCharsets.UTF_8));
+
+        return headers.add("Authorization", "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8));
     }
 }
