@@ -27,21 +27,51 @@
 package com.linagora.dav;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.xmlunit.diff.ComparisonResult.EQUAL;
+import static org.xmlunit.diff.ComparisonResult.SIMILAR;
+
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.xmlunit.assertj3.XmlAssert;
+import org.xmlunit.diff.ComparisonResult;
+import org.xmlunit.diff.DifferenceEvaluator;
 
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
+import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
 class CardDavTest {
 
     public static final boolean DEBUG = true;
+    public static final String STRING = "BEGIN:VCARD\n" +
+        "VERSION:3.0\n" +
+        "FN:John Doe\n" +
+        "N:Doe;John;;;\n" +
+        "EMAIL:john.doe@example.com\n" +
+        "UID:123456789\n" +
+        "END:VCARD\n";
+    public static final DifferenceEvaluator IGNORE_GETLASTMODIFIED = (comparison, outcome) -> {
+        if (outcome.equals(ComparisonResult.DIFFERENT) &&
+            comparison.getControlDetails().getXPath() != null &&
+            comparison.getControlDetails().getXPath().contains("getlastmodified")) {
+            return SIMILAR;
+        }
+        if (outcome.equals(ComparisonResult.DIFFERENT) &&
+            comparison.getControlDetails().getXPath() == null &&
+            comparison.getControlDetails().getValue() == null &&
+            comparison.getControlDetails().getTarget() == null &&
+            comparison.getControlDetails().getParentXPath().equals("/multistatus[1]/response[2]/propstat[1]/prop[1]")) {
+            return SIMILAR;
+        }
+        return outcome;
+    };
 
     record Response(int status, String body) {}
 
-    Response execute(HttpClient.RequestSender client) {
+    Response execute(HttpClient.ResponseReceiver<?> client) {
         Response block = client.responseSingle((response, content) -> content.asString()
                 .map(stringContent -> new Response(response.status().code(), stringContent)))
             .block();
@@ -54,6 +84,14 @@ class CardDavTest {
         }
 
         return block;
+    }
+
+
+    int executeNoContent(HttpClient.ResponseReceiver<?> client) {
+        return client.response()
+            .block()
+            .status()
+            .code();
     }
 
     @RegisterExtension
@@ -114,6 +152,212 @@ class CardDavTest {
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\"><d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
             .ignoreChildNodesOrder()
             .areIdentical();
+    }
+
+    @Test
+    void putShouldWork() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(status).isEqualTo(201);
+    }
+
+    @Test
+    void getShouldSucceed() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response).isEqualTo(new Response(200, STRING));
+    }
+
+    @Test
+    void getShouldReturnNotFoundWhenMissing() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response.status).isEqualTo(404);
+    }
+
+    @Test
+    void putShouldReplace() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe-Riga\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8)))));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response).isEqualTo(new Response(200, "BEGIN:VCARD\n" +
+            "VERSION:3.0\n" +
+            "FN:John Doe-Riga\n" +
+            "EMAIL:john.doe@example.com\n" +
+            "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
+            "UID:123456789\n" +
+            "END:VCARD\n"));
+    }
+
+    @Test
+    void putShouldReturn204WhenExist() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(status).isEqualTo(204);
+    }
+
+    @Test
+    void deleteShouldWork() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(status).isEqualTo(204);
+    }
+
+    @Test
+    void deleteShouldReturnNotFoundWhenMissing() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(status).isEqualTo(404);
+    }
+
+    @Test
+    void deleteShouldNotBeReturnedByPropfind() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts"));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
+            .ignoreChildNodesOrder()
+            .areIdentical();
+    }
+
+    @Test
+    void putShouldBeListedByPropfind() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts"));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><d:getlastmodified>Fri, 14 Feb 2025 14:57:02 GMT</d:getlastmodified><d:getcontentlength>101</d:getcontentlength><d:resourcetype/><d:getetag>&quot;b6cfbc684d6173513ed73f413e6b6cb4&quot;</d:getetag><d:getcontenttype>text/vcard; charset=utf-8</d:getcontenttype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
+            .areSimilar();
+    }
+
+    @Test
+    void canRecreatePreviouslyDeletedVCards() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(response).isEqualTo(new Response(200, STRING));
     }
 
     private static HttpClient getHttpClient() {
