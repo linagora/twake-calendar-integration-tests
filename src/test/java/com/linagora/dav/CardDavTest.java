@@ -28,77 +28,83 @@ package com.linagora.dav;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.nio.charset.StandardCharsets;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.xmlunit.assertj3.XmlAssert;
 
 import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpResponseStatus;
 import reactor.netty.http.client.HttpClient;
-import reactor.netty.http.client.HttpClientResponse;
 
 class CardDavTest {
+
+    public static final boolean DEBUG = true;
+
+    record Response(int status, String body) {}
+
+    Response execute(HttpClient.RequestSender client) {
+        Response block = client.responseSingle((response, content) -> content.asString()
+                .map(stringContent -> new Response(response.status().code(), stringContent)))
+            .block();
+
+        if (DEBUG) {
+            System.out.println("============");
+            System.out.println("Code: " + block.status);
+            System.out.println(block.body);
+            System.out.println("============");
+        }
+
+        return block;
+    }
+
     @RegisterExtension
     static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
 
     @Test
     void unauthenticatedCallsShouldBeRejected() {
-        HttpClientResponse response = getHttpClient()
+        Response response = execute(getHttpClient()
             .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/.well-known/carddav")
-            .response()
-            .block();
+            .uri("/.well-known/carddav"));
 
         assertThat(response.status())
-            .isEqualTo(HttpResponseStatus.UNAUTHORIZED);
+            .isEqualTo(401);
     }
 
     @Test
     void authenticatedCallsShouldBeAccepted() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
-        HttpClientResponse response = getHttpClient()
+        Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks")
-            .response()
-            .block();
+            .uri("/addressbooks"));
 
         assertThat(response.status())
-            .isEqualTo(HttpResponseStatus.OK);
+            .isEqualTo(200);
     }
 
     @Test
     void autoDiscoveryShouldRedirect() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
-        HttpClientResponse response = getHttpClient()
+        Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/.well-known/carddav")
-            .response()
-            .block();
+            .uri("/.well-known/caldav"));
 
         assertThat(response.status())
-            .isEqualTo(HttpResponseStatus.MOVED_PERMANENTLY);
+            .isEqualTo(301);
     }
 
     @Test
     void propfindShouldListUserAddressBooks() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
-        String responseBody = getHttpClient()
+        Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id())
-            .responseSingle((r, byteBufMono) -> {
-                return byteBufMono.asString(StandardCharsets.UTF_8);
-            })
-            .block();
+            .uri("/addressbooks/" + testUser.id()));
 
-        XmlAssert.assertThat(responseBody)
+        XmlAssert.assertThat(response.body)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 "  <d:response>\n" +
@@ -145,14 +151,12 @@ class CardDavTest {
     void propfindShouldListUserEmptyAddressBooks() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
-        String responseBody = getHttpClient()
+        Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .responseSingle((response, byteBufMono) -> byteBufMono.asString(StandardCharsets.UTF_8))
-            .block();
+            .uri("/addressbooks/" + testUser.id() + "/contacts"));
 
-        XmlAssert.assertThat(responseBody)
+        XmlAssert.assertThat(response.body)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 "</d:multistatus>\n")
