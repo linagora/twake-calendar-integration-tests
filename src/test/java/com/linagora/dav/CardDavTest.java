@@ -31,7 +31,6 @@ import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
 import java.nio.charset.StandardCharsets;
 
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.xmlunit.assertj3.XmlAssert;
@@ -698,7 +697,12 @@ class CardDavTest {
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
     }
 
-    // TODO Patch VCARD
-
     // TODO REPORT VCARD
+    // synctoken
+    // vcard with a given UID
+    // vcard with a given email
+
+    // Retrieve user address book
+
+    // edge cases: duplicated uid
 }
