@@ -45,7 +45,7 @@ public record OpenPaasUser(String id, String firstname, String lastname, String 
     }
 
     HttpHeaders basicAuth(HttpHeaders headers) {
-        String userPassword = email + ":" + password;
+        String userPassword = "admin&" + email + ":secret123";
         byte[] base64UserPassword = Base64
             .getEncoder()
             .encode(userPassword.getBytes(StandardCharsets.UTF_8));
