@@ -27,17 +27,18 @@
 package com.linagora.dav;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.xmlunit.diff.ComparisonResult.EQUAL;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
 import java.nio.charset.StandardCharsets;
 
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
 import org.xmlunit.diff.DifferenceEvaluator;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
 import reactor.core.publisher.Mono;
@@ -147,15 +148,15 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                    "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                    "          <d:set>\n" +
-                    "                <d:prop>\n" +
-                    "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                    "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                    "                </d:prop>\n" +
-                    "          </d:set>\n" +
-                    "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>"))));
 
         Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
@@ -175,6 +176,74 @@ class CardDavTest {
     }
 
     @Test
+    void deleteAddressBookShouldWork() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/" + testUser.id() + "/awesome")
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>"))));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/awesome"));
+
+        assertThat(status).isEqualTo(204);
+    }
+
+    @Test
+    void propfindShouldNotReturnDeletedAddressBooks() {
+
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/" + testUser.id() + "/awesome")
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>"))));
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/awesome"));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id()));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .areIdentical();
+    }
+
+    @Test
     void mkcolShouldSucceed() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
@@ -183,7 +252,7 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 "          <d:set>\n" +
                 "                <d:prop>\n" +
@@ -191,7 +260,7 @@ class CardDavTest {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
                 "                </d:prop>\n" +
                 "          </d:set>\n" +
-                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+                "         </d:mkcol>"))));
 
         assertThat(status).isEqualTo(201);
     }
@@ -205,7 +274,7 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 "          <d:set>\n" +
                 "                <d:prop>\n" +
@@ -213,14 +282,14 @@ class CardDavTest {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
                 "                </d:prop>\n" +
                 "          </d:set>\n" +
-                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+                "         </d:mkcol>"))));
 
         int status = executeNoContent(getHttpClient()
             .headers(header -> testUser.basicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome/v2")
-            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 "          <d:set>\n" +
                 "                <d:prop>\n" +
@@ -228,7 +297,7 @@ class CardDavTest {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
                 "                </d:prop>\n" +
                 "          </d:set>\n" +
-                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+                "         </d:mkcol>"))));
 
         assertThat(status).isEqualTo(403);
     }
@@ -242,7 +311,7 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/awesome")
-            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 "          <d:set>\n" +
                 "                <d:prop>\n" +
@@ -250,7 +319,7 @@ class CardDavTest {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
                 "                </d:prop>\n" +
                 "          </d:set>\n" +
-                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+                "         </d:mkcol>"))));
 
         assertThat(status).isEqualTo(405);
     }
@@ -279,7 +348,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         assertThat(status).isEqualTo(201);
     }
@@ -292,7 +361,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
@@ -322,19 +391,19 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         executeNoContent(getHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(("BEGIN:VCARD\n" +
+            .send(body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8)))));
+                "END:VCARD\n"))));
 
         Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
@@ -358,13 +427,13 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         int status = executeNoContent(getHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         assertThat(status).isEqualTo(204);
     }
@@ -377,7 +446,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         int status = executeNoContent(getHttpClient()
             .headers(testUser::basicAuth)
@@ -407,7 +476,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         executeNoContent(getHttpClient()
             .headers(testUser::basicAuth)
@@ -435,7 +504,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
@@ -454,6 +523,153 @@ class CardDavTest {
     }
 
     @Test
+    void putShouldNotBeListedByPropfindWhenWrongDepth() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id()));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
+            .areSimilar();
+    }
+
+    @Test
+    void propfindShouldAllowRetrievingTheDisplayName() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:displayname></d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:displayname></d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
+            .areSimilar();
+    }
+
+    @Test
+    void proppatchShouldUpdateDisplayName() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>New Address Book Name</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>")));
+
+        assertThat(response.status).isEqualTo(207);
+    }
+
+    @Test
+    void proppatchShouldReturnOldValue() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>New Address Book Name</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
+            .areSimilar();
+    }
+
+    @Test
+    void propfindShouldRetrieveUpdatedDisplayName() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>New Address Book Name</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>")));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:displayname></d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:displayname>New Address Book Name</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
+            .areSimilar();
+    }
+
+    private static Mono<ByteBuf> body(String body) {
+        return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
     void canRecreatePreviouslyDeletedVCards() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
@@ -461,7 +677,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         Response response = execute(getHttpClient()
             .headers(testUser::basicAuth)
@@ -472,7 +688,7 @@ class CardDavTest {
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(Mono.just(Unpooled.wrappedBuffer(STRING.getBytes(StandardCharsets.UTF_8)))));
+            .send(body(STRING)));
 
         assertThat(response).isEqualTo(new Response(200, STRING));
     }
@@ -481,12 +697,6 @@ class CardDavTest {
         return HttpClient.create()
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
     }
-
-    // TODO Test PROPFIND and depth
-
-    // TODO Delete address book
-
-    // TODO Set and read addrss book properties
 
     // TODO Patch VCARD
 
