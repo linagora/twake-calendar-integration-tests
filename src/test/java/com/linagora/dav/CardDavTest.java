@@ -139,6 +139,123 @@ class CardDavTest {
     }
 
     @Test
+    void mkcolShouldCreateNewAddressBook() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/" + testUser.id() + "/awesome")
+            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                    "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                    "          <d:set>\n" +
+                    "                <d:prop>\n" +
+                    "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                    "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                    "                </d:prop>\n" +
+                    "          </d:set>\n" +
+                    "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id()));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/awesome/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .areIdentical();
+    }
+
+    @Test
+    void mkcolShouldSucceed() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/" + testUser.id() + "/awesome")
+            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(status).isEqualTo(201);
+    }
+
+    @Test
+    void nestingAddressBookShouldNotBeSupported() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/" + testUser.id() + "/awesome")
+            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/" + testUser.id() + "/awesome/v2")
+            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(status).isEqualTo(403);
+    }
+
+    @Test
+    void creatingAddressBookShouldNotBeAllowedOutOfUserRoot() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(header -> testUser.basicAuth(header)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/addressbooks/awesome")
+            .send(Mono.just(Unpooled.wrappedBuffer(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                "          <d:set>\n" +
+                "                <d:prop>\n" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
+                "                </d:prop>\n" +
+                "          </d:set>\n" +
+                "         </d:mkcol>").getBytes(StandardCharsets.UTF_8)))));
+
+        assertThat(status).isEqualTo(405);
+    }
+
+    @Test
     void propfindShouldListUserEmptyAddressBooks() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
@@ -364,4 +481,14 @@ class CardDavTest {
         return HttpClient.create()
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
     }
+
+    // TODO Test PROPFIND and depth
+
+    // TODO Delete address book
+
+    // TODO Set and read addrss book properties
+
+    // TODO Patch VCARD
+
+    // TODO REPORT VCARD
 }
