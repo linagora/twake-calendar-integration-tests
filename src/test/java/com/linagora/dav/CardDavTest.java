@@ -597,6 +597,25 @@ class CardDavTest {
     }
 
     @Test
+    void shouldAllowDuplicatedUid() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/other.vcf")
+            .send(body(STRING)));
+
+        assertThat(status).isEqualTo(201);
+    }
+
+    @Test
     void proppatchShouldUpdateDisplayName() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
@@ -1250,7 +1269,4 @@ class CardDavTest {
         return HttpClient.create()
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
     }
-
-    // TODO
-    // edge cases: duplicated uid
 }
