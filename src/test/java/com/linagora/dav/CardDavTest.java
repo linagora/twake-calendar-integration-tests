@@ -42,6 +42,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.http.client.HttpClientResponse;
 
 class CardDavTest {
 
@@ -57,6 +58,21 @@ class CardDavTest {
         if (outcome.equals(ComparisonResult.DIFFERENT) &&
             comparison.getControlDetails().getXPath() != null &&
             comparison.getControlDetails().getXPath().contains("getlastmodified")) {
+            return SIMILAR;
+        }
+        if (outcome.equals(ComparisonResult.DIFFERENT) &&
+            comparison.getControlDetails().getXPath() == null &&
+            comparison.getControlDetails().getValue() == null &&
+            comparison.getControlDetails().getTarget() == null &&
+            comparison.getControlDetails().getParentXPath().equals("/multistatus[1]/response[2]/propstat[1]/prop[1]")) {
+            return SIMILAR;
+        }
+        return outcome;
+    };
+    public static final DifferenceEvaluator IGNORE_ETAG = (comparison, outcome) -> {
+        if (outcome.equals(ComparisonResult.DIFFERENT) &&
+            comparison.getControlDetails().getXPath() != null &&
+            comparison.getControlDetails().getXPath().contains("getetag")) {
             return SIMILAR;
         }
         if (outcome.equals(ComparisonResult.DIFFERENT) &&
@@ -147,14 +163,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         Response response = execute(getHttpClient()
@@ -163,7 +179,7 @@ class CardDavTest {
             .uri("/addressbooks/" + testUser.id()));
 
         XmlAssert.assertThat(response.body)
-            .and("<?xml version=\"1.0\"?>\n" +
+            .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/awesome/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -183,14 +199,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         int status = executeNoContent(getHttpClient()
@@ -211,14 +227,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         executeNoContent(getHttpClient()
@@ -232,7 +248,7 @@ class CardDavTest {
             .uri("/addressbooks/" + testUser.id()));
 
         XmlAssert.assertThat(response.body)
-            .and("<?xml version=\"1.0\"?>\n" +
+            .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -251,14 +267,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         assertThat(status).isEqualTo(201);
@@ -273,14 +289,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         int status = executeNoContent(getHttpClient()
@@ -288,14 +304,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome/v2")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         assertThat(status).isEqualTo(403);
@@ -310,14 +326,14 @@ class CardDavTest {
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                "          <d:set>\n" +
-                "                <d:prop>\n" +
-                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>\n" +
-                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>\n" +
-                "                </d:prop>\n" +
-                "          </d:set>\n" +
+            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "          <d:set>" +
+                "                <d:prop>" +
+                "                  <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>" +
+                "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
+                "                </d:prop>" +
+                "          </d:set>" +
                 "         </d:mkcol>"))));
 
         assertThat(status).isEqualTo(405);
@@ -616,7 +632,7 @@ class CardDavTest {
                 "        </d:propertyupdate>")));
 
         XmlAssert.assertThat(response.body)
-            .and("<?xml version=\"1.0\"?>\n" +
+            .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
                 "</d:multistatus>")
@@ -691,6 +707,184 @@ class CardDavTest {
 
         assertThat(response).isEqualTo(new Response(200, STRING));
     }
+
+    @Test
+    void canReportEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "    <d:prop>" +
+                "        <d:getetag />" +
+                "    </d:prop>" +
+                "</card:addressbook-query>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><d:getetag>&quot;b6cfbc684d6173513ed73f413e6b6cb4&quot;</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void putShouldReturnEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        HttpClientResponse response = getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)).response()
+            .block();
+
+        assertThat(response.responseHeaders().contains("ETag")).isTrue();
+    }
+
+    @Test
+    void putShouldFailCreateWhenBadEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("If-Match", "bad"))
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        assertThat(status).isEqualTo(412);
+    }
+
+    @Test
+    void putShouldFailUpdateWhenBadEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)).response()
+            .block();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("If-Match", "bad"))
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe-Riga\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n"))));
+
+        assertThat(status).isEqualTo(412);
+    }
+
+    @Test
+    void putShouldSucceedWhenGoodETag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        HttpClientResponse response1 = getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)).response()
+            .block();
+        String etag = response1.responseHeaders().get("ETag");
+
+        int status = executeNoContent(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("If-Match", etag))
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe-Riga\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n"))));
+
+        assertThat(status).isEqualTo(204);
+    }
+
+    @Test
+    void putShouldChangeEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        HttpClientResponse response1 = getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)).response()
+            .block();
+        String etag1 = response1.responseHeaders().get("ETag");
+
+        HttpClientResponse response2 = getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe-Riga\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")))
+            .response()
+            .block();
+        String etag2 = response2.responseHeaders().get("ETag");
+
+        assertThat(etag1).isNotEqualTo(etag2);
+    }
+
+    @Test
+    void deleteShouldShouldFailWhenBadEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+       executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("If-Match", "bad"))
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(status).isEqualTo(412);
+    }
+
+    @Test
+    void deleteShouldShoulSucceedWhenGoodEtag() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        String etag = getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)).response().block().responseHeaders().get("ETag");
+
+        int status = executeNoContent(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("If-Match", etag))
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(status).isEqualTo(204);
+    }
+
 
     private static HttpClient getHttpClient() {
         return HttpClient.create()
