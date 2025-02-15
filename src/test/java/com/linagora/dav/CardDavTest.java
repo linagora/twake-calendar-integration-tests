@@ -885,18 +885,213 @@ class CardDavTest {
         assertThat(status).isEqualTo(204);
     }
 
+    @Test
+    void canReportSyncTokenInitialSync() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "0"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<d:propfind xmlns:d=\"DAV:\" xmlns:cs=\"http://calendarserver.org/ns/\">" +
+                "  <d:prop>\n" +
+                "     <d:sync-token />" +
+                "  </d:prop>" +
+                "</d:propfind>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:sync-token>http://sabre.io/ns/sync/1</d:sync-token></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportSyncTokenWhenNoUpdate() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+                "<d:sync-collection xmlns:d=\"DAV:\">\n" +
+                "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>\n" +
+                "  <d:sync-level>1</d:sync-level>" +
+                "  <d:prop>" +
+                "    <d:getetag/>" +
+                "  </d:prop>" +
+                "</d:sync-collection>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                " <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>\n" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportSyncTokenWhenCreate() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+                "<d:sync-collection xmlns:d=\"DAV:\">\n" +
+                "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>\n" +
+                "  <d:sync-level>1</d:sync-level>" +
+                "  <d:prop>" +
+                "    <d:getetag/>" +
+                "  </d:prop>" +
+                "</d:sync-collection>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                " <d:response>\n" +
+                "  <d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href>\n" +
+                "  <d:propstat>\n" +
+                "   <d:prop>\n" +
+                "    <d:getetag>&quot;b6cfbc684d6173513ed73f413e6b6cb4&quot;</d:getetag>\n" +
+                "   </d:prop>\n" +
+                "   <d:status>HTTP/1.1 200 OK</d:status>\n" +
+                "  </d:propstat>\n" +
+                " </d:response>\n" +
+                " <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>\n" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportSyncTokenWhenDelete() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .delete()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+                "<d:sync-collection xmlns:d=\"DAV:\">\n" +
+                "  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>\n" +
+                "  <d:sync-level>1</d:sync-level>" +
+                "  <d:prop>" +
+                "    <d:getetag/>" +
+                "  </d:prop>" +
+                "</d:sync-collection>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                " <d:response>\n" +
+                "  <d:status>HTTP/1.1 404 Not Found</d:status>\n" +
+                "  <d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href>\n" +
+                "  <d:propstat>\n" +
+                "   <d:prop/>\n" +
+                "   <d:status>HTTP/1.1 418 I'm a teapot</d:status>\n" +
+                "  </d:propstat>\n" +
+                " </d:response>\n" +
+                " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportSyncTokenWhenUpdate() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe-Riga\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n"))));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+                "<d:sync-collection xmlns:d=\"DAV:\">\n" +
+                "  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>\n" +
+                "  <d:sync-level>1</d:sync-level>" +
+                "  <d:prop>" +
+                "    <d:getetag/>" +
+                "  </d:prop>" +
+                "</d:sync-collection>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
+                " <d:response>\n" +
+                "  <d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href>\n" +
+                "  <d:propstat>\n" +
+                "   <d:prop>\n" +
+                "    <d:getetag>&quot;b2da460cc3c54a9d9b1808fd14c1e8b9&quot;</d:getetag>\n" +
+                "   </d:prop>\n" +
+                "   <d:status>HTTP/1.1 200 OK</d:status>\n" +
+                "  </d:propstat>\n" +
+                " </d:response>\n" +
+                " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
 
     private static HttpClient getHttpClient() {
         return HttpClient.create()
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
     }
 
-    // TODO REPORT VCARD
-    // synctoken
+    // TODO
     // vcard with a given UID
     // vcard with a given email
-
-    // Retrieve user address book
 
     // edge cases: duplicated uid
 }
