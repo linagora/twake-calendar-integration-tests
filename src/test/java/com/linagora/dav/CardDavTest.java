@@ -758,6 +758,30 @@ class CardDavTest {
     }
 
     @Test
+    void shouldSupportExport() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(testUser::basicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts?export"));
+
+        assertThat(response).isEqualTo(new Response(200, "BEGIN:VCARD\r\n" +
+            "VERSION:3.0\r\n" +
+            "FN:John Doe\r\n" +
+            "N:Doe;John;;;\r\n" +
+            "EMAIL:john.doe@example.com\r\n" +
+            "UID:123456789\r\n" +
+            "END:VCARD\r\n"));
+    }
+
+    @Test
     void canReportEtag() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
