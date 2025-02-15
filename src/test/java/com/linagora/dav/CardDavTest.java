@@ -713,10 +713,23 @@ class CardDavTest {
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
-        Response response = execute(getHttpClient()
+        executeNoContent(getHttpClient()
             .headers(testUser::basicAuth)
-            .get()
+            .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        assertThat(status).isEqualTo(201);
+    }
+
+    @Test
+    void headShouldReturnFound() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
         executeNoContent(getHttpClient()
             .headers(testUser::basicAuth)
@@ -724,7 +737,24 @@ class CardDavTest {
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
-        assertThat(response).isEqualTo(new Response(200, STRING));
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .head()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(status).isEqualTo(200);
+    }
+
+    @Test
+    void headShouldReturnNotFound() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        int status = executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .head()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(status).isEqualTo(404);
     }
 
     @Test
