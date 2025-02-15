@@ -1084,14 +1084,173 @@ class CardDavTest {
             .areSimilar();
     }
 
+    @Test
+    void reportShouldAllowUidLookup() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "    <d:prop>" +
+                "      <card:address-data>" +
+                "        <card:prop name=\"UID\"/>" +
+                "      </card:address-data>" +
+                "    </d:prop>" +
+                "    <card:filter>" +
+                "      <card:prop-filter name=\"UID\">" +
+                "        <card:text-match collation=\"i;unicode-casemap\">123456789</card:text-match>" +
+                "      </card:prop-filter>" +
+                "    </card:filter>" +
+                "  </card:addressbook-query>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><card:address-data>BEGIN:VCARD&#13;\n" +
+                "VERSION:3.0&#13;\n" +
+                "FN:John Doe&#13;\n" +
+                "UID:123456789&#13;\n" +
+                "END:VCARD&#13;\n" +
+                "</card:address-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportShouldNotIncludeUnrelatedDataWhenUidLookup() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "    <d:prop>" +
+                "      <card:address-data>" +
+                "        <card:prop name=\"UID\"/>" +
+                "      </card:address-data>" +
+                "    </d:prop>" +
+                "    <card:filter>" +
+                "      <card:prop-filter name=\"UID\">" +
+                "        <card:text-match collation=\"i;unicode-casemap\">notFound</card:text-match>" +
+                "      </card:prop-filter>" +
+                "    </card:filter>" +
+                "  </card:addressbook-query>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportShouldAllowEmailLookup() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "    <d:prop>" +
+                "      <card:address-data>" +
+                "        <card:prop name=\"UID\"/>" +
+                "      </card:address-data>" +
+                "    </d:prop>" +
+                "    <card:filter>" +
+                "      <card:prop-filter name=\"EMAIL\">" +
+                "        <card:text-match collation=\"i;unicode-casemap\">john.doe@example.com</card:text-match>" +
+                "      </card:prop-filter>" +
+                "    </card:filter>" +
+                "  </card:addressbook-query>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><card:address-data>BEGIN:VCARD&#13;\n" +
+                "VERSION:3.0&#13;\n" +
+                "FN:John Doe&#13;\n" +
+                "UID:123456789&#13;\n" +
+                "END:VCARD&#13;\n" +
+                "</card:address-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
+    @Test
+    void reportShouldNotIncludeUnrelatedDataWhenEmailLookup() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(getHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        Response response = execute(getHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "    <d:prop>" +
+                "      <card:address-data>" +
+                "        <card:prop name=\"UID\"/>" +
+                "      </card:address-data>" +
+                "    </d:prop>" +
+                "    <card:filter>" +
+                "      <card:prop-filter name=\"EMAIL\">" +
+                "        <card:text-match collation=\"i;unicode-casemap\">unrelated@notfound.com</card:text-match>" +
+                "      </card:prop-filter>" +
+                "    </card:filter>" +
+                "  </card:addressbook-query>")));
+
+        XmlAssert.assertThat(response.body)
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(IGNORE_ETAG)
+            .areSimilar();
+    }
+
     private static HttpClient getHttpClient() {
         return HttpClient.create()
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
     }
 
     // TODO
-    // vcard with a given UID
-    // vcard with a given email
-
     // edge cases: duplicated uid
 }
