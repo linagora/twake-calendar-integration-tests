@@ -26,12 +26,22 @@
 
 package com.linagora.dav;
 
+import java.nio.charset.StandardCharsets;
+
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
+
 public class DockerOpenPaasExtension implements ParameterResolver {
+
+    public record Response(int status, String body) {}
+    public static final boolean DEBUG = true;
 
     // Ensuring DockerOpenPaasSetupSingleton is loaded to classpath
     private static DockerOpenPaasSetup dockerOpenPaasSetupSingleton = DockerOpenPaasSetupSingleton.singleton;
@@ -55,5 +65,37 @@ public class DockerOpenPaasExtension implements ParameterResolver {
             .getOpenPaaSProvisioningService()
             .createUser()
             .block();
+    }
+
+    public HttpClient davHttpClient() {
+        return HttpClient.create()
+            .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
+    }
+
+    public static Mono<ByteBuf> body(String body) {
+        return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    public static Response execute(HttpClient.ResponseReceiver<?> client) {
+        Response block = client.responseSingle((response, content) -> content.asString()
+                .map(stringContent -> new Response(response.status().code(), stringContent)))
+            .block();
+
+        if (DEBUG) {
+            System.out.println("============");
+            System.out.println("Code: " + block.status);
+            System.out.println(block.body);
+            System.out.println("============");
+        }
+
+        return block;
+    }
+
+
+    public static int executeNoContent(HttpClient.ResponseReceiver<?> client) {
+        return client.response()
+            .block()
+            .status()
+            .code();
     }
 }
