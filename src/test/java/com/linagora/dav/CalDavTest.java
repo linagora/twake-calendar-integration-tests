@@ -790,4 +790,110 @@ class CalDavTest {
             "END:VEVENT\n" +
             "END:VCALENDAR\n");
     }
+
+    @Test
+    void inboxShouldContainInvites() {
+        // CF https://sabre.io/dav/scheduling/
+        OpenPaasUser testUser1 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+
+        int status1 = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser1.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser1.id()  + "/" + testUser1.id() + "/abcd.ics")
+            .send(body("BEGIN:VCALENDAR\r\n" +
+                "VERSION:2.0\r\n" +
+                "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
+                "CALSCALE:GREGORIAN\r\n" +
+                "BEGIN:VTIMEZONE\r\n" +
+                "TZID:Europe/Paris\r\n" +
+                "BEGIN:DAYLIGHT\r\n" +
+                "TZOFFSETFROM:+0100\r\n" +
+                "TZOFFSETTO:+0200\r\n" +
+                "TZNAME:CEST\r\n" +
+                "DTSTART:19700329T020000\r\n" +
+                "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
+                "END:DAYLIGHT\r\n" +
+                "BEGIN:STANDARD\r\n" +
+                "TZOFFSETFROM:+0200\r\n" +
+                "TZOFFSETTO:+0100\r\n" +
+                "TZNAME:CET\r\n" +
+                "DTSTART:19701025T030000\r\n" +
+                "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
+                "END:STANDARD\r\n" +
+                "END:VTIMEZONE\r\n" +
+                "BEGIN:VEVENT\r\n" +
+                "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
+                "TRANSP:OPAQUE\r\n" +
+                "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
+                "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
+                "CLASS:PUBLIC\r\n" +
+                "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
+                "SUMMARY:OW2con'25\r\n" +
+                "DESCRIPTION:Avoir un draft de prêt\r\n" +
+                "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
+                "ORGANIZER;CN=Julie VERRIER:mailto:" + testUser1.email() + "\r\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
+                " DUAL;CN=AP:mailto:" + testUser2.email() + "\r\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
+                " DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com\r\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
+                " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com\r\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
+                " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com\r\n" +
+                "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j\r\n" +
+                " verrier@linagora.com\r\n" +
+                "DTSTAMP:20250205T170516Z\r\n" +
+                "SEQUENCE:0\r\n" +
+                "END:VEVENT\r\n" +
+                "END:VCALENDAR\r\n")));
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(testUser2::basicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser2.id() + "/inbox"));
+
+        assertThat(status1).isEqualTo(201);
+        assertThat(response.status()).isEqualTo(207);
+        XmlAssert.assertThat(response.body())
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/calendars/" + testUser2.id() + "/inbox/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><cal:schedule-inbox/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "<d:response><d:href>/calendars/" + testUser2.id() + "/inbox/sabredav-85eacd97-b6ea-47d4-9f0c-0d16cbb94761.ics</d:href><d:propstat><d:prop><d:getlastmodified>Mon, 17 Feb 2025 21:56:02 GMT</d:getlastmodified><d:getcontentlength>1558</d:getcontentlength><d:resourcetype/><d:getetag>&quot;a54079bf751be394f27ea363e7e8a072&quot;</d:getetag><d:getcontenttype>text/calendar; charset=utf-8</d:getcontenttype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator((comparison, outcome) -> {
+                if (outcome.equals(ComparisonResult.DIFFERENT) &&
+                    comparison.getControlDetails().getXPath() != null &&
+                    comparison.getControlDetails().getXPath().contains("getetag")) {
+                    return SIMILAR;
+                }
+                if (outcome.equals(ComparisonResult.DIFFERENT) &&
+                    comparison.getControlDetails().getXPath() != null &&
+                    comparison.getControlDetails().getXPath().contains("href")) {
+                    return SIMILAR;
+                }
+                if (outcome.equals(ComparisonResult.DIFFERENT) &&
+                    comparison.getControlDetails().getXPath() != null &&
+                    comparison.getControlDetails().getXPath().contains("getlastmodified")) {
+                    return SIMILAR;
+                }
+                if (outcome.equals(ComparisonResult.DIFFERENT) &&
+                    comparison.getControlDetails().getXPath() == null &&
+                    comparison.getControlDetails().getValue() == null &&
+                    comparison.getControlDetails().getTarget() == null &&
+                    comparison.getControlDetails().getParentXPath().equals("/multistatus[1]/response[2]/propstat[1]/prop[1]")) {
+                    return SIMILAR;
+                }
+                if (outcome.equals(ComparisonResult.DIFFERENT) &&
+                    comparison.getControlDetails().getXPath() == null &&
+                    comparison.getControlDetails().getValue() == null &&
+                    comparison.getControlDetails().getTarget() == null &&
+                    comparison.getControlDetails().getParentXPath().equals("/multistatus[1]/response[2]")) {
+                    return SIMILAR;
+                }
+                return outcome;
+            })
+            .areSimilar();
+    }
 }
