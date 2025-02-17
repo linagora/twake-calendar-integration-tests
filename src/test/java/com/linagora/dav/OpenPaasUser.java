@@ -14,14 +14,6 @@
  *  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR         *
  *  PURPOSE. See the GNU Affero General Public License for          *
  *  more details.                                                   *
- *                                                                  *
- *  This file was taken and adapted from the Apache James project.  *
- *                                                                  *
- *  https://james.apache.org                                        *
- *                                                                  *
- *  It was originally licensed under the Apache V2 license.         *
- *                                                                  *
- *  http://www.apache.org/licenses/LICENSE-2.0                      *
  ********************************************************************/
 
 package com.linagora.dav;
