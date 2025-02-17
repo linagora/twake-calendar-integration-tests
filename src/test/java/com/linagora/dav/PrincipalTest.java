@@ -113,4 +113,31 @@ class PrincipalTest {
             .ignoreChildNodesOrder()
             .areSimilar();
     }
+
+    @Test
+    void shouldAllowCalendarDiscovery() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Depth", 0)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/principals/users/" + testUser.id())
+            .send(body("""
+                <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                                            <d:prop>
+                                               <c:calendar-home-set />
+                                            </d:prop>
+                                          </d:propfind>""")));
+
+        assertThat(response.status()).isEqualTo(207);
+        XmlAssert.assertThat(response.body())
+            .and("<?xml version=\"1.0\"?>" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/principals/users/" + testUser.id() + "/</d:href><d:propstat><d:prop><cal:calendar-home-set><d:href>/calendars/" + testUser.id() + "/</d:href></cal:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .areSimilar();
+    }
 }
