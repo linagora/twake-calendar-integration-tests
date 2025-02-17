@@ -723,4 +723,71 @@ class CalDavTest {
             .withDifferenceEvaluator(DIFFERENCE_EVALUATOR)
             .areSimilar();
     }
+
+    @Test
+    void shouldSupportExport() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        HttpClientResponse response = dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_1)).response()
+            .block();
+
+        DockerOpenPaasExtension.Response response2 = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(testUser::basicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "?export"));
+
+        assertThat(response.status().code()).isEqualTo(201);
+        assertThat(response2.status()).isEqualTo(200);
+        assertThat(response2.body()).isEqualToNormalizingNewlines("BEGIN:VCALENDAR\n" +
+            "VERSION:2.0\n" +
+            "CALSCALE:GREGORIAN\n" +
+            "PRODID:-//SabreDAV//SabreDAV 3.2.2//EN\n" +
+            "X-WR-CALNAME:#default\n" +
+            "BEGIN:VTIMEZONE\n" +
+            "TZID:Europe/Paris\n" +
+            "BEGIN:DAYLIGHT\n" +
+            "TZOFFSETFROM:+0100\n" +
+            "TZOFFSETTO:+0200\n" +
+            "TZNAME:CEST\n" +
+            "DTSTART:19700329T020000\n" +
+            "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\n" +
+            "END:DAYLIGHT\n" +
+            "BEGIN:STANDARD\n" +
+            "TZOFFSETFROM:+0200\n" +
+            "TZOFFSETTO:+0100\n" +
+            "TZNAME:CET\n" +
+            "DTSTART:19701025T030000\n" +
+            "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\n" +
+            "END:STANDARD\n" +
+            "END:VTIMEZONE\n" +
+            "BEGIN:VEVENT\n" +
+            "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\n" +
+            "TRANSP:OPAQUE\n" +
+            "DTSTART;TZID=Europe/Paris:20250214T110000\n" +
+            "DTEND;TZID=Europe/Paris:20250214T114500\n" +
+            "CLASS:PUBLIC\n" +
+            "X-OPENPAAS-VIDEOCONFERENCE:\n" +
+            "SUMMARY:OW2con'25\n" +
+            "DESCRIPTION:Avoir un draft de prêt\n" +
+            "LOCATION:https://jitsi.linagora.com/ow2\n" +
+            "ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com\n" +
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
+            " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com\n" +
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
+            " DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com\n" +
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
+            " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com\n" +
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
+            " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com\n" +
+            "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j\n" +
+            " verrier@linagora.com\n" +
+            "DTSTAMP:20250205T170516Z\n" +
+            "SEQUENCE:0\n" +
+            "END:VEVENT\n" +
+            "END:VCALENDAR\n");
+    }
 }
