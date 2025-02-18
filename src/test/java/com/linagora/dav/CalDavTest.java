@@ -896,4 +896,78 @@ class CalDavTest {
             })
             .areSimilar();
     }
+
+    @Test
+    void lookupByDate() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        HttpClientResponse response = dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_1)).response()
+            .block();
+
+        DockerOpenPaasExtension.Response response2 = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id())
+            .send(body("<c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">" +
+                "    <d:prop>" +
+                "        <d:getetag />" +
+                "    <c:calendar-data>\n" +
+                "      <c:expand start=\"20250201T000000Z\" end=\"20250215T235959Z\"/>\n" +
+                "    </c:calendar-data>" +
+                "    </d:prop>" +
+                "    <c:filter>" +
+                "    <c:comp-filter name=\"VCALENDAR\">" +
+                "      <c:comp-filter name=\"VEVENT\">" +
+                "        <c:time-range start=\"20250201T000000Z\" end=\"20250215T235959Z\"/>" +
+                "      </c:comp-filter>" +
+                "    </c:comp-filter>" +
+                "    </c:filter>" +
+                "</c:calendar-query>")));
+
+        assertThat(response.status().code()).isEqualTo(201);
+        assertThat(response2.status()).isEqualTo(207);
+        XmlAssert.assertThat(response2.body())
+            .and("<?xml version=\"1.0\"?>\n" +
+                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+                "<d:response><d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics</d:href><d:propstat><d:prop><d:getetag>&quot;8c97fb06c60212c47d46a9c8c0f625ef&quot;</d:getetag><cal:calendar-data>BEGIN:VCALENDAR&#13;\n" +
+                "VERSION:2.0&#13;\n" +
+                "PRODID:-//Sabre//Sabre VObject 4.1.3//EN&#13;\n" +
+                "CALSCALE:GREGORIAN&#13;\n" +
+                "BEGIN:VEVENT&#13;\n" +
+                "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b&#13;\n" +
+                "TRANSP:OPAQUE&#13;\n" +
+                "DTSTART:20250214T100000Z&#13;\n" +
+                "DTEND:20250214T104500Z&#13;\n" +
+                "CLASS:PUBLIC&#13;\n" +
+                "X-OPENPAAS-VIDEOCONFERENCE:&#13;\n" +
+                "SUMMARY:OW2con'25&#13;\n" +
+                "DESCRIPTION:Avoir un draft de prêt&#13;\n" +
+                "LOCATION:https://jitsi.linagora.com/ow2&#13;\n" +
+                "ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com&#13;\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI&#13;\n" +
+                " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com&#13;\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI&#13;\n" +
+                " DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com&#13;\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI&#13;\n" +
+                " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com&#13;\n" +
+                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI&#13;\n" +
+                " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com&#13;\n" +
+                "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j&#13;\n" +
+                " verrier@linagora.com&#13;\n" +
+                "DTSTAMP:20250205T170516Z&#13;\n" +
+                "SEQUENCE:0&#13;\n" +
+                "END:VEVENT&#13;\n" +
+                "END:VCALENDAR&#13;\n" +
+                "</cal:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
+                "</d:multistatus>")
+            .ignoreChildNodesOrder()
+            .withDifferenceEvaluator(DIFFERENCE_EVALUATOR)
+            .areSimilar();
+    }
 }
