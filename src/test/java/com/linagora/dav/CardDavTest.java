@@ -24,8 +24,6 @@ import static com.linagora.dav.DockerOpenPaasExtension.executeNoContent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
-import java.nio.charset.StandardCharsets;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.xmlunit.assertj3.XmlAssert;
@@ -33,10 +31,7 @@ import org.xmlunit.diff.ComparisonResult;
 import org.xmlunit.diff.DifferenceEvaluator;
 
 import com.linagora.dav.DockerOpenPaasExtension.Response;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpMethod;
-import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClientResponse;
 
 class CardDavTest {
