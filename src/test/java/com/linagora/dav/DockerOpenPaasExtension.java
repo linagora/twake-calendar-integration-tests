@@ -20,6 +20,7 @@ package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
 
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
@@ -57,6 +58,14 @@ public class DockerOpenPaasExtension implements ParameterResolver {
             .getOpenPaaSProvisioningService()
             .createUser()
             .block();
+    }
+
+
+    public String domainId() {
+        return ((ObjectId) DockerOpenPaasSetupSingleton.singleton
+            .getOpenPaaSProvisioningService()
+            .openPaasDomain()
+            .get("_id")).toString();
     }
 
     public HttpClient davHttpClient() {

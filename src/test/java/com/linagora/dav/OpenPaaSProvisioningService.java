@@ -36,7 +36,7 @@ public class OpenPaaSProvisioningService {
         database = mongoClient.getDatabase("esn_docker");
     }
 
-    private Document openPaasDomain() {
+    public Document openPaasDomain() {
         return Mono.from(database.getCollection("domains").find()
             .filter(new Document("name", "open-paas.org"))
             .first()).block();
