@@ -79,6 +79,8 @@ services:
       - REDIS_PORT=6379
       - AMQP_HOST=rabbitmq
       - AMQP_PORT=5672
+      - AMQP_LOGIN=guest
+      - AMQP_PASSWORD=guest
       - SABRE_ADMIN_LOGIN=admin
       - SABRE_ADMIN_PASSWORD=secret123
       - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=

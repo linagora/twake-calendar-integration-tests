@@ -18,14 +18,17 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.DockerOpenPaasExtension.body;
 import static io.restassured.RestAssured.given;
+import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_OK;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -94,6 +97,189 @@ class OpenPaaSAPITest {
     }
 
     @Test
+    void retrieveUserDetailTheOpenPaaSWay() {
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+        .when().log().all()
+            .get("api/user")
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body)
+            .whenIgnoringPaths("domains[0].joined_at", "_id", "id", "domains[0].domain_id", "accounts[0].timestamps")
+            .isEqualTo("""
+                    {
+                        "_id": "67b6084cb5096b0053bec21c",
+                        "firstname": "admin",
+                        "lastname": "admin",
+                        "preferredEmail": "admin@open-paas.org",
+                        "emails": [
+                            "admin@open-paas.org"
+                        ],
+                        "domains": [
+                            {
+                                "joined_at": "2025-02-19T16:35:24.714Z",
+                                "domain_id": "67b6084cb5096b0053bec21d"
+                            }
+                        ],
+                        "states": [],
+                        "avatars": [],
+                        "accounts": [
+                            {
+                                "timestamps": {
+                                    "creation": "2025-02-19T16:35:24.570Z"
+                                },
+                                "hosted": false,
+                                "emails": [
+                                    "admin@open-paas.org"
+                                ],
+                                "preferredEmailIndex": 0,
+                                "type": "email"
+                            }
+                        ],
+                        "login": {
+                            "failures": []
+                        },
+                        "id": "67b6084cb5096b0053bec21c",
+                        "displayName": "admin admin",
+                        "objectType": "user",
+                        "isPlatformAdmin": true,
+                        "configurations": {
+                            "modules": [
+                                {
+                                    "configurations": [
+                                        {
+                                            "name": "webadminApiFrontend",
+                                            "value": "http://localhost:8000"
+                                        }
+                                    ],
+                                    "name": "linagora.esn.james"
+                                },
+                                {
+                                    "configurations": [
+                                        {
+                                            "name": "davserver",
+                                            "value": {
+                                                "backend": {
+                                                    "url": "http://esn_sabre:80"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "name": "features",
+                                            "value": {
+                                                "application-menu:jobqueue": false,
+                                                "application-menu:invitation": false,
+                                                "control-center:password": true,
+                                                "control-center:invitation": false,
+                                                "header:user-notification": true
+                                            }
+                                        },
+                                        {
+                                            "name": "homePage",
+                                            "value": "unifiedinbox"
+                                        },
+                                        {
+                                            "name": "datetime",
+                                            "value": {
+                                                "timeZone": "UTC"
+                                            }
+                                        },
+                                        {
+                                            "name": "language",
+                                            "value": "en"
+                                        },
+                                        {
+                                            "name": "maxSizeUpload",
+                                            "value": {
+                                                "maxSizeUpload": 104857600
+                                            }
+                                        }
+                                    ],
+                                    "name": "core"
+                                },
+                                {
+                                    "configurations": [
+                                        {
+                                            "name": "api",
+                                            "value": "http://localhost:1080/jmap"
+                                        },
+                                        {
+                                            "name": "uploadUrl",
+                                            "value": "http://localhost:1080/upload"
+                                        },
+                                        {
+                                            "name": "downloadUrl",
+                                            "value": "http://localhost:1080/download/{blobId}/{name}"
+                                        },
+                                        {
+                                            "name": "isJmapSendingEnabled",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "composer.attachments",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "maxSizeUpload",
+                                            "value": 20971520
+                                        },
+                                        {
+                                            "name": "numberItemsPerPageOnBulkReadOperations",
+                                            "value": 30
+                                        },
+                                        {
+                                            "name": "numberItemsPerPageOnBulkDeleteOperations",
+                                            "value": 30
+                                        },
+                                        {
+                                            "name": "numberItemsPerPageOnBulkUpdateOperations",
+                                            "value": 30
+                                        },
+                                        {
+                                            "name": "drafts",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "view",
+                                            "value": "messages"
+                                        },
+                                        {
+                                            "name": "swipeRightAction",
+                                            "value": "markAsRead"
+                                        },
+                                        {
+                                            "name": "forwarding",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "isLocalCopyEnabled",
+                                            "value": true
+                                        }
+                                    ],
+                                    "name": "linagora.esn.unifiedinbox"
+                                },
+                                {
+                                    "name": "linagora.esn.jobqueue",
+                                    "configurations": [
+                                        {
+                                            "name": "features",
+                                            "value": {
+                                                "isUserInterfaceEnabled": false
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                    """);
+    }
+
+    @Test
     void retrieveUserDetailByEmailAddress() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
@@ -101,7 +287,7 @@ class OpenPaaSAPITest {
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .queryParam("email", testUser.email())
         .when()
-            .get("api/users").prettyPeek()
+            .get("api/users")
         .then()
             .statusCode(SC_OK)
             .extract()
@@ -178,5 +364,242 @@ class OpenPaaSAPITest {
                      "injections": [],
                      "__v": 0
                  }""", dockerOpenPaasExtension.domainId()));
+    }
+
+    @Test
+    void jwtTokenGeneration() {
+        String string = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .when()
+            .post("/api/jwt/generate")
+            .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(string.startsWith("\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.ey")).isTrue();
+    }
+
+    @Test
+    void theme() {
+        String theme = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+        .when()
+            .get("api/themes/" + dockerOpenPaasExtension.domainId())
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(theme).isEqualTo("{\"logos\":{},\"colors\":{}}");
+    }
+
+    @Test
+    void logo() {
+        given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+        .when()
+            .redirects().follow(false).log().all()
+            .get("api/themes/" + dockerOpenPaasExtension.domainId() + "/logo").prettyPeek()
+        .then()
+            .statusCode(302)
+            .header("Location", "http://localhost:8080/images/white-logo.svg");
+    }
+
+    @Test
+    void davServerLocation() {
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("scope", "user")
+            .body("[{\"name\":\"core\",\"keys\":[\"davserver\"]}]")
+        .when()
+            .redirects().follow(false)
+            .post("api/configurations")
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body).isEqualTo("[{\"name\":\"core\",\"configurations\":[{\"name\":\"davserver\",\"value\":{\"backend\":{\"url\":\"http://esn_sabre:80\"}}}]}]");
+    }
+
+    @Test
+    void avatar() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+        .when()
+            .redirects().follow(false)
+            .get("/api/users/" + testUser.id() + "/profile/avatar")
+        .then()
+            .statusCode(302)
+            .header("Location", "/api/avatars?objectType=email&email=" + testUser.email());
+    }
+
+    @Test
+    void avatarBis() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("email", testUser.email())
+        .when()
+            .get("/api/avatars")
+        .then()
+            .statusCode(SC_OK);
+    }
+
+    @Test
+    void calendarConfiguration() {
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("scope", "user")
+            .body("[{\"name\":\"linagora.esn.calendar\",\"keys\":[\"workingDays\",\"hideDeclinedEvents\"]}]")
+        .when()
+            .post("api/configurations")
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body).isEqualTo("[{\"name\":\"linagora.esn.calendar\",\"configurations\":[{\"name\":\"workingDays\"},{\"name\":\"hideDeclinedEvents\"}]}]");
+    }
+
+    @Disabled("Somehow indexing is broken")
+    @Test
+    void calendarSearch() throws Exception {
+        String adminId = getAdminId();
+
+        int status = dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> headers.add("Authorization", OpenPaasUser.basicAuth("admin@open-paas.org"))
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + adminId + "/" + adminId + "/abcd.ics")
+            .send(body(CalDavTest.ICS_1))
+            .response()
+            .block()
+            .status()
+            .code();
+        assertThat(status).isEqualTo(201);
+
+        Thread.sleep(1000);
+        with()
+            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getElasticsearchContainer()) + ":9200")
+            .post("_flush");
+        Thread.sleep(1000);
+
+        String response = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .body("{\"calendars\":[{\"userId\":\"" + adminId + "\",\"calendarId\":\"" + adminId + "\"}],\"query\":\"irrelevant\"}")
+            .queryParam("limit", 30)
+            .queryParam("offset", 0)
+        .when()
+            .post("calendar/api/events/search")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(response).isEqualTo("{\"_links\":{\"self\":{\"href\":\"/calendar/api/events/search?limit=30&offset=0\"}},\"_total_hits\":0,\"_embedded\":{\"events\":[]}}");
+    }
+
+    @Test
+    void peopleSearch() {
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .body("{\"q\":\"john\",\"objectTypes\":[\"user\",\"resource\"],\"limit\":10}")
+        .when()
+            .post("api/people/search")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body)
+            .whenIgnoringPaths("$[*].id")
+            .isEqualTo("[{\"id\":\"67b655e7cd6be9005113d526\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user0@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John0 Doe0\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user0@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d527\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user1@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John1 Doe1\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user1@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d530\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user10@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John10 Doe10\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user10@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d531\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user11@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John11 Doe11\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user11@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d532\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user12@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John12 Doe12\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user12@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d533\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user13@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John13 Doe13\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user13@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d534\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user14@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John14 Doe14\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user14@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d535\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user15@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John15 Doe15\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user15@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d536\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user16@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John16 Doe16\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user16@open-paas.org\",\"type\":\"default\"}]},{\"id\":\"67b655e7cd6be9005113d537\",\"objectType\":\"user\",\"emailAddresses\":[{\"value\":\"user17@open-paas.org\",\"type\":\"default\"}],\"phoneNumbers\":[],\"names\":[{\"displayName\":\"John17 Doe17\",\"type\":\"default\"}],\"photos\":[{\"url\":\"http://localhost:8080/api/avatars?objectType=user&email=user17@open-paas.org\",\"type\":\"default\"}]}]");
+    }
+
+    @Disabled("Somehow indexing is broken")
+    @Test
+    void peopleSearchInContacts() throws Exception {
+        String adminId = getAdminId();
+
+        int status = dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> headers.add("Authorization", OpenPaasUser.basicAuth("admin@open-paas.org")))
+            .put()
+            .uri("/addressbooks/" + adminId + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Oliver Werk\n" +
+                "N:Oliver;Derk;;;\n" +
+                "EMAIL:oliver.derk@example.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n"))
+            .response()
+            .block()
+            .status()
+            .code();
+        assertThat(status).isEqualTo(201);
+
+        Thread.sleep(1000);
+        with()
+            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getElasticsearchContainer()) + ":9200")
+            .post("_flush");
+        Thread.sleep(1000);
+
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .body("{\"q\":\"oliver\",\"objectTypes\":[\"user\",\"resource\", \"contact\"],\"limit\":10}")
+        .when()
+            .post("api/people/search")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body).isEqualTo("");
+    }
+
+    @Disabled("This needs the secret link configuration, not included by default...")
+    @Test
+    void secretLink() {
+        String adminId = getAdminId();
+
+        String secretLink = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("shouldResetLink", "true").log().all()
+        .when()
+            .get("calendar/api/calendars/" + adminId + "/" + adminId + "/secret-link").prettyPeek()
+        .then()
+            .extract()
+            .body()
+            .jsonPath()
+            .getString("secretLink");
+
+        String body = given()
+            .baseUri(secretLink).log().all()
+            .get().prettyPeek()
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(body.startsWith("BEGIN:VCALENDAR")).isTrue();
+    }
+
+    private static String getAdminId() {
+        return given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+        .when().log().all()
+            .get("api/user")
+        .then()
+            .extract()
+            .body()
+            .jsonPath()
+            .getString("_id");
     }
 }

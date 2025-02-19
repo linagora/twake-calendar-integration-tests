@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import org.bson.Document;
+import org.jetbrains.annotations.NotNull;
 
 import io.netty.handler.codec.http.HttpHeaders;
 
@@ -37,11 +38,14 @@ public record OpenPaasUser(String id, String firstname, String lastname, String 
     }
 
     HttpHeaders basicAuth(HttpHeaders headers) {
+        return headers.add("Authorization", basicAuth(email));
+    }
+
+    public static String basicAuth(String email) {
         String userPassword = "admin&" + email + ":secret123";
         byte[] base64UserPassword = Base64
             .getEncoder()
             .encode(userPassword.getBytes(StandardCharsets.UTF_8));
-
-        return headers.add("Authorization", "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8));
+        return "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8);
     }
 }
