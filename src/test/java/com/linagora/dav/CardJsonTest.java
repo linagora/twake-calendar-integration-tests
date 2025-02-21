@@ -748,9 +748,9 @@ class CardJsonTest {
             .queryParam("offset", 0)
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
-            .when()
+        .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
-            .then()
+        .then()
             .extract()
             .body()
             .asString();
@@ -951,9 +951,9 @@ class CardJsonTest {
             .queryParam("personal", true)
             .queryParam("shared", true)
             .queryParam("subscribed", true)
-            .when()
+        .when()
             .get("/addressbooks/" + testUser.id() + ".json")
-            .then()
+        .then()
             .extract()
             .body()
             .asString();
@@ -1071,9 +1071,9 @@ class CardJsonTest {
                     ],
                     "type": "user"
                 }""")
-            .when()
+        .when()
             .post("addressbooks/" + testUser.id() + ".json")
-            .then()
+        .then()
             .statusCode(201);
 
         executeNoContent(dockerOpenPaasExtension.davHttpClient()
@@ -1094,9 +1094,9 @@ class CardJsonTest {
             .queryParam("personal", true)
             .queryParam("shared", true)
             .queryParam("subscribed", true)
-            .when()
+        .when()
             .get("/addressbooks/" + testUser.id() + ".json")
-            .then()
+        .then()
             .extract()
             .body()
             .asString();
@@ -1214,17 +1214,17 @@ class CardJsonTest {
                     ],
                     "type": "user"
                 }""")
-            .when()
+        .when()
             .post("addressbooks/" + testUser.id() + ".json")
-            .then()
+        .then()
             .statusCode(201);
 
         given()
             .headers("Authorization", testUser.basicAuth())
             .headers("Accept", "application/vcard+json")
-            .when()
+        .when()
             .delete("addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
-            .then()
+        .then()
             .statusCode(204);
 
         String response = given()
@@ -1234,9 +1234,9 @@ class CardJsonTest {
             .queryParam("personal", true)
             .queryParam("shared", true)
             .queryParam("subscribed", true)
-            .when()
+        .when()
             .get("/addressbooks/" + testUser.id() + ".json")
-            .then()
+        .then()
             .extract()
             .body()
             .asString();
@@ -1460,9 +1460,9 @@ class CardJsonTest {
             .queryParam("limit", 30)
             .queryParam("page", 1)
             .queryParam("search", "unrelated")
-            .when()
+        .when()
             .get("/addressbooks/" + testUser.id() + ".json/contacts")
-            .then()
+        .then()
             .extract()
             .body()
             .asString();
@@ -1540,5 +1540,360 @@ class CardJsonTest {
         assertThat(response2).contains("abcdef.vcf");
     }
 
-    // TODO test shared contacts
+    @Test
+    void settingAddressBookWorldVisible() {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+
+        // Given alice set her calendar visible publicly
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body("""
+                {"dav:publish-addressbook":{"privilege":"{DAV:}read"}}""")
+        .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .then()
+            .statusCode(204);
+
+        // And alice has a contact
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        // THEN bob can read the contact
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+        .when()
+            .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200);
+
+        // AND bob cannot update alice contacts
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(bob::basicAuth)
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+            .send(body(STRING)));
+        assertThat(status).isEqualTo(403);
+    }
+
+    @Test
+    void settingAddressBookWorldWritable() {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+
+        // Given alice set her calendar visible publicly
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body("""
+                {"dav:publish-addressbook":{"privilege":"{DAV:}write"}}""")
+        .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .then()
+            .statusCode(204);
+
+        // And alice has a contact
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        // THEN bob can read the contact
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+        .when()
+            .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200);
+
+        // AND bob can update alice contacts
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(bob::basicAuth)
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+            .send(body(STRING)));
+        assertThat(status).isEqualTo(201);
+    }
+
+    @Test
+    void settingSharee() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        given()
+            .headers("Authorization", testUser.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+                {"dav:share-resource":{"dav:sharee":[{"dav:href":"principals/users/%s","dav:share-access":1}]}}""", testUser.id()))
+        .when()
+            .post("addressbooks/" + testUser.id() + "/contacts.json")
+        .then()
+            .statusCode(204);
+    }
+
+    @Test
+    void settingShareeRead() {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+
+        // Alice has a contact
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+    {
+       "dav:share-resource": {
+        "dav:sharee": [
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 2
+            },
+            {
+                "dav:href": "principals/users/%s",
+                "dav:share-access": 1
+            }
+        ]
+      }
+    }""", bob.email(), alice.id()))
+        .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+        .then()
+            .statusCode(204);
+
+        // THEN bob can read the contact
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+        .when()
+            .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200);
+
+        // AND bob cannot update alice contacts
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(bob::basicAuth)
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+            .send(body(STRING)));
+        assertThat(status).isEqualTo(403);
+    }
+
+    @Test
+    void settingShareeWrite() {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser cedric = dockerOpenPaasExtension.newTestUser();
+
+        // Alice has a contact
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+    {
+       "dav:share-resource": {
+        "dav:sharee": [
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 3
+            },
+            {
+                "dav:href": "principals/users/%s",
+                "dav:share-access": 1
+            }
+        ]
+      }
+    }""", bob.email(), alice.id()))
+        .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+        .then()
+            .statusCode(204);
+
+        // THEN bob can read the contact
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+        .when()
+            .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200);
+
+        // AND bob can update alice contacts
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(bob::basicAuth)
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+            .send(body(STRING)));
+        assertThat(status).isEqualTo(201);
+
+        // And bob cannot share
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+    {
+       "dav:share-resource": {
+        "dav:sharee": [
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 5
+            },
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 5
+            },
+            {
+                "dav:href": "principals/users/%s",
+                "dav:share-access": 1
+            }
+        ]
+      }
+    }""", cedric.email(), bob.email(), alice.id()))
+            .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .then()
+            .statusCode(403);
+    }
+
+    @Test
+    void settingShareeSharing() {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser cedric = dockerOpenPaasExtension.newTestUser();
+
+        // Alice has a contact
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+    {
+       "dav:share-resource": {
+        "dav:sharee": [
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 5
+            },
+            {
+                "dav:href": "principals/users/%s",
+                "dav:share-access": 1
+            }
+        ]
+      }
+    }""", bob.email(), alice.id()))
+        .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+        .then()
+            .statusCode(204);
+
+        // THEN bob can read the contact
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+        .when()
+            .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200);
+
+        // AND bob can update alice contacts
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(bob::basicAuth)
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+            .send(body(STRING)));
+        assertThat(status).isEqualTo(201);
+
+        // And bob cannot share
+        given()
+            .headers("Authorization", bob.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+    {
+       "dav:share-resource": {
+        "dav:sharee": [
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 5
+            },
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 5
+            },
+            {
+                "dav:href": "principals/users/%s",
+                "dav:share-access": 1
+            }
+        ]
+      }
+    }""", cedric.email(), bob.email(), alice.id()))
+            .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .then()
+            .statusCode(204);
+    }
 }
