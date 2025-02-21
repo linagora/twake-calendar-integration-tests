@@ -38,8 +38,8 @@ public class DockerOpenPaasSetup {
                 new File(DockerOpenPaasSetup.class.getResource("/docker-openpaas-setup.yml").toURI()))
                 .waitingFor("openpaas", Wait.forLogMessage(".*Users currently connected.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(3)))
-                .withLogConsumer("sabre_dav", log -> System.out.println("sabre_dav" + log.getUtf8String()))
-                .withLogConsumer("openpaas", log -> System.out.println("sabre_dav" + log.getUtf8String()));
+                .withLogConsumer("sabre_dav", log -> System.out.print("sabre_dav " + log.getUtf8String()))
+                .withLogConsumer("openpaas", log -> System.out.print("openpaas " + log.getUtf8String()));
         } catch (URISyntaxException e) {
             throw new RuntimeException("Failed to initialize OpenPaas Setup from docker compose.", e);
         }
