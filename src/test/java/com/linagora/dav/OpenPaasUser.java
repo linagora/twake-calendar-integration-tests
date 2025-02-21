@@ -41,6 +41,10 @@ public record OpenPaasUser(String id, String firstname, String lastname, String 
         return headers.add("Authorization", basicAuth(email));
     }
 
+    String basicAuth() {
+        return basicAuth(email);
+    }
+
     public static String basicAuth(String email) {
         String userPassword = "admin&" + email + ":secret123";
         byte[] base64UserPassword = Base64
