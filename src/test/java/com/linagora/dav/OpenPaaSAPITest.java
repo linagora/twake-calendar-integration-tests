@@ -19,6 +19,7 @@
 package com.linagora.dav;
 
 import static com.linagora.dav.DockerOpenPaasExtension.body;
+import static com.linagora.dav.DockerOpenPaasExtension.execute;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -31,7 +32,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.xmlunit.assertj3.XmlAssert;
 
+import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
@@ -379,6 +382,55 @@ class OpenPaaSAPITest {
             .asString();
 
         assertThat(string.startsWith("\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.ey")).isTrue();
+    }
+
+    @Test
+    void jwtTokenCanBeUsedToCallAPI() {
+        String string = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .when()
+            .post("/api/jwt/generate")
+            .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+
+        given()
+            .headers("Authorization", "Bearer " + string.substring(1, string.length() - 1))
+        .when()
+            .get("api/domains/" + dockerOpenPaasExtension.domainId())
+        .then()
+            .statusCode(SC_OK);
+    }
+
+    @Test
+    void jwtTokenCanBeUsedToCallSabre() {
+        String string = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .when()
+            .post("/api/jwt/generate")
+            .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> headers.add("Authorization", "Bearer " + string.substring(1, string.length() - 1))
+                .add("Depth", 0)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/")
+            .send(body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                     <d:current-user-principal />
+                  </d:prop>
+                </d:propfind>""")));
+
+        assertThat(response.status()).isEqualTo(207);
     }
 
     @Test
