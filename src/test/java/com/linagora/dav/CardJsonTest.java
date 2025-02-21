@@ -1364,9 +1364,9 @@ class CardJsonTest {
             .queryParam("limit", 30)
             .queryParam("page", 1)
             .queryParam("search", "zapo")
-            .when()
+        .when()
             .get("/addressbooks/" + testUser.id() + ".json/contacts")
-            .then()
+        .then()
             .extract()
             .body()
             .asString();
@@ -1483,8 +1483,62 @@ class CardJsonTest {
                 """, testUser.id()));
     }
 
+    @Test
+    void move() {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(testUser::basicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        String response1 = given()
+            .headers("Authorization", testUser.basicAuth())
+            .queryParam("limit", 20)
+            .queryParam("offset", 0)
+            .queryParam("sort", "fn")
+            .queryParam("userId", testUser.id())
+            .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+        String response2 = given()
+            .headers("Authorization", testUser.basicAuth())
+            .queryParam("limit", 20)
+            .queryParam("offset", 0)
+            .queryParam("sort", "fn")
+            .queryParam("userId", testUser.id())
+            .when()
+            .get("/addressbooks/" + testUser.id() + "/collected.json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+        assertThat(response1).doesNotContain("abcdef.vcf");
+        assertThat(response2).contains("abcdef.vcf");
+    }
+
     // TODO test shared contacts
-    // TODO CopyTo + MoveTo
-
-
 }
