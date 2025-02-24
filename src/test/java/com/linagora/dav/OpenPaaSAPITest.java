@@ -40,6 +40,7 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import net.javacrumbs.jsonunit.core.Option;
 
 class OpenPaaSAPITest {
     @RegisterExtension
@@ -103,7 +104,7 @@ class OpenPaaSAPITest {
     void retrieveUserDetailTheOpenPaaSWay() {
         String body = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
-        .when().log().all()
+        .when()
             .get("api/user")
         .then()
             .statusCode(SC_OK)
@@ -453,7 +454,7 @@ class OpenPaaSAPITest {
         given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
         .when()
-            .redirects().follow(false).log().all()
+            .redirects().follow(false)
             .get("api/themes/" + dockerOpenPaasExtension.domainId() + "/logo").prettyPeek()
         .then()
             .statusCode(302)
@@ -623,7 +624,7 @@ class OpenPaaSAPITest {
 
         String secretLink = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
-            .queryParam("shouldResetLink", "true").log().all()
+            .queryParam("shouldResetLink", "true")
         .when()
             .get("calendar/api/calendars/" + adminId + "/" + adminId + "/secret-link").prettyPeek()
         .then()
@@ -633,7 +634,7 @@ class OpenPaaSAPITest {
             .getString("secretLink");
 
         String body = given()
-            .baseUri(secretLink).log().all()
+            .baseUri(secretLink)
             .get().prettyPeek()
             .then()
             .extract()
@@ -643,10 +644,330 @@ class OpenPaaSAPITest {
         assertThat(body.startsWith("BEGIN:VCALENDAR")).isTrue();
     }
 
+    @Test
+    void settingsConfiguration() {
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("scope", "user")
+            .body("[{\"name\":\"core\",\"keys\":[\"homePage\",\"businessHours\",\"datetime\",\"language\"]}]")
+        .when()
+            .post("api/configurations")
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body).isEqualTo("""
+            [
+                {
+                    "name": "core",
+                    "configurations": [
+                        {
+                            "name": "homePage",
+                            "value": "unifiedinbox"
+                        },
+                        {
+                            "name": "businessHours"
+                        },
+                        {
+                            "name": "datetime",
+                            "value": {
+                                "timeZone": "UTC"
+                            }
+                        },
+                        {
+                            "name": "language",
+                            "value": "en"
+                        }
+                    ]
+                }
+            ]""");
+    }
+
+    @Disabled("Breaks isolation")
+    @Test
+    void settingsUpdate() {
+        given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("scope", "user")
+            .body("[{\"name\":\"core\",\"configurations\":[{\"name\":\"homePage\",\"value\":\"calendar.main\"},{\"name\":\"businessHours\",\"value\":[{\"start\":\"9:0\",\"end\":\"19:0\",\"daysOfWeek\":[1,2,3,4,5]}]},{\"name\":\"datetime\",\"value\":{\"timeZone\":\"Europe/Paris\",\"use24hourFormat\":true}},{\"name\":\"language\",\"value\":\"fr\"}]}]")
+        .when()
+            .put("api/configurations")
+        .then()
+            .statusCode(204);
+
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("scope", "user")
+            .body("[{\"name\":\"core\",\"keys\":[\"homePage\",\"businessHours\",\"datetime\",\"language\"]}]")
+        .when()
+            .post("api/configurations")
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body).isEqualTo("""
+            [
+                 {
+                     "name": "core",
+                     "configurations": [
+                         {
+                             "name": "homePage",
+                             "value": "calendar.main"
+                         },
+                         {
+                             "name": "businessHours",
+                             "value": [
+                                 {
+                                     "start": "9:0",
+                                     "end": "19:0",
+                                     "daysOfWeek": [
+                                         1,
+                                         2,
+                                         3,
+                                         4,
+                                         5
+                                     ]
+                                 }
+                             ]
+                         },
+                         {
+                             "name": "datetime",
+                             "value": {
+                                 "timeZone": "Europe/Paris",
+                                 "use24hourFormat": true
+                             }
+                         },
+                         {
+                             "name": "language",
+                             "value": "fr"
+                         }
+                     ]
+                 }
+             ]""");
+    }
+
+    @Disabled("Breaks isolation")
+    @Test
+    void profileUpdate() {
+        // Same input than /api/user result
+        // Extra properties: job_title service building_location office_location main_phone description
+        given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+            .queryParam("scope", "user")
+            .body("""
+                    {
+                     "job_title": "Testing post 3",
+                     "service": "Testing service 3",
+                     "building_location": "8 rue du docteur Penard 3",
+                     "office_location": "Lyon 3",
+                     "main_phone": "0677260458 3",
+                     "description": "A deeply committed tester 3",
+                        "_id": "67b6084cb5096b0053bec21c",
+                        "firstname": "admin 2",
+                        "lastname": "admin 2",
+                        "preferredEmail": "admin@open-paas.org",
+                        "emails": [
+                            "admin@open-paas.org"
+                        ],
+                        "domains": [
+                            {
+                                "joined_at": "2025-02-19T16:35:24.714Z",
+                                "domain_id": "67b6084cb5096b0053bec21d"
+                            }
+                        ],
+                        "states": [],
+                        "avatars": [],
+                        "accounts": [
+                            {
+                                "timestamps": {
+                                    "creation": "2025-02-19T16:35:24.570Z"
+                                },
+                                "hosted": false,
+                                "emails": [
+                                    "admin@open-paas.org"
+                                ],
+                                "preferredEmailIndex": 0,
+                                "type": "email"
+                            }
+                        ],
+                        "login": {
+                            "failures": []
+                        },
+                        "id": "67b6084cb5096b0053bec21c",
+                        "displayName": "admin 2 admin 2",
+                        "objectType": "user",
+                        "isPlatformAdmin": true,
+                        "configurations": {
+                            "modules": [
+                                {
+                                    "configurations": [
+                                        {
+                                            "name": "webadminApiFrontend",
+                                            "value": "http://localhost:8000"
+                                        }
+                                    ],
+                                    "name": "linagora.esn.james"
+                                },
+                                {
+                                    "configurations": [
+                                        {
+                                            "name": "davserver",
+                                            "value": {
+                                                "backend": {
+                                                    "url": "http://esn_sabre:80"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "name": "features",
+                                            "value": {
+                                                "application-menu:jobqueue": false,
+                                                "application-menu:invitation": false,
+                                                "control-center:password": true,
+                                                "control-center:invitation": false,
+                                                "header:user-notification": true
+                                            }
+                                        },
+                                        {
+                                            "name": "homePage",
+                                            "value": "unifiedinbox"
+                                        },
+                                        {
+                                            "name": "datetime",
+                                            "value": {
+                                                "timeZone": "UTC"
+                                            }
+                                        },
+                                        {
+                                            "name": "language",
+                                            "value": "en"
+                                        },
+                                        {
+                                            "name": "maxSizeUpload",
+                                            "value": {
+                                                "maxSizeUpload": 104857600
+                                            }
+                                        }
+                                    ],
+                                    "name": "core"
+                                },
+                                {
+                                    "configurations": [
+                                        {
+                                            "name": "api",
+                                            "value": "http://localhost:1080/jmap"
+                                        },
+                                        {
+                                            "name": "uploadUrl",
+                                            "value": "http://localhost:1080/upload"
+                                        },
+                                        {
+                                            "name": "downloadUrl",
+                                            "value": "http://localhost:1080/download/{blobId}/{name}"
+                                        },
+                                        {
+                                            "name": "isJmapSendingEnabled",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "composer.attachments",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "maxSizeUpload",
+                                            "value": 20971520
+                                        },
+                                        {
+                                            "name": "numberItemsPerPageOnBulkReadOperations",
+                                            "value": 30
+                                        },
+                                        {
+                                            "name": "numberItemsPerPageOnBulkDeleteOperations",
+                                            "value": 30
+                                        },
+                                        {
+                                            "name": "numberItemsPerPageOnBulkUpdateOperations",
+                                            "value": 30
+                                        },
+                                        {
+                                            "name": "drafts",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "view",
+                                            "value": "messages"
+                                        },
+                                        {
+                                            "name": "swipeRightAction",
+                                            "value": "markAsRead"
+                                        },
+                                        {
+                                            "name": "forwarding",
+                                            "value": true
+                                        },
+                                        {
+                                            "name": "isLocalCopyEnabled",
+                                            "value": true
+                                        }
+                                    ],
+                                    "name": "linagora.esn.unifiedinbox"
+                                },
+                                {
+                                    "name": "linagora.esn.jobqueue",
+                                    "configurations": [
+                                        {
+                                            "name": "features",
+                                            "value": {
+                                                "isUserInterfaceEnabled": false
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                    """)
+        .when()
+            .put("api/user/profile")
+         .then()
+            .statusCode(200);
+
+        String body = given()
+            .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
+        .when()
+            .get("api/user")
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("domains[0].joined_at", "_id", "id", "domains[0].domain_id", "accounts[0].timestamps")
+            .isEqualTo("""
+                    {
+                     "job_title": "Testing post 3",
+                        "service": "Testing service 3",
+                        "building_location": "8 rue du docteur Penard 3",
+                        "office_location": "Lyon 3",
+                        "main_phone": "0677260458 3",
+                        "description": "A deeply committed tester 3",
+                        "firstname": "admin 2",
+                        "lastname": "admin 2",
+                        "displayName": "admin 2 admin 2"
+                    }
+                    """);
+    }
+
     private static String getAdminId() {
         return given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
-        .when().log().all()
+        .when()
             .get("api/user")
         .then()
             .extract()
