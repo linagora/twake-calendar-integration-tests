@@ -1896,4 +1896,164 @@ class CardJsonTest {
             .then()
             .statusCode(204);
     }
+
+    @Test
+    void shouldListShareeCalendar() {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser cedric = dockerOpenPaasExtension.newTestUser();
+
+        // Alice has a contact
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers)
+                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
+            .put()
+            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .headers("Accept", "application/vcard+json")
+            .headers("Content-Type", "application/vcard+json")
+            .body(String.format("""
+    {
+       "dav:share-resource": {
+        "dav:sharee": [
+            {
+                "dav:href": "mailto:%s",
+                "dav:share-access": 5
+            },
+            {
+                "dav:href": "principals/users/%s",
+                "dav:share-access": 1
+            }
+        ]
+      }
+    }""", bob.email(), alice.id()))
+        .when()
+            .post("addressbooks/" + alice.id() + "/contacts.json")
+        .then()
+            .statusCode(204);
+
+        // THEN bob can read the contact
+        String response = given()
+            .headers("Authorization", bob.basicAuth())
+            .queryParam("contactsCount", true)
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(response)
+            .whenIgnoringPaths("_embedded.dav:addressbook[2]._links.self.href")
+            .isEqualTo(String.format("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "/addressbooks/%s.json"
+                        }
+                    },
+                    "_embedded": {
+                        "dav:addressbook": [
+                            {
+                                "_links": {
+                                    "self": {
+                                        "href": "/addressbooks/%s/collected.json"
+                                    }
+                                },
+                                "dav:name": "",
+                                "carddav:description": "",
+                                "dav:acl": [
+                                    "dav:read",
+                                    "dav:write"
+                                ],
+                                "dav:share-access": 1,
+                                "openpaas:subscription-type": null,
+                                "type": "",
+                                "state": "",
+                                "numberOfContacts": 0,
+                                "acl": [
+                                    {
+                                        "privilege": "{DAV:}all",
+                                        "principal": "principals/users/%s",
+                                        "protected": true
+                                    }
+                                ],
+                                "dav:group": null
+                            },
+                            {
+                                "_links": {
+                                    "self": {
+                                        "href": "/addressbooks/%s/contacts.json"
+                                    }
+                                },
+                                "dav:name": "",
+                                "carddav:description": "",
+                                "dav:acl": [
+                                    "dav:read",
+                                    "dav:write"
+                                ],
+                                "dav:share-access": 1,
+                                "openpaas:subscription-type": null,
+                                "type": "",
+                                "state": "",
+                                "numberOfContacts": 0,
+                                "acl": [
+                                    {
+                                        "privilege": "{DAV:}all",
+                                        "principal": "principals/users/%s",
+                                        "protected": true
+                                    }
+                                ],
+                                "dav:group": null
+                            },
+                            {
+                                "_links": {
+                                    "self": {
+                                        "href": "/addressbooks/%s/a72cf3f8-0dc2-4416-bf66-43e5aeaeff24.json"
+                                    }
+                                },
+                                "dav:name": "",
+                                "carddav:description": "",
+                                "dav:acl": [
+                                    "dav:read",
+                                    "dav:write"
+                                ],
+                                "dav:share-access": 5,
+                                "openpaas:subscription-type": "delegation",
+                                "type": "",
+                                "state": "",
+                                "numberOfContacts": null,
+                                "acl": [
+                                    {
+                                        "privilege": "{DAV:}read",
+                                        "principal": "principals/users/%s",
+                                        "protected": true
+                                    },
+                                    {
+                                        "privilege": "{DAV:}write-properties",
+                                        "principal": "principals/users/%s",
+                                        "protected": true
+                                    }
+                                ],
+                                "dav:group": null,
+                                "openpaas:source": "/addressbooks/%s/contacts.json"
+                            }
+                        ]
+                    }
+                }
+            """, bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), alice.id()));
+    }
 }
