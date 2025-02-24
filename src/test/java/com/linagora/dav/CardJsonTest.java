@@ -55,7 +55,7 @@ class CardJsonTest {
     }
 
     @Test
-    void shouldListCalendar() {
+    void shouldListAddressBooks() {
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
 
         String response = given()
