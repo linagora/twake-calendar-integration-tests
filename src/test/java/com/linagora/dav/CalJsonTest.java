@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -1610,7 +1611,6 @@ class CalJsonTest {
             .body()
             .asString();
 
-
         int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
             .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
@@ -1714,6 +1714,112 @@ class CalJsonTest {
             .send(body(ICS_2)));
 
         assertThat(status).isEqualTo(403);
+    }
+
+    @Disabled("Somehow failing")
+    @Test
+    void delegationRead() throws Exception {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
+            .when()
+            .post("/calendars/" + alice.id() + ".json");
+
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
+            .send(body(ICS_1)));
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Content-Type", "text/html; charset=UTF-8")
+            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read\":true}],\"remove\":[]}}").log().all()
+        .when()
+            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json").prettyPeek()
+        .then()
+            .statusCode(200);
+
+        Thread.sleep(5000);
+
+        String response2 = given()
+            .headers("Authorization", bob.basicAuth())
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+            .send(body(ICS_2)));
+
+        assertThat(response2).isEqualTo(ICS_1);
+        assertThat(status).isEqualTo(403);
+    }
+
+    @Disabled("Somehow failing")
+    @Test
+    void delegationWrite() throws Exception {
+        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
+            .when()
+            .post("/calendars/" + alice.id() + ".json");
+        // provision bob principal...
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .body("{\"id\":\"c5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
+            .when()
+            .post("/calendars/" + bob.id() + ".json");
+
+        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
+            .send(body(ICS_1)));
+
+        given()
+            .headers("Authorization", alice.basicAuth())
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Content-Type", "text/html; charset=UTF-8")
+            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read-write\":true}],\"remove\":[]}}").log().all()
+        .when()
+            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json").prettyPeek()
+        .then()
+            .statusCode(200);
+
+        Thread.sleep(5000);
+
+        String response2 = given()
+            .headers("Authorization", bob.basicAuth())
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+            .send(body(ICS_2)));
+
+        assertThat(response2).isEqualTo(ICS_1);
+        assertThat(status).isEqualTo(201);
     }
 
     // todo delegation
