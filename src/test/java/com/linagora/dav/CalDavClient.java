@@ -40,7 +40,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
-public class DavClient {
+public class CalDavClient {
 
     public record CounterRequest(String calendarData,
                                  String sender,
@@ -73,7 +73,7 @@ public class DavClient {
 
     private final HttpClient httpClient;
 
-    public DavClient(HttpClient httpClient) {
+    public CalDavClient(HttpClient httpClient) {
         this.httpClient = httpClient;
     }
 
