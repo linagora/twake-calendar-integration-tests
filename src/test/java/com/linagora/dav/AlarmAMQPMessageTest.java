@@ -18,7 +18,7 @@
 
 package com.linagora.dav;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -39,10 +39,6 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
-
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
-import net.minidev.json.parser.ParseException;
 
 public class AlarmAMQPMessageTest {
 
@@ -90,7 +86,7 @@ public class AlarmAMQPMessageTest {
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmCreatedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -314,16 +310,11 @@ public class AlarmAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmRequestExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmRequestExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -549,16 +540,11 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenUpdateEvent() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenUpdateEvent() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -990,16 +976,11 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmRequestExchangeWhenUpdateEvent() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmRequestExchangeWhenUpdateEvent() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -1237,16 +1218,11 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenAccept() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenAccept() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -1678,16 +1654,11 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmDeletedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -1912,16 +1883,11 @@ public class AlarmAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmCancelExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventAlarmCancelExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -2155,12 +2121,7 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
     }
 
     private byte[] getMessageFromQueue() {
