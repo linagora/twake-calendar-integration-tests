@@ -18,7 +18,7 @@
 
 package com.linagora.dav;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -38,10 +38,6 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
-
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
-import net.minidev.json.parser.ParseException;
 
 public class ContactAMQPMessageTest {
     public static final String QUEUE_NAME = "tcalendar:event:test";
@@ -88,7 +84,7 @@ public class ContactAMQPMessageTest {
     }
 
     @Test
-    void shouldReceiveMessageFromContactCreatedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromContactCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:created", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -118,14 +114,11 @@ public class ContactAMQPMessageTest {
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromContactUpdatedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromContactUpdatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:updated", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -167,14 +160,11 @@ public class ContactAMQPMessageTest {
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromContactDeletedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromContactDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:deleted", "");
 
         OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
@@ -206,10 +196,7 @@ public class ContactAMQPMessageTest {
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     private byte[] getMessageFromQueue() {
