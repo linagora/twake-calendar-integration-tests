@@ -64,7 +64,7 @@ class EmailAMQPMessageTest {
     @RegisterExtension
     static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
 
-    private DavClient davClient;
+    private CalDavClient calDavClient;
     private Connection connection;
     private Channel channel;
 
@@ -77,7 +77,7 @@ class EmailAMQPMessageTest {
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        davClient = new DavClient(dockerOpenPaasExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerOpenPaasExtension.davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -110,9 +110,9 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
@@ -160,9 +160,9 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -173,7 +173,7 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next 2 weeks.",
             "30250411T150000",
             "30250411T160000");
-        davClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
         getMessageFromQueue();
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
@@ -263,11 +263,11 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
-        davClient.deleteCalendarEvent(testUser, eventUid);
+        calDavClient.deleteCalendarEvent(testUser, eventUid);
 
         getMessageFromQueue();
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
@@ -317,9 +317,9 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -332,7 +332,7 @@ class EmailAMQPMessageTest {
             "30250411T110000",
             "ACCEPTED",
             NOT_COUNTER);
-        davClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
 
         getMessageFromQueue();
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
@@ -382,9 +382,9 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
         String updatedCalendarData = generateCounterCalendarData(
             eventUid,
@@ -395,13 +395,13 @@ class EmailAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T150000",
             "30250411T160000");
-        DavClient.CounterRequest counterRequest = new DavClient.CounterRequest(
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
             updatedCalendarData,
             testUser2.email(),
             testUser.email(),
             eventUid,
             1);
-        davClient.postCounter(testUser2, attendeeEventId, counterRequest);
+        calDavClient.postCounter(testUser2, attendeeEventId, counterRequest);
 
         getMessageFromQueue();
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);

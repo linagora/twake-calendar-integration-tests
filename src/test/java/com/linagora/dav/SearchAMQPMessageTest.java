@@ -59,7 +59,7 @@ public class SearchAMQPMessageTest {
     @RegisterExtension
     static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
 
-    private DavClient davClient;
+    private CalDavClient calDavClient;
     private Connection connection;
     private Channel channel;
 
@@ -72,7 +72,7 @@ public class SearchAMQPMessageTest {
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        davClient = new DavClient(dockerOpenPaasExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerOpenPaasExtension.davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -106,7 +106,7 @@ public class SearchAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
@@ -291,7 +291,7 @@ public class SearchAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -302,7 +302,7 @@ public class SearchAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next 2 weeks.",
             "30250411T150000",
             "30250411T160000");
-        davClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
@@ -630,9 +630,9 @@ public class SearchAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        davClient.deleteCalendarEvent(testUser, eventUid);
+        calDavClient.deleteCalendarEvent(testUser, eventUid);
 
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
@@ -813,11 +813,11 @@ public class SearchAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
-        davClient.deleteCalendarEvent(testUser, eventUid);
+        calDavClient.deleteCalendarEvent(testUser, eventUid);
 
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
@@ -1006,9 +1006,9 @@ public class SearchAMQPMessageTest {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        davClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> davClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
