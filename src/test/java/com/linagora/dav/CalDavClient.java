@@ -187,6 +187,42 @@ public class CalDavClient {
             }).block();
     }
 
+    public void grantFullDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser) {
+        String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
+
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {
+                    "dav:href": "mailto:{{email}}",
+                    "dav:administration": true
+                  }
+                ],
+                "remove": []
+              }
+            }
+            """.replace("{{email}}", delegatedUser.email());
+
+        httpClient.headers(headers -> user.basicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                    Unexpected status code: %d when sharing calendar '%s'
+                    %s
+                    """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
     private List<CalendarURL> extractCalendarURLsFromResponse(String json) {
         try {
             JsonNode node = OBJECT_MAPPER.readTree(json);

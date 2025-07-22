@@ -19,7 +19,10 @@
 package com.linagora.dav;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import javax.xml.XMLConstants;
 import javax.xml.namespace.NamespaceContext;
@@ -103,5 +106,19 @@ public class XMLUtil {
             }
         }
         return eventIds.build();
+    }
+
+    public static String extractByXPath(String xml, String xpathExpr, Map<String, String> namespaces) throws Exception {
+        Document doc = DOCUMENT_BUILDER_FACTORY.newDocumentBuilder()
+            .parse(new java.io.ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        xpath.setNamespaceContext(new NamespaceContext() {
+            public String getNamespaceURI(String prefix) {
+                return namespaces.get(prefix);
+            }
+            public String getPrefix(String uri) { return null; }
+            public Iterator getPrefixes(String uri) { return null; }
+        });
+        return xpath.evaluate(xpathExpr, doc);
     }
 }

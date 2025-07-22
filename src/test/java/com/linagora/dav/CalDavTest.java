@@ -24,14 +24,27 @@ import static com.linagora.dav.DockerOpenPaasExtension.executeNoContent;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
+import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
 import org.assertj.core.api.AssertionsForClassTypes;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
 import org.xmlunit.diff.DifferenceEvaluator;
 
 import io.netty.handler.codec.http.HttpMethod;
+import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Property;
+import net.fortuna.ical4j.model.parameter.ScheduleStatus;
 import reactor.netty.http.client.HttpClientResponse;
 
 class CalDavTest {
@@ -152,6 +165,21 @@ class CalDavTest {
 
     @RegisterExtension
     static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+
+    private final ConditionFactory calmlyAwait = Awaitility.with()
+        .pollInterval(Duration.ofMillis(500))
+        .and()
+        .with()
+        .pollDelay(Duration.ofMillis(500))
+        .await();
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
+
+    private CalDavClient calDavClient;
+
+    @BeforeEach
+    void setUp() {
+        calDavClient = new CalDavClient(dockerOpenPaasExtension.davHttpClient());
+    }
 
     @Test
     void propfindShouldListCalendars() {
@@ -969,5 +997,429 @@ class CalDavTest {
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(DIFFERENCE_EVALUATOR)
             .areSimilar();
+    }
+
+    @Test
+    void attendeeShouldSeeUpdatedCalendar() throws Exception {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #02",
+            "Twake Meeting Room 2",
+            "This is a meeting to discuss the sprint planning for the next 2 weeks.",
+            "30250411T150000",
+            "30250411T160000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser2.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser2.id() + "/" + testUser2.id())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+        );
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void attendeeShouldSeeUpdatedCalendarWhenAttendeeGrantFullDelegationToOrganizer() throws Exception {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+
+        calDavClient.findUserCalendars(testUser).collectList().block();
+        calDavClient.grantFullDelegation(testUser2, testUser2.id(), testUser);
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #02",
+            "Twake Meeting Room 2",
+            "This is a meeting to discuss the sprint planning for the next 2 weeks.",
+            "30250411T150000",
+            "30250411T160000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser2.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser2.id() + "/" + testUser2.id())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+        );
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void organizerShouldSeeAttendeeAcceptedStatus() throws Exception {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "ACCEPTED");
+        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+        );
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+        expectedCalendar.getComponent(Component.VEVENT).get().getProperty(Property.ATTENDEE).get().add(new ScheduleStatus("2.0"));
+
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void organizerShouldSeeAttendeeAcceptedStatusWhenAttendeeGrantFullDelegationToOrganizer() throws Exception {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+
+        calDavClient.findUserCalendars(testUser).collectList().block();
+        calDavClient.grantFullDelegation(testUser2, testUser2.id(), testUser);
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "ACCEPTED");
+        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+        );
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+        expectedCalendar.getComponent(Component.VEVENT).get().getProperty(Property.ATTENDEE).get().add(new ScheduleStatus("2.0"));
+
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void organizerShouldSeeAttendeeDeclinedStatusWhenAttendeeDeleteEvent() throws Exception {
+        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "ACCEPTED");
+        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+
+        calDavClient.deleteCalendarEvent(testUser2, attendeeEventId);
+
+        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+            .headers(headers -> testUser.basicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+        );
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+
+        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=DECLINED;CN="Benoît TELLIER";SCHEDULE-STATUS=2.0:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email()));
+    }
+
+    private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
+                                        String summary,
+                                        String location,
+                                        String description,
+                                        String dtstart,
+                                        String dtend) {
+        return generateCalendarData(eventUid, organizerEmail, attendeeEmail, summary, location, description, dtstart, dtend, "NEEDS-ACTION");
+    }
+
+    private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
+                                        String summary,
+                                        String location,
+                                        String description,
+                                        String dtstart,
+                                        String dtend,
+                                        String partStat) {
+
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT={partStat};CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary)
+            .replace("{location}", location)
+            .replace("{description}", description)
+            .replace("{dtstart}", dtstart)
+            .replace("{dtend}", dtend)
+            .replace("{partStat}", partStat);
     }
 }
