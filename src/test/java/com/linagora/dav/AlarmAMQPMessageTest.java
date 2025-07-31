@@ -53,7 +53,7 @@ public class AlarmAMQPMessageTest {
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
     @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
 
     private CalDavClient calDavClient;
     private Connection connection;
@@ -63,12 +63,12 @@ public class AlarmAMQPMessageTest {
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getRabbitMqContainer()));
+            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        calDavClient = new CalDavClient(dockerOpenPaasExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerExtension.davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -89,8 +89,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -317,8 +317,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmRequestExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -547,8 +547,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenUpdateEvent() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -983,8 +983,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmRequestExchangeWhenUpdateEvent() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1225,8 +1225,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenAccept() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1661,8 +1661,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1890,8 +1890,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmCancelExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(

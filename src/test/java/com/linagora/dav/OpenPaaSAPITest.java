@@ -18,8 +18,8 @@
 
 package com.linagora.dav;
 
-import static com.linagora.dav.DockerOpenPaasExtension.body;
-import static com.linagora.dav.DockerOpenPaasExtension.execute;
+import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -31,8 +31,7 @@ import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
-import org.xmlunit.assertj3.XmlAssert;
+import org.testcontainers.containers.ContainerState;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
@@ -41,10 +40,20 @@ import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
+import reactor.netty.http.client.HttpClient;
 
-class OpenPaaSAPITest {
-    @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+abstract class OpenPaaSAPITest {
+
+    private HttpClient davHttpClient;
+    private String domainId;
+
+    abstract OpenPaasUser createUser();
+
+    abstract HttpClient davHttpClient();
+
+    abstract String domainId();
+
+    abstract ContainerState container();
 
     @BeforeEach
     void setUp() {
@@ -52,13 +61,16 @@ class OpenPaaSAPITest {
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getOpenPaasContainer()) + ":8080")
+            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(container()) + ":8080")
             .build();
+
+        davHttpClient = davHttpClient();
+        domainId = domainId();
     }
 
     @Test
     void retrieveUserDetail() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = createUser();
 
         String body = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
@@ -71,7 +83,9 @@ class OpenPaaSAPITest {
             .asString();
 
         assertThatJson(body)
-            .whenIgnoringPaths("domains[0].joined_at")
+            .whenIgnoringPaths("domains[0].joined_at",
+                "avatars","displayName","id","states",     //twake missing
+                "main_phone","state")       //twake extra
             .isEqualTo(String.format("""
                 {
                     "_id": "%s",
@@ -96,7 +110,7 @@ class OpenPaaSAPITest {
                     "followers": 0,
                     "followings": 0
                 }""", testUser.id(), testUser.firstname(), testUser.lastname(),
-                testUser.email(), testUser.email(), dockerOpenPaasExtension.domainId(),
+                testUser.email(), testUser.email(), domainId,
                 testUser.id(), testUser.firstname(), testUser.lastname()));
     }
 
@@ -285,7 +299,7 @@ class OpenPaaSAPITest {
 
     @Test
     void retrieveUserDetailByEmailAddress() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = createUser();
 
         String body = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
@@ -299,7 +313,9 @@ class OpenPaaSAPITest {
             .asString();
 
         assertThatJson(body)
-            .whenIgnoringPaths("[0].domains[0].joined_at")
+            .whenIgnoringPaths("[0].domains[0].joined_at",
+                "[0].avatars","[0].displayName","[0].id","[0].states",    //twake missing
+                "[0].followers","[0].following","[0].followings","[0].main_phone","[0].state")   //twake extra
             .isEqualTo(String.format("""
                     [
                          {
@@ -323,7 +339,7 @@ class OpenPaaSAPITest {
                              "objectType": "user"
                          }
                      ]""", testUser.id(), testUser.firstname(), testUser.lastname(),
-                testUser.email(), testUser.email(), dockerOpenPaasExtension.domainId(),
+                testUser.email(), testUser.email(), domainId,
                 testUser.id(), testUser.firstname(), testUser.lastname()));
     }
 
@@ -332,7 +348,7 @@ class OpenPaaSAPITest {
         String body = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
         .when()
-            .get("api/domains/" + dockerOpenPaasExtension.domainId())
+            .get("api/domains/" + domainId)
         .then()
             .statusCode(SC_OK)
             .extract()
@@ -340,9 +356,10 @@ class OpenPaaSAPITest {
             .asString();
 
         assertThatJson(body)
-            .whenIgnoringPaths("timestamps.creation",
-                "administrators[0].timestamps.creation",
-                "administrators[0].user_id")
+            .whenIgnoringPaths("administrators", //twake missing
+                "company_name",    //twake different
+                "hostnames",       //twake different
+                "timestamps")       //twake different
             .isEqualTo(String.format("""
                 {
                      "timestamps": {
@@ -367,7 +384,7 @@ class OpenPaaSAPITest {
                      ],
                      "injections": [],
                      "__v": 0
-                 }""", dockerOpenPaasExtension.domainId()));
+                 }""", domainId));
     }
 
     @Test
@@ -382,7 +399,7 @@ class OpenPaaSAPITest {
             .body()
             .asString();
 
-        assertThat(string.startsWith("\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.ey")).isTrue();
+        assertThat(string.startsWith("\"eyJ")).isTrue();
     }
 
     @Test
@@ -401,7 +418,7 @@ class OpenPaaSAPITest {
         given()
             .headers("Authorization", "Bearer " + string.substring(1, string.length() - 1))
         .when()
-            .get("api/domains/" + dockerOpenPaasExtension.domainId())
+            .get("api/domains/" + domainId)
         .then()
             .statusCode(SC_OK);
     }
@@ -418,7 +435,7 @@ class OpenPaaSAPITest {
             .body()
             .asString();
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(davHttpClient
             .headers(headers -> headers.add("Authorization", "Bearer " + string.substring(1, string.length() - 1))
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
@@ -439,7 +456,7 @@ class OpenPaaSAPITest {
         String theme = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
         .when()
-            .get("api/themes/" + dockerOpenPaasExtension.domainId())
+            .get("api/themes/" + domainId)
         .then()
             .statusCode(SC_OK)
             .extract()
@@ -455,7 +472,7 @@ class OpenPaaSAPITest {
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
         .when()
             .redirects().follow(false)
-            .get("api/themes/" + dockerOpenPaasExtension.domainId() + "/logo").prettyPeek()
+            .get("api/themes/" + domainId + "/logo").prettyPeek()
         .then()
             .statusCode(302)
             .header("Location", "http://localhost:8080/images/white-logo.svg");
@@ -481,7 +498,7 @@ class OpenPaaSAPITest {
 
     @Test
     void avatar() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = createUser();
         given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
         .when()
@@ -494,7 +511,7 @@ class OpenPaaSAPITest {
 
     @Test
     void avatarBis() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = createUser();
         given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .queryParam("email", testUser.email())
@@ -526,7 +543,7 @@ class OpenPaaSAPITest {
     void calendarSearch() throws Exception {
         String adminId = getAdminId();
 
-        int status = dockerOpenPaasExtension.davHttpClient()
+        int status = davHttpClient
             .headers(headers -> headers.add("Authorization", OpenPaasUser.basicAuth("admin@open-paas.org"))
                 .add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
@@ -581,7 +598,7 @@ class OpenPaaSAPITest {
     void peopleSearchInContacts() throws Exception {
         String adminId = getAdminId();
 
-        int status = dockerOpenPaasExtension.davHttpClient()
+        int status = davHttpClient
             .headers(headers -> headers.add("Authorization", OpenPaasUser.basicAuth("admin@open-paas.org")))
             .put()
             .uri("/addressbooks/" + adminId + "/contacts/abcdef.vcf")

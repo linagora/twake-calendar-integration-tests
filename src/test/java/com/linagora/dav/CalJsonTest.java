@@ -20,9 +20,9 @@ package com.linagora.dav;
 
 import static com.linagora.dav.CalDavTest.ICS_1;
 import static com.linagora.dav.CalDavTest.ICS_2;
-import static com.linagora.dav.DockerOpenPaasExtension.body;
-import static com.linagora.dav.DockerOpenPaasExtension.execute;
-import static com.linagora.dav.DockerOpenPaasExtension.executeNoContent;
+import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +44,7 @@ import net.javacrumbs.jsonunit.core.Option;
 
 class CalJsonTest {
     @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
 
     @BeforeEach
     void setUp() {
@@ -52,13 +52,13 @@ class CalJsonTest {
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getSabreDavContainer()) + ":80")
+            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerExtension.getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80")
             .build();
     }
 
     @Test
     void shouldListCalendar() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String response = given()
             .headers("Authorization", testUser.basicAuth())
@@ -164,9 +164,9 @@ class CalJsonTest {
 
     @Test
     void shouldListEvents() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
@@ -263,15 +263,15 @@ class CalJsonTest {
 
     @Test
     void reportShouldListEvents() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/json, text/plain, */*"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
@@ -472,7 +472,7 @@ class CalJsonTest {
 
     @Test
     void putShouldCreateEvents() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -482,7 +482,7 @@ class CalJsonTest {
         .then()
             .statusCode(201);
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
@@ -612,7 +612,7 @@ class CalJsonTest {
 
     @Test
     void putShouldUpdateEvents() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -630,7 +630,7 @@ class CalJsonTest {
         .then()
             .statusCode(204);
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
@@ -760,7 +760,7 @@ class CalJsonTest {
 
     @Test
     void putShouldFailUpdateWhenBadTag() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -782,7 +782,7 @@ class CalJsonTest {
 
     @Test
     void putShouldUpdateWhenGoodTag() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -813,7 +813,7 @@ class CalJsonTest {
 
     @Test
     void getShouldShowEventDetail() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -1020,7 +1020,7 @@ class CalJsonTest {
 
     @Test
     void freeBusy() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1049,7 +1049,7 @@ class CalJsonTest {
 
     @Test
     void shouldCreateCalendar() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1237,7 +1237,7 @@ class CalJsonTest {
 
     @Test
     void acl() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1245,7 +1245,7 @@ class CalJsonTest {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
@@ -1313,7 +1313,7 @@ class CalJsonTest {
 
     @Test
     void proppatch() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1321,7 +1321,7 @@ class CalJsonTest {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("PROPPATCH"))
@@ -1578,8 +1578,8 @@ class CalJsonTest {
 
     @Test
     void publicReads() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1587,7 +1587,7 @@ class CalJsonTest {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        execute(dockerOpenPaasExtension.davHttpClient()
+        execute(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
@@ -1595,7 +1595,7 @@ class CalJsonTest {
             .send(body("""
                 {"public_right":"{DAV:}read"}""")));
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
@@ -1611,7 +1611,7 @@ class CalJsonTest {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
@@ -1623,8 +1623,8 @@ class CalJsonTest {
 
     @Test
     void publicWrites() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1632,7 +1632,7 @@ class CalJsonTest {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        execute(dockerOpenPaasExtension.davHttpClient()
+        execute(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
@@ -1640,7 +1640,7 @@ class CalJsonTest {
             .send(body("""
                 {"public_right":"{DAV:}write"}""")));
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
@@ -1656,7 +1656,7 @@ class CalJsonTest {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
@@ -1668,8 +1668,8 @@ class CalJsonTest {
 
     @Test
     void removingRights() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1677,7 +1677,7 @@ class CalJsonTest {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        execute(dockerOpenPaasExtension.davHttpClient()
+        execute(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
@@ -1685,7 +1685,7 @@ class CalJsonTest {
             .send(body("""
                 {"public_right":"{DAV:}write"}""")));
 
-        execute(dockerOpenPaasExtension.davHttpClient()
+        execute(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
@@ -1693,7 +1693,7 @@ class CalJsonTest {
             .send(body("""
                 {"public_right":""}""")));
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
@@ -1707,7 +1707,7 @@ class CalJsonTest {
         .then()
             .statusCode(403);
 
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
@@ -1719,8 +1719,8 @@ class CalJsonTest {
     @Disabled("Somehow failing")
     @Test
     void delegationRead() throws Exception {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1728,7 +1728,7 @@ class CalJsonTest {
             .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
@@ -1756,7 +1756,7 @@ class CalJsonTest {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
@@ -1769,8 +1769,8 @@ class CalJsonTest {
     @Disabled("Somehow failing")
     @Test
     void delegationWrite() throws Exception {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", alice.basicAuth())
@@ -1784,7 +1784,7 @@ class CalJsonTest {
             .when()
             .post("/calendars/" + bob.id() + ".json");
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
@@ -1812,7 +1812,7 @@ class CalJsonTest {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
