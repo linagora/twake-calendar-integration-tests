@@ -49,7 +49,7 @@ import net.minidev.json.parser.ParseException;
 
 class EmailAMQPMessageTest {
 
-    public static final String QUEUE_NAME = "tcalendar:event:notificationEmail:send";
+    public static final String QUEUE_NAME = "tcalendar:event:test";
     public static final boolean NOT_COUNTER = false;
     public static final boolean COUNTER = true;
 
@@ -62,7 +62,7 @@ class EmailAMQPMessageTest {
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
     @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
 
     private CalDavClient calDavClient;
     private Connection connection;
@@ -72,12 +72,12 @@ class EmailAMQPMessageTest {
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getRabbitMqContainer()));
+            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        calDavClient = new CalDavClient(dockerOpenPaasExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerExtension.davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -97,8 +97,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCreation() throws ParseException {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -147,8 +147,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventUpdate() throws ParseException {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
@@ -250,8 +250,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCancel() throws ParseException {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -304,8 +304,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventReply() throws ParseException {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
@@ -369,8 +369,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCounter() throws ParseException {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(

@@ -18,8 +18,8 @@
 
 package com.linagora.dav;
 
-import static com.linagora.dav.DockerOpenPaasExtension.body;
-import static com.linagora.dav.DockerOpenPaasExtension.execute;
+import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
@@ -30,13 +30,13 @@ import io.netty.handler.codec.http.HttpMethod;
 
 class PrincipalTest {
     @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
 
     @Test
     void currentUserPrincipalShouldLinkTheUserPrincipal() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
@@ -61,9 +61,9 @@ class PrincipalTest {
 
     @Test
     void shouldShowDisplayName() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
@@ -89,9 +89,9 @@ class PrincipalTest {
 
     @Test
     void shouldAllowAddressBookDiscovery() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
@@ -116,9 +116,9 @@ class PrincipalTest {
 
     @Test
     void shouldAllowCalendarDiscovery() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))

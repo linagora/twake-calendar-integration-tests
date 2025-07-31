@@ -81,7 +81,7 @@ public class CalDavClient {
         httpClient.headers(headers -> user.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics")
-            .send(DockerOpenPaasExtension.body(initialCalendarData))
+            .send(TestUtil.body(initialCalendarData))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201 || response.status().code() == 204) {
                     return Mono.empty();

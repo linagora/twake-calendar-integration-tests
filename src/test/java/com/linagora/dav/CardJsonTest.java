@@ -19,9 +19,9 @@
 package com.linagora.dav;
 
 import static com.linagora.dav.CardDavTest.STRING;
-import static com.linagora.dav.DockerOpenPaasExtension.body;
-import static com.linagora.dav.DockerOpenPaasExtension.execute;
-import static com.linagora.dav.DockerOpenPaasExtension.executeNoContent;
+import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -42,7 +42,7 @@ import io.restassured.http.ContentType;
 
 class CardJsonTest {
     @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
 
     @BeforeEach
     void setUp() {
@@ -50,13 +50,13 @@ class CardJsonTest {
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getSabreDavContainer()) + ":80")
+            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerExtension.getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80")
             .build();
     }
 
     @Test
     void shouldListAddressBooks() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String response = given()
             .headers("Authorization", testUser.basicAuth())
@@ -141,9 +141,9 @@ class CardJsonTest {
 
     @Test
     void shouldAllowAddressBookDiscoveryJson() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
@@ -161,12 +161,12 @@ class CardJsonTest {
                 "group-membership": [
                     "principals\\/domains\\/%s\\/"
                 ]
-            }""", testUser.email(), testUser.id(), dockerOpenPaasExtension.domainId()));
+            }""", testUser.email(), testUser.id(), dockerExtension.domainId()));
     }
 
     @Test
     void shouldAListAddressBookContent() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String response = given()
             .headers("Authorization", testUser.basicAuth())
@@ -198,9 +198,9 @@ class CardJsonTest {
 
     @Test
     void shouldAListAddressBookContentWhenData() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -287,15 +287,15 @@ class CardJsonTest {
 
     @Test
     void propfindOnAddressBooks() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
-        DockerOpenPaasExtension.Response response = execute(dockerOpenPaasExtension.davHttpClient()
+        DavResponse response = execute(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
@@ -354,9 +354,9 @@ class CardJsonTest {
 
     @Test
     void getContactDetail() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -425,7 +425,7 @@ class CardJsonTest {
 
     @Test
     void shouldPutContact() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String payload = """
             [
@@ -600,7 +600,7 @@ class CardJsonTest {
 
     @Test
     void putShouldUpdateContacts() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String payload = """
             [
@@ -845,7 +845,7 @@ class CardJsonTest {
 
     @Test
     void putShouldFailIfWrongState() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String payload = """
             [
@@ -924,7 +924,7 @@ class CardJsonTest {
 
     @Test
     void createAddressBook() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -1056,7 +1056,7 @@ class CardJsonTest {
 
     @Test
     void updateAddressBook() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -1076,7 +1076,7 @@ class CardJsonTest {
         .then()
             .statusCode(201);
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/vcard+json"))
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
@@ -1199,7 +1199,7 @@ class CardJsonTest {
 
     @Test
     void deleteAddressBook() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -1313,9 +1313,9 @@ class CardJsonTest {
 
     @Test
     void exportAddressBook() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -1344,9 +1344,9 @@ class CardJsonTest {
 
     @Test
     void searchWhenRelated() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -1440,9 +1440,9 @@ class CardJsonTest {
 
     @Test
     void searchWhenUnrelatedShouldReturnNoResults() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -1485,9 +1485,9 @@ class CardJsonTest {
 
     @Test
     void move() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(testUser::basicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -1499,7 +1499,7 @@ class CardJsonTest {
                 "UID:123456789\n" +
                 "END:VCARD\n")));
 
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> testUser.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
             .request(HttpMethod.valueOf("MOVE"))
@@ -1542,8 +1542,8 @@ class CardJsonTest {
 
     @Test
     void settingAddressBookWorldVisible() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         // Given alice set her calendar visible publicly
         given()
@@ -1558,7 +1558,7 @@ class CardJsonTest {
             .statusCode(204);
 
         // And alice has a contact
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
@@ -1581,7 +1581,7 @@ class CardJsonTest {
             .statusCode(200);
 
         // AND bob cannot update alice contacts
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(bob::basicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
@@ -1591,8 +1591,8 @@ class CardJsonTest {
 
     @Test
     void settingAddressBookWorldWritable() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         // Given alice set her calendar visible publicly
         given()
@@ -1607,7 +1607,7 @@ class CardJsonTest {
             .statusCode(204);
 
         // And alice has a contact
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
@@ -1630,7 +1630,7 @@ class CardJsonTest {
             .statusCode(200);
 
         // AND bob can update alice contacts
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(bob::basicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
@@ -1640,7 +1640,7 @@ class CardJsonTest {
 
     @Test
     void settingSharee() {
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
             .headers("Authorization", testUser.basicAuth())
@@ -1656,11 +1656,11 @@ class CardJsonTest {
 
     @Test
     void settingShareeRead() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
@@ -1707,7 +1707,7 @@ class CardJsonTest {
             .statusCode(200);
 
         // AND bob cannot update alice contacts
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(bob::basicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
@@ -1717,12 +1717,12 @@ class CardJsonTest {
 
     @Test
     void settingShareeWrite() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser cedric = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
+        OpenPaasUser cedric = dockerExtension.newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
@@ -1769,7 +1769,7 @@ class CardJsonTest {
             .statusCode(200);
 
         // AND bob can update alice contacts
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(bob::basicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
@@ -1808,12 +1808,12 @@ class CardJsonTest {
 
     @Test
     void settingShareeSharing() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser cedric = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
+        OpenPaasUser cedric = dockerExtension.newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
@@ -1860,7 +1860,7 @@ class CardJsonTest {
             .statusCode(200);
 
         // AND bob can update alice contacts
-        int status = executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        int status = executeNoContent(dockerExtension.davHttpClient()
             .headers(bob::basicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
@@ -1899,12 +1899,12 @@ class CardJsonTest {
 
     @Test
     void shouldListShareeCalendar() {
-        OpenPaasUser alice = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser bob = dockerOpenPaasExtension.newTestUser();
-        OpenPaasUser cedric = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser alice = dockerExtension.newTestUser();
+        OpenPaasUser bob = dockerExtension.newTestUser();
+        OpenPaasUser cedric = dockerExtension.newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerOpenPaasExtension.davHttpClient()
+        executeNoContent(dockerExtension.davHttpClient()
             .headers(headers -> alice.basicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()

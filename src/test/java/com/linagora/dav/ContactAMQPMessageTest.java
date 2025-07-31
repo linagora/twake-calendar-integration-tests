@@ -51,7 +51,7 @@ public class ContactAMQPMessageTest {
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
     @RegisterExtension
-    static DockerOpenPaasExtension dockerOpenPaasExtension = new DockerOpenPaasExtension();
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
 
     private CardDavClient cardDavClient;
     private Connection connection;
@@ -61,12 +61,12 @@ public class ContactAMQPMessageTest {
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerOpenPaasExtension.getDockerOpenPaasSetupSingleton().getRabbitMqContainer()));
+            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        cardDavClient = new CardDavClient(dockerOpenPaasExtension.davHttpClient());
+        cardDavClient = new CardDavClient(dockerExtension.davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -87,7 +87,7 @@ public class ContactAMQPMessageTest {
     void shouldReceiveMessageFromContactCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:created", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String addressBook = "collected";
         String vcardUid = UUID.randomUUID().toString();
@@ -121,7 +121,7 @@ public class ContactAMQPMessageTest {
     void shouldReceiveMessageFromContactUpdatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:updated", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String addressBook = "collected";
         String vcardUid = UUID.randomUUID().toString();
@@ -167,7 +167,7 @@ public class ContactAMQPMessageTest {
     void shouldReceiveMessageFromContactDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:deleted", "");
 
-        OpenPaasUser testUser = dockerOpenPaasExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String addressBook = "collected";
         String vcardUid = UUID.randomUUID().toString();

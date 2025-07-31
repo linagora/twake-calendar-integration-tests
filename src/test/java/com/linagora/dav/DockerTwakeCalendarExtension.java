@@ -26,43 +26,47 @@ import org.junit.jupiter.api.extension.ParameterResolver;
 
 import reactor.netty.http.client.HttpClient;
 
-public class DockerOpenPaasExtension implements ParameterResolver {
+public class DockerTwakeCalendarExtension implements ParameterResolver {
 
     public static final boolean DEBUG = true;
 
-    // Ensuring DockerOpenPaasSetupSingleton is loaded to classpath
-    private static DockerOpenPaasSetup dockerOpenPaasSetupSingleton = DockerOpenPaasSetupSingleton.singleton;
+    // Ensuring DockerTwakeCalendarSetupSingleton is loaded to classpath
+    private static DockerTwakeCalendarSetup dockerTwakeCalendarSetup = DockerTwakeCalendarSetupSingleton.singleton;
 
     @Override
     public boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext) throws ParameterResolutionException {
-        return (parameterContext.getParameter().getType() == DockerOpenPaasSetup.class);
+        return (parameterContext.getParameter().getType() == DockerTwakeCalendarSetup.class);
     }
 
     @Override
     public Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext) throws ParameterResolutionException {
-        return DockerOpenPaasSetupSingleton.singleton;
+        return DockerTwakeCalendarSetupSingleton.singleton;
     }
 
-    public DockerOpenPaasSetup getDockerOpenPaasSetupSingleton() {
-        return DockerOpenPaasSetupSingleton.singleton;
+    public DockerTwakeCalendarSetup getDockerTwakeCalendarSetupSingleton() {
+        return DockerTwakeCalendarSetupSingleton.singleton;
     }
 
     public OpenPaasUser newTestUser() {
-        return DockerOpenPaasSetupSingleton.singleton
-            .getOpenPaaSProvisioningService()
+        return DockerTwakeCalendarSetupSingleton.singleton
+            .getTwakeCalendarProvisioningService()
             .createUser()
             .block();
     }
 
+    public TwakeCalendarProvisioningService twakeCalendarProvisioningService() {
+        return DockerTwakeCalendarSetupSingleton.singleton.getTwakeCalendarProvisioningService();
+    }
+
     public String domainId() {
-        return ((ObjectId) DockerOpenPaasSetupSingleton.singleton
-            .getOpenPaaSProvisioningService()
+        return ((ObjectId) DockerTwakeCalendarSetupSingleton.singleton
+            .getTwakeCalendarProvisioningService()
             .openPaasDomain()
             .get("_id")).toString();
     }
 
     public HttpClient davHttpClient() {
         return HttpClient.create()
-            .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
+            .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80");
     }
 }
