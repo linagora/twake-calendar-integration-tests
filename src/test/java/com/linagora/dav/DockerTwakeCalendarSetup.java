@@ -24,6 +24,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.List;
@@ -50,13 +51,36 @@ public class DockerTwakeCalendarSetup {
 
     {
         try {
-            environment = new ComposeContainer(
-                new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
+            String compose = Files.readString(Paths.get(DockerTwakeCalendarSetup.class
+                .getResource("/docker-twake-calendar-setup.yml").toURI()));
+
+            // remplace le placeholder dans le yaml par le chemin absolu
+            Path jwtPublicKey = Paths.get(Objects.requireNonNull(DockerTwakeCalendarSetup.class.getResource("/twake-calendar-side-service-conf/jwt_publickey")).toURI());
+            compose = compose.replace("${JWT_PUBLICKEY}", jwtPublicKey.toAbsolutePath().toString());
+            Path jwtPrivateKey = Paths.get(Objects.requireNonNull(DockerTwakeCalendarSetup.class.getResource("/twake-calendar-side-service-conf/jwt_privatekey")).toURI());
+            compose = compose.replace("${JWT_PRIVATEKEY}", jwtPrivateKey.toAbsolutePath().toString());
+            Path webadminConfiguration = Paths.get(Objects.requireNonNull(DockerTwakeCalendarSetup.class.getResource("/twake-calendar-side-service-conf/webadmin.properties")).toURI());
+            compose = compose.replace("${WEBADMIN_CONF}", webadminConfiguration.toAbsolutePath().toString());
+            Path rabbitConfiguration = Paths.get(Objects.requireNonNull(DockerTwakeCalendarSetup.class.getResource("/twake-calendar-side-service-conf/rabbitmq.properties")).toURI());
+            compose = compose.replace("${RABBIT_CONF}", rabbitConfiguration.toAbsolutePath().toString());
+            Path opensearchConfiguration = Paths.get(Objects.requireNonNull(DockerTwakeCalendarSetup.class.getResource("/twake-calendar-side-service-conf/opensearch.properties")).toURI());
+            compose = compose.replace("${OPENSEARCH_CONF}", opensearchConfiguration.toAbsolutePath().toString());
+            Path configurationConf = Paths.get(Objects.requireNonNull(DockerTwakeCalendarSetup.class.getResource("/twake-calendar-side-service-conf/configuration.properties")).toURI());
+            compose = compose.replace("${CONFIGURATION_CONF}", configurationConf.toAbsolutePath().toString());
+
+            System.out.println(compose);
+
+            // Write to a temp file
+            Path tempCompose = Files.createTempFile("docker-compose-", ".yml");
+            Files.writeString(tempCompose, compose);
+
+            // Use that temp file in Testcontainers
+            environment = new ComposeContainer(tempCompose.toFile())
                 .waitingFor("twake-calendar-side-service", Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withLogConsumer("sabre_dav", log -> System.out.print("sabre_dav " + log.getUtf8String()))
                 .withLogConsumer("twake-calendar-side-service", log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
-        } catch (URISyntaxException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Failed to initialize Twake Calendar Setup from docker compose.", e);
         }
     }
