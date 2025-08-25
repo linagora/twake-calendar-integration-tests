@@ -138,6 +138,10 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
 
@@ -241,6 +245,10 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
 
@@ -293,7 +301,9 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
         actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
         expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
@@ -358,7 +368,9 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
         actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
         expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");

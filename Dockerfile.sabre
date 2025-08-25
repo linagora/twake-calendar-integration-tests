@@ -1,3 +1,4 @@
-FROM chibenwa/sabre:lng-21-02-2025
+#FROM chibenwa/sabre:lng-21-02-2025
+FROM linagora/esn-sabre:v4-dev1
 
 COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /var/www/config/esn.key.pub

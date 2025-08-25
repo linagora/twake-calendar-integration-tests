@@ -18,8 +18,10 @@
 
 package com.linagora.dav;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -110,7 +112,7 @@ public class XMLUtil {
 
     public static String extractByXPath(String xml, String xpathExpr, Map<String, String> namespaces) throws Exception {
         Document doc = DOCUMENT_BUILDER_FACTORY.newDocumentBuilder()
-            .parse(new java.io.ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+            .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
         XPath xpath = XPathFactory.newInstance().newXPath();
         xpath.setNamespaceContext(new NamespaceContext() {
             public String getNamespaceURI(String prefix) {
@@ -120,5 +122,24 @@ public class XMLUtil {
             public Iterator getPrefixes(String uri) { return null; }
         });
         return xpath.evaluate(xpathExpr, doc);
+    }
+
+    public static List<String> extractMultipleValueByXPath(String xml, String xpathExpr, Map<String, String> namespaces) throws Exception {
+        Document doc = DOCUMENT_BUILDER_FACTORY.newDocumentBuilder()
+            .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        xpath.setNamespaceContext(new NamespaceContext() {
+            public String getNamespaceURI(String prefix) {
+                return namespaces.get(prefix);
+            }
+            public String getPrefix(String uri) { return null; }
+            public Iterator getPrefixes(String uri) { return null; }
+        });
+        NodeList nodes = (NodeList) xpath.evaluate(xpathExpr, doc, XPathConstants.NODESET);
+        List<String> results = new ArrayList<>();
+        for (int i = 0; i < nodes.getLength(); i++) {
+            results.add(nodes.item(i).getTextContent());
+        }
+        return results;
     }
 }

@@ -19,6 +19,8 @@
 package com.linagora.dav;
 
 import org.bson.types.ObjectId;
+import org.junit.jupiter.api.extension.AfterAllCallback;
+import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
@@ -26,12 +28,21 @@ import org.junit.jupiter.api.extension.ParameterResolver;
 
 import reactor.netty.http.client.HttpClient;
 
-public class DockerOpenPaasExtension implements ParameterResolver {
+public class DockerOpenPaasExtension implements BeforeAllCallback, AfterAllCallback,ParameterResolver {
 
     public static final boolean DEBUG = true;
 
-    // Ensuring DockerOpenPaasSetupSingleton is loaded to classpath
-    private static DockerOpenPaasSetup dockerOpenPaasSetupSingleton = DockerOpenPaasSetupSingleton.singleton;
+    private DockerOpenPaasSetup dockerOpenPaasSetupSingleton = new DockerOpenPaasSetup();
+
+    @Override
+    public void beforeAll(ExtensionContext extensionContext) {
+        dockerOpenPaasSetupSingleton.start();
+    }
+
+    @Override
+    public void afterAll(ExtensionContext extensionContext) {
+        dockerOpenPaasSetupSingleton.stop();
+    }
 
     @Override
     public boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext) throws ParameterResolutionException {
@@ -40,22 +51,22 @@ public class DockerOpenPaasExtension implements ParameterResolver {
 
     @Override
     public Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext) throws ParameterResolutionException {
-        return DockerOpenPaasSetupSingleton.singleton;
+        return dockerOpenPaasSetupSingleton;
     }
 
     public DockerOpenPaasSetup getDockerOpenPaasSetupSingleton() {
-        return DockerOpenPaasSetupSingleton.singleton;
+        return dockerOpenPaasSetupSingleton;
     }
 
     public OpenPaasUser newTestUser() {
-        return DockerOpenPaasSetupSingleton.singleton
+        return dockerOpenPaasSetupSingleton
             .getOpenPaaSProvisioningService()
             .createUser()
             .block();
     }
 
     public String domainId() {
-        return ((ObjectId) DockerOpenPaasSetupSingleton.singleton
+        return ((ObjectId) dockerOpenPaasSetupSingleton
             .getOpenPaaSProvisioningService()
             .openPaasDomain()
             .get("_id")).toString();
