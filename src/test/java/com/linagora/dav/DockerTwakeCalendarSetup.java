@@ -76,6 +76,7 @@ public class DockerTwakeCalendarSetup {
 
             // Use that temp file in Testcontainers
             environment = new ComposeContainer(tempCompose.toFile())
+                .withLocalCompose(true)
                 .waitingFor("twake-calendar-side-service", Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withLogConsumer("sabre_dav", log -> System.out.print("sabre_dav " + log.getUtf8String()))
