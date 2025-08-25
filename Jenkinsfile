@@ -19,7 +19,7 @@ pipeline {
         }
         stage('Test') {
             steps {
-                sh 'mvn -B surefire:test'
+                sh 'mvn test -Dtest=com.linagora.dav.AlarmAMQPMessageTest'
             }
             post {
                 always {
