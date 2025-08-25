@@ -6,14 +6,7 @@ networks:
 
 services:
   twake-calendar-side-service:
-    image: linagora/twake-calendar-side-service:21-07-2025-4
-    volumes:
-      - ./twake-calendar-side-service-conf/configuration.properties:/root/conf/configuration.properties
-      - ./twake-calendar-side-service-conf/opensearch.properties:/root/conf/opensearch.properties
-      - ./twake-calendar-side-service-conf/rabbitmq.properties:/root/conf/rabbitmq.properties
-      - ./twake-calendar-side-service-conf/webadmin.properties:/root/conf/webadmin.properties
-      - ./twake-calendar-side-service-conf/jwt_privatekey:/root/conf/jwt_privatekey
-      - ./twake-calendar-side-service-conf/jwt_publickey:/root/conf/jwt_publickey
+    image: tcalendar-it
     depends_on:
       opensearch:
         condition: service_healthy
@@ -59,7 +52,7 @@ services:
 
   sabre_dav:
     hostname: esn_sabre
-    image: chibenwa/sabre:lng-21-02-2025
+    image: sabre-it
     environment:
       - SABRE_ENV=dev
       - SABRE_MONGO_HOST=mongo
@@ -79,7 +72,5 @@ services:
       - SABRE_ADMIN_LOGIN=admin
       - SABRE_ADMIN_PASSWORD=secret123
       - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=
-    volumes:
-      - ./twake-calendar-side-service-conf/jwt_publickey:/var/www/config/esn.key.pub
     networks:
       - emaily
