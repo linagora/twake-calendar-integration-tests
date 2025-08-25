@@ -1,4 +1,4 @@
-version: "3"
+version: "2"
 
 networks:
   emaily:
@@ -62,7 +62,8 @@ services:
 
   sabre_dav:
     hostname: esn_sabre
-    image: chibenwa/sabre:lng-21-02-2025
+#    image: chibenwa/sabre:lng-21-02-2025
+    image: linagora/esn-sabre:v4-dev1
     environment:
       - SABRE_ENV=dev
       - SABRE_MONGO_HOST=mongo

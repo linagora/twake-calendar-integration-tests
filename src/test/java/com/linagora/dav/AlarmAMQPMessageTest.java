@@ -186,12 +186,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -259,6 +253,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -310,7 +310,7 @@ public class AlarmAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "etag", "event[2][1][1][10][3]").isEqualTo(expected);
     }
 
     @Test
@@ -416,12 +416,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -488,6 +482,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -540,7 +540,7 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "etag", "event[2][1][1][10][3]").isEqualTo(expected);
     }
 
     @Test
@@ -658,12 +658,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -731,6 +725,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -851,12 +851,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -924,6 +918,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -976,7 +976,7 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag").isEqualTo(expected);
     }
 
     @Test
@@ -1094,12 +1094,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1166,6 +1160,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1218,7 +1218,7 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "etag", "event[2][1][1][10][3]").isEqualTo(expected);
     }
 
     @Test
@@ -1337,12 +1337,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1410,6 +1404,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1530,12 +1530,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1602,6 +1596,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1654,7 +1654,7 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag").isEqualTo(expected);
     }
 
     @Test
@@ -1760,12 +1760,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1833,6 +1827,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1883,7 +1883,7 @@ public class AlarmAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "etag", "event[2][1][1][10][3]").isEqualTo(expected);
     }
 
     @Test
@@ -1991,12 +1991,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "dtstart",
                         {
                           "tzid": "Asia/Ho_Chi_Minh"
@@ -2057,6 +2051,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ],
                       [
                         "status",
@@ -2121,7 +2121,7 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "etag", "event[2][1][1][9][3]").isEqualTo(expected);
     }
 
     private byte[] getMessageFromQueue() {
@@ -2165,7 +2165,6 @@ public class AlarmAMQPMessageTest {
             END:VTIMEZONE
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250411T022032Z
             SEQUENCE:1
             DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
             DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}

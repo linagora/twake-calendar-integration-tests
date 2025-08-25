@@ -55,6 +55,8 @@ abstract class OpenPaaSAPITest {
 
     abstract ContainerState container();
 
+    abstract ContainerState getElasticsearchContainer();
+
     @BeforeEach
     void setUp() {
         RestAssured.requestSpecification = new RequestSpecBuilder()
@@ -557,7 +559,7 @@ abstract class OpenPaaSAPITest {
 
         Thread.sleep(1000);
         with()
-            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getElasticsearchContainer()) + ":9200")
+            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(getElasticsearchContainer()) + ":9200")
             .post("_flush");
         Thread.sleep(1000);
 
@@ -617,7 +619,7 @@ abstract class OpenPaaSAPITest {
 
         Thread.sleep(1000);
         with()
-            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getElasticsearchContainer()) + ":9200")
+            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(getElasticsearchContainer()) + ":9200")
             .post("_flush");
         Thread.sleep(1000);
 
