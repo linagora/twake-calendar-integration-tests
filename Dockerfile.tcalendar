@@ -1,0 +1,8 @@
+FROM linagora/twake-calendar-side-service:21-07-2025-4
+
+COPY src/test/resources/twake-calendar-side-service-conf/configuration.properties /root/conf/configuration.properties
+COPY src/test/resources/twake-calendar-side-service-conf/opensearch.properties /root/conf/opensearch.properties
+COPY src/test/resources/twake-calendar-side-service-conf/rabbitmq.properties /root/conf/rabbitmq.properties
+COPY src/test/resources/twake-calendar-side-service-conf/webadmin.properties /root/conf/webadmin.properties
+COPY src/test/resources/twake-calendar-side-service-conf/jwt_privatekey /root/conf/jwt_privatekey
+COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /root/conf/jwt_publickey

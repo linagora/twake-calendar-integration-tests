@@ -6,7 +6,7 @@ networks:
 
 services:
   twake-calendar-side-service:
-    image: linagora/twake-calendar-side-service:21-07-2025-4
+    image: tcalendar-it
     volumes:
       - ./twake-calendar-side-service-conf/configuration.properties:/root/conf/configuration.properties
       - ./twake-calendar-side-service-conf/opensearch.properties:/root/conf/opensearch.properties
@@ -59,7 +59,7 @@ services:
 
   sabre_dav:
     hostname: esn_sabre
-    image: chibenwa/sabre:lng-21-02-2025
+    image: sabre-it
     environment:
       - SABRE_ENV=dev
       - SABRE_MONGO_HOST=mongo

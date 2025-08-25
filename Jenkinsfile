@@ -14,6 +14,7 @@ pipeline {
     stages {
         stage('Compile and Test') {
             steps {
+                sh 'sh pre-build.sh'
                 sh 'mvn clean install'
             }
             post {
