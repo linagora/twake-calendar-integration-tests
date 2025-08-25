@@ -7,13 +7,6 @@ networks:
 services:
   twake-calendar-side-service:
     image: tcalendar-it
-    volumes:
-      - ./twake-calendar-side-service-conf/configuration.properties:/root/conf/configuration.properties
-      - ./twake-calendar-side-service-conf/opensearch.properties:/root/conf/opensearch.properties
-      - ./twake-calendar-side-service-conf/rabbitmq.properties:/root/conf/rabbitmq.properties
-      - ./twake-calendar-side-service-conf/webadmin.properties:/root/conf/webadmin.properties
-      - ./twake-calendar-side-service-conf/jwt_privatekey:/root/conf/jwt_privatekey
-      - ./twake-calendar-side-service-conf/jwt_publickey:/root/conf/jwt_publickey
     depends_on:
       opensearch:
         condition: service_healthy
@@ -78,8 +71,6 @@ services:
       - AMQP_PASSWORD=guest
       - SABRE_ADMIN_LOGIN=admin
       - SABRE_ADMIN_PASSWORD=secret123
-      - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=
-    volumes:
-      - ./twake-calendar-side-service-conf/jwt_publickey:/var/www/config/esn.key.pub
+      - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=p
     networks:
       - emaily
