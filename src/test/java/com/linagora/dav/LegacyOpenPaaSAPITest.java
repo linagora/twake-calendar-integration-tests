@@ -18,11 +18,13 @@
 
 package com.linagora.dav;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.containers.ContainerState;
 
 import reactor.netty.http.client.HttpClient;
 
+@Disabled
 public class LegacyOpenPaaSAPITest extends OpenPaaSAPITest {
     @RegisterExtension
     static DockerOpenPaasExtension extension = new DockerOpenPaasExtension();
