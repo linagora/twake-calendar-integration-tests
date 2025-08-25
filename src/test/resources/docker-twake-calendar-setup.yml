@@ -8,12 +8,12 @@ services:
   twake-calendar-side-service:
     image: linagora/twake-calendar-side-service:21-07-2025-4
     volumes:
-      - ./twake-calendar-side-service-conf/configuration.properties:/root/conf/configuration.properties
-      - ./twake-calendar-side-service-conf/opensearch.properties:/root/conf/opensearch.properties
-      - ./twake-calendar-side-service-conf/rabbitmq.properties:/root/conf/rabbitmq.properties
-      - ./twake-calendar-side-service-conf/webadmin.properties:/root/conf/webadmin.properties
-      - ./twake-calendar-side-service-conf/jwt_privatekey:/root/conf/jwt_privatekey
-      - ./twake-calendar-side-service-conf/jwt_publickey:/root/conf/jwt_publickey
+      - ${CONFIGURATION_CONF}:/root/conf/configuration.properties
+      - ${OPENSEARCH_CONF}:/root/conf/opensearch.properties
+      - ${RABBIT_CONF}:/root/conf/rabbitmq.properties
+      - ${WEBADMIN_CONF}:/root/conf/webadmin.properties
+      - ${JWT_PRIVATEKEY}:/root/conf/jwt_privatekey
+      - ${JWT_PUBLICKEY}:/root/conf/jwt_publickey
     depends_on:
       opensearch:
         condition: service_healthy
@@ -49,9 +49,6 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13.3-management
-    ports:
-      - 5672:5672
-      - 15672:15672
     networks:
       - emaily
 
@@ -83,6 +80,6 @@ services:
       - SABRE_ADMIN_PASSWORD=secret123
       - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=
     volumes:
-      - ./twake-calendar-side-service-conf/jwt_publickey:/var/www/config/esn.key.pub
+      - ${JWT_PUBLICKEY}:/var/www/config/esn.key.pub
     networks:
       - emaily
