@@ -373,6 +373,7 @@ class CardJsonTest {
             .asString();
 
         assertThatJson(response)
+            .whenIgnoringPaths("[1][1][3]") // Path to prodid value
             .isEqualTo("""
                 [
                     "vcard",

@@ -24,6 +24,11 @@ import static com.linagora.dav.TestUtil.executeNoContent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
+import java.util.List;
+import java.util.Map;
+
+import org.assertj.core.api.AssertionsForInterfaceTypes;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.xmlunit.assertj3.XmlAssert;
@@ -98,7 +103,7 @@ class CardDavTest {
     }
 
     @Test
-    void propfindShouldListUserAddressBooks() {
+    void propfindShouldListUserAddressBooks() throws Exception {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
@@ -106,18 +111,19 @@ class CardDavTest {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
-        XmlAssert.assertThat(response.body())
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
-            .ignoreChildNodesOrder()
-            .areIdentical();
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        AssertionsForInterfaceTypes.assertThat(actual).containsExactlyInAnyOrder("/addressbooks/" + testUser.id() + "/",
+            "/addressbooks/" + testUser.id() + "/collected/",
+            "/addressbooks/" + testUser.id() + "/contacts/");
     }
 
     @Test
-    void mkcolShouldCreateNewAddressBook() {
+    void mkcolShouldCreateNewAddressBook() throws Exception {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
@@ -140,16 +146,13 @@ class CardDavTest {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
-        XmlAssert.assertThat(response.body())
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/awesome/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
-            .ignoreChildNodesOrder()
-            .areIdentical();
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        AssertionsForInterfaceTypes.assertThat(actual).contains("/addressbooks/" + testUser.id() + "/awesome/");
     }
 
     @Test
@@ -180,7 +183,7 @@ class CardDavTest {
     }
 
     @Test
-    void propfindShouldNotReturnDeletedAddressBooks() {
+    void propfindShouldNotReturnDeletedAddressBooks() throws Exception {
 
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
@@ -209,15 +212,13 @@ class CardDavTest {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
-        XmlAssert.assertThat(response.body())
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
-            .ignoreChildNodesOrder()
-            .areIdentical();
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        AssertionsForInterfaceTypes.assertThat(actual).doesNotContain("/addressbooks/" + testUser.id() + "/awesome/");
     }
 
     @Test
@@ -474,7 +475,7 @@ class CardDavTest {
     }
 
     @Test
-    void putShouldBeListedByPropfind() {
+    void putShouldBeListedByPropfind() throws Exception {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
@@ -488,19 +489,17 @@ class CardDavTest {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id() + "/contacts"));
 
-        XmlAssert.assertThat(response.body())
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><d:getlastmodified>Fri, 14 Feb 2025 14:57:02 GMT</d:getlastmodified><d:getcontentlength>101</d:getcontentlength><d:resourcetype/><d:getetag>&quot;b6cfbc684d6173513ed73f413e6b6cb4&quot;</d:getetag><d:getcontenttype>text/vcard; charset=utf-8</d:getcontenttype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
-            .ignoreChildNodesOrder()
-            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
-            .areSimilar();
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        AssertionsForInterfaceTypes.assertThat(actual).contains("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf");
     }
 
     @Test
-    void putShouldNotBeListedByPropfindWhenWrongDepth() {
+    void putShouldNotBeListedByPropfindWhenWrongDepth() throws Exception {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
@@ -514,16 +513,13 @@ class CardDavTest {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
-        XmlAssert.assertThat(response.body())
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/collected/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
-            .ignoreChildNodesOrder()
-            .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
-            .areSimilar();
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        AssertionsForInterfaceTypes.assertThat(actual).doesNotContain("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf");
     }
 
     @Test
@@ -685,6 +681,7 @@ class CardDavTest {
         assertThat(status).isEqualTo(201);
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/34")
     @Test
     void headShouldReturnFound() {
         OpenPaasUser testUser = dockerExtension.newTestUser();

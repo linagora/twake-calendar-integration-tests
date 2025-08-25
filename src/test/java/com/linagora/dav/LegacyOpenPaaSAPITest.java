@@ -43,6 +43,11 @@ public class LegacyOpenPaaSAPITest extends OpenPaaSAPITest {
 
     @Override
     ContainerState container() {
-        return DockerOpenPaasSetupSingleton.singleton.getOpenPaasContainer();
+        return extension.getDockerOpenPaasSetupSingleton().getOpenPaasContainer();
+    }
+
+    @Override
+    ContainerState getElasticsearchContainer() {
+        return extension.getDockerOpenPaasSetupSingleton().getElasticsearchContainer();
     }
 }
