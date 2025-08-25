@@ -32,7 +32,6 @@ public class DockerOpenPaasExtension implements BeforeAllCallback, AfterAllCallb
 
     public static final boolean DEBUG = true;
 
-    // Ensuring DockerOpenPaasSetupSingleton is loaded to classpath
     private DockerOpenPaasSetup dockerOpenPaasSetupSingleton = new DockerOpenPaasSetup();
 
     @Override

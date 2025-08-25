@@ -32,7 +32,6 @@ public class DockerTwakeCalendarExtension implements BeforeAllCallback, AfterAll
 
     public static final boolean DEBUG = true;
 
-    // Ensuring DockerTwakeCalendarSetupSingleton is loaded to classpath
     private DockerTwakeCalendarSetup dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup();
 
     @Override
