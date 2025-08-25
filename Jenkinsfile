@@ -12,9 +12,14 @@ pipeline {
     }
 
     stages {
-        stage('Compile and Test') {
+        stage('Compile') {
             steps {
-                sh 'mvn clean install'
+                sh 'mvn clean install -Dmaven.javadoc.skip=true -DskipTests -T1C'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'mvn -B surefire:test'
             }
             post {
                 always {
