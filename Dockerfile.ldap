@@ -1,0 +1,3 @@
+FROM bitnami/openldap
+
+COPY src/test/resources/twake-calendar-side-service-conf/ldap_populate.ldif /ldifs/populate.ldif
