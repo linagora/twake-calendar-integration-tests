@@ -16,6 +16,8 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_started
+      ldap:
+        condition: service_started
       sabre_dav:
         condition: service_started
     networks:
@@ -50,6 +52,18 @@ services:
     networks:
       - emaily
 
+  ldap:
+    hostname: esn_ldap
+    image: ldap-it
+    environment:
+      - LDAP_PORT_NUMBER=389
+      - LDAP_ADMIN_USERNAME=admin
+      - LDAP_ADMIN_PASSWORD=admin
+      - LDAP_ROOT=dc=open-paas.org,dc=lng
+      - BITNAMI_DEBUG=true
+    networks:
+      - emaily
+
   sabre_dav:
     hostname: esn_sabre
     image: sabre-it
@@ -72,5 +86,11 @@ services:
       - SABRE_ADMIN_LOGIN=admin
       - SABRE_ADMIN_PASSWORD=secret123
       - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=
+      - LDAP_ADMIN_DN=cn=admin,dc=open-paas.org,dc=lng
+      - LDAP_ADMIN_PASSWORD=admin
+      - LDAP_BASE=ou=users,dc=open-paas.org,dc=lng
+      - LDAP_BASE_WITH_MAIL=ou=users,dc=open-paas.org,dc=lng
+      - LDAP_SERVER=ldap://esn_ldap:389
+      - LDAP_USERNAME_MODE=username
     networks:
       - emaily
