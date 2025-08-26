@@ -16,12 +16,21 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.sabrev4;
 
-public class DockerOpenPaasSetupSingleton {
-    public static final DockerOpenPaasSetup singleton = new DockerOpenPaasSetup();
+import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
 
-    static {
-        singleton.start();
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.contracts.CalDavContract;
+
+public class SabreV4CalDavTest extends CalDavContract {
+    @RegisterExtension
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V4);
+
+    @Override
+    public DockerTwakeCalendarExtension dockerExtension() {
+        return dockerExtension;
     }
 }

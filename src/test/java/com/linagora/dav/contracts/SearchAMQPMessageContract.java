@@ -16,9 +16,9 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.contracts;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -32,10 +32,13 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestContainersUtils;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -44,7 +47,7 @@ import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
 
-public class SearchAMQPMessageTest {
+public abstract class SearchAMQPMessageContract {
 
     public static final String QUEUE_NAME = "tcalendar:event:test";
 
@@ -56,23 +59,22 @@ public class SearchAMQPMessageTest {
         .await();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
-    @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
-
     private CalDavClient calDavClient;
     private Connection connection;
     private Channel channel;
+
+    public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
+            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        calDavClient = new CalDavClient(dockerExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -90,11 +92,11 @@ public class SearchAMQPMessageTest {
     }
 
     @Test
-    void shouldReceiveMessageFromEventCreatedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:created", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -127,12 +129,6 @@ public class SearchAMQPMessageTest {
                      {},
                      "text",
                      "-//Sabre//Sabre VObject 4.1.3//EN"
-                   ],
-                   [
-                     "calscale",
-                     {},
-                     "text",
-                     "GREGORIAN"
                    ]
                  ],
                  [
@@ -187,12 +183,6 @@ public class SearchAMQPMessageTest {
                          {},
                          "text",
                          "{eventUid}"
-                       ],
-                       [
-                         "dtstamp",
-                         {},
-                         "date-time",
-                         "3025-04-11T02:20:32Z"
                        ],
                        [
                          "sequence",
@@ -251,6 +241,12 @@ public class SearchAMQPMessageTest {
                          },
                          "cal-address",
                          "mailto:{attendeeEmail}"
+                       ],
+                       [
+                         "dtstamp",
+                         {},
+                         "date-time",
+                         "3025-04-11T02:20:32Z"
                        ]
                      ],
                      []
@@ -265,12 +261,8 @@ public class SearchAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
@@ -278,8 +270,8 @@ public class SearchAMQPMessageTest {
         channel.queueDeclare(QUEUE_NAME, false, true, true, null);
         channel.queueBind(QUEUE_NAME, "calendar:event:updated", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -323,12 +315,6 @@ public class SearchAMQPMessageTest {
                     {},
                     "text",
                     "-//Sabre//Sabre VObject 4.1.3//EN"
-                  ],
-                  [
-                    "calscale",
-                    {},
-                    "text",
-                    "GREGORIAN"
                   ]
                 ],
                 [
@@ -383,12 +369,6 @@ public class SearchAMQPMessageTest {
                         {},
                         "text",
                         "{eventUid}"
-                      ],
-                      [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
                       ],
                       [
                         "sequence",
@@ -447,6 +427,12 @@ public class SearchAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -468,12 +454,6 @@ public class SearchAMQPMessageTest {
                     {},
                     "text",
                     "-//Sabre//Sabre VObject 4.1.3//EN"
-                  ],
-                  [
-                    "calscale",
-                    {},
-                    "text",
-                    "GREGORIAN"
                   ]
                 ],
                 [
@@ -528,12 +508,6 @@ public class SearchAMQPMessageTest {
                         {},
                         "text",
                         "{eventUid}"
-                      ],
-                      [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
                       ],
                       [
                         "sequence",
@@ -592,6 +566,12 @@ public class SearchAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -610,15 +590,17 @@ public class SearchAMQPMessageTest {
         actualJson.remove("etag");
         expectedJson.remove("etag");
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "old_event[1][1][3]", "old_event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventDeletedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:deleted", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -653,12 +635,6 @@ public class SearchAMQPMessageTest {
                     {},
                     "text",
                     "-//Sabre//Sabre VObject 4.1.3//EN"
-                  ],
-                  [
-                    "calscale",
-                    {},
-                    "text",
-                    "GREGORIAN"
                   ]
                 ],
                 [
@@ -713,12 +689,6 @@ public class SearchAMQPMessageTest {
                         {},
                         "text",
                         "{eventUid}"
-                      ],
-                      [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
                       ],
                       [
                         "sequence",
@@ -777,6 +747,12 @@ public class SearchAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -790,18 +766,16 @@ public class SearchAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventCancelExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventCancelExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:cancel", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -900,12 +874,6 @@ public class SearchAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "dtstart",
                         {
                           "tzid": "Asia/Ho_Chi_Minh"
@@ -957,6 +925,12 @@ public class SearchAMQPMessageTest {
                         "mailto:{attendeeEmail}"
                       ],
                       [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
+                      ],
+                      [
                         "status",
                         {},
                         "text",
@@ -981,20 +955,16 @@ public class SearchAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][8][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
-    void shouldReceiveMessageFromEventRequestExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventRequestExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:request", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1091,12 +1061,6 @@ public class SearchAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1152,6 +1116,12 @@ public class SearchAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -1166,12 +1136,8 @@ public class SearchAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     private byte[] getMessageFromQueue() {
@@ -1190,8 +1156,6 @@ public class SearchAMQPMessageTest {
         return """
             BEGIN:VCALENDAR
             VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
             BEGIN:VTIMEZONE
             TZID:Asia/Ho_Chi_Minh
             BEGIN:STANDARD
@@ -1203,7 +1167,6 @@ public class SearchAMQPMessageTest {
             END:VTIMEZONE
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250411T022032Z
             SEQUENCE:1
             DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
             DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}

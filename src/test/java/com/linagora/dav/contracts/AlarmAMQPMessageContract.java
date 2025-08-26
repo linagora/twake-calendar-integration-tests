@@ -16,7 +16,7 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.contracts;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
@@ -32,15 +32,18 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestContainersUtils;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 
-public class AlarmAMQPMessageTest {
+public abstract class AlarmAMQPMessageContract {
 
     public static final String QUEUE_NAME = "tcalendar:event:test";
 
@@ -52,23 +55,22 @@ public class AlarmAMQPMessageTest {
         .await();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
-    @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
-
     private CalDavClient calDavClient;
     private Connection connection;
     private Channel channel;
+    
+    public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
+            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        calDavClient = new CalDavClient(dockerExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -89,8 +91,8 @@ public class AlarmAMQPMessageTest {
     void shouldReceiveMessageFromEventAlarmCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -186,12 +188,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -259,6 +255,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -310,15 +312,16 @@ public class AlarmAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
     void shouldReceiveMessageFromEventAlarmRequestExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -416,12 +419,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -488,6 +485,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -540,15 +543,16 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
     void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenUpdateEvent() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -658,12 +662,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -731,6 +729,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -851,12 +855,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -924,6 +922,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -976,15 +980,17 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
     void shouldReceiveMessageFromEventAlarmRequestExchangeWhenUpdateEvent() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1094,12 +1100,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1166,6 +1166,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1218,15 +1224,16 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
     void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenAccept() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1337,12 +1344,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1410,6 +1411,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1530,12 +1537,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1602,6 +1603,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1654,15 +1661,17 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
     void shouldReceiveMessageFromEventAlarmDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1760,12 +1769,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "sequence",
                         {},
                         "integer",
@@ -1833,6 +1836,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     [
@@ -1883,15 +1892,16 @@ public class AlarmAMQPMessageTest {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     @Test
     void shouldReceiveMessageFromEventAlarmCancelExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1991,12 +2001,6 @@ public class AlarmAMQPMessageTest {
                         "{eventUid}"
                       ],
                       [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ],
-                      [
                         "dtstart",
                         {
                           "tzid": "Asia/Ho_Chi_Minh"
@@ -2057,6 +2061,12 @@ public class AlarmAMQPMessageTest {
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
                       ],
                       [
                         "status",
@@ -2121,7 +2131,8 @@ public class AlarmAMQPMessageTest {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("etag").isEqualTo(expected);
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
     }
 
     private byte[] getMessageFromQueue() {
@@ -2165,7 +2176,6 @@ public class AlarmAMQPMessageTest {
             END:VTIMEZONE
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250411T022032Z
             SEQUENCE:1
             DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
             DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}

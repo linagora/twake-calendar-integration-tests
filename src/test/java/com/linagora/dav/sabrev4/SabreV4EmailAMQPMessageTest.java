@@ -16,38 +16,21 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.sabrev4;
+
+import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
 
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.testcontainers.containers.ContainerState;
 
-import reactor.netty.http.client.HttpClient;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.contracts.EmailAMQPMessageContract;
 
-public class LegacyOpenPaaSAPITest extends OpenPaaSAPITest {
+public class SabreV4EmailAMQPMessageTest extends EmailAMQPMessageContract {
     @RegisterExtension
-    static DockerOpenPaasExtension extension = new DockerOpenPaasExtension();
-
-    OpenPaasUser createUser() {
-        return extension.newTestUser();
-    }
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V4);
 
     @Override
-    HttpClient davHttpClient() {
-        return extension.davHttpClient();
-    }
-
-    @Override
-    String domainId() {
-        return extension.domainId();
-    }
-
-    @Override
-    ContainerState container() {
-        return extension.getDockerOpenPaasSetupSingleton().getOpenPaasContainer();
-    }
-
-    @Override
-    ContainerState getElasticsearchContainer() {
-        return extension.getDockerOpenPaasSetupSingleton().getElasticsearchContainer();
+    public DockerTwakeCalendarExtension dockerExtension() {
+        return dockerExtension;
     }
 }

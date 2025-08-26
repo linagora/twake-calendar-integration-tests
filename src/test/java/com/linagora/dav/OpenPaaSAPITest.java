@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.ContainerState;
 
+import com.linagora.dav.contracts.CalDavContract;
+
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
@@ -54,6 +56,8 @@ abstract class OpenPaaSAPITest {
     abstract String domainId();
 
     abstract ContainerState container();
+
+    abstract ContainerState getElasticsearchContainer();
 
     @BeforeEach
     void setUp() {
@@ -548,7 +552,7 @@ abstract class OpenPaaSAPITest {
                 .add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + adminId + "/" + adminId + "/abcd.ics")
-            .send(body(CalDavTest.ICS_1))
+            .send(body(CalDavContract.ICS_1))
             .response()
             .block()
             .status()
@@ -557,7 +561,7 @@ abstract class OpenPaaSAPITest {
 
         Thread.sleep(1000);
         with()
-            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getElasticsearchContainer()) + ":9200")
+            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(getElasticsearchContainer()) + ":9200")
             .post("_flush");
         Thread.sleep(1000);
 
@@ -617,7 +621,7 @@ abstract class OpenPaaSAPITest {
 
         Thread.sleep(1000);
         with()
-            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(DockerOpenPaasSetupSingleton.singleton.getElasticsearchContainer()) + ":9200")
+            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(getElasticsearchContainer()) + ":9200")
             .post("_flush");
         Thread.sleep(1000);
 

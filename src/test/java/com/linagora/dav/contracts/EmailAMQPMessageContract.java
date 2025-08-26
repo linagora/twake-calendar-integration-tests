@@ -16,7 +16,7 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.contracts;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
@@ -32,10 +32,14 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalendarUtil;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestContainersUtils;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -47,7 +51,7 @@ import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
 
-class EmailAMQPMessageTest {
+public abstract class EmailAMQPMessageContract {
 
     public static final String QUEUE_NAME = "tcalendar:event:test";
     public static final boolean NOT_COUNTER = false;
@@ -61,23 +65,22 @@ class EmailAMQPMessageTest {
         .await();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
-    @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
-
     private CalDavClient calDavClient;
     private Connection connection;
     private Channel channel;
+
+    public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
+            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        calDavClient = new CalDavClient(dockerExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -97,8 +100,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCreation() throws ParseException {
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -138,6 +141,10 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
 
@@ -147,8 +154,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventUpdate() throws ParseException {
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
@@ -241,6 +248,10 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
 
@@ -250,8 +261,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCancel() throws ParseException {
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -293,7 +304,9 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
         actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
         expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
@@ -304,8 +317,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventReply() throws ParseException {
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
@@ -358,7 +371,9 @@ class EmailAMQPMessageTest {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
+        actualCalendar.removeAll(Property.PRODID);
         actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
         expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         actualJson.remove("event");
         expectedJson.remove("event");
@@ -369,8 +384,8 @@ class EmailAMQPMessageTest {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCounter() throws ParseException {
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
