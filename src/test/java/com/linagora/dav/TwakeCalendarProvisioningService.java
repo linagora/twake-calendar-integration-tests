@@ -59,6 +59,10 @@ public class TwakeCalendarProvisioningService {
             .then(createUserInMongo(randomUUID));
     }
 
+    public Mono<OpenPaasUser> createUser(String localPart) {
+        return createUserInMongo(localPart);
+    }
+
     private Mono<Void> createUserInUsersRepository(UUID randomUUID) {
         String username = "user_" + randomUUID + "@open-paas.org";
         return createUserInUsersRepository(username);
@@ -111,5 +115,22 @@ public class TwakeCalendarProvisioningService {
                 Mono.from(
                     database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
             .map(OpenPaasUser::fromDocument);
+    }
+
+    private Mono<OpenPaasUser> createUserInMongo(String localPart) {
+        Document userToSave = new Document()
+                .append("firstname", "User_" + localPart)
+                .append("lastname", "User_" + localPart)
+                .append("password", PASSWORD)
+                .append("domains",  List.of(new Document("domain_id", openPaasDomain().get("_id"))))
+                .append("accounts", List.of(new Document()
+                        .append("type", "email")
+                        .append("emails", List.of(localPart + "@open-paas.org"))));
+
+        return Mono.from(database.getCollection("users").insertOne(userToSave))
+                .flatMap(success ->
+                        Mono.from(
+                                database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
+                .map(OpenPaasUser::fromDocument);
     }
 }
