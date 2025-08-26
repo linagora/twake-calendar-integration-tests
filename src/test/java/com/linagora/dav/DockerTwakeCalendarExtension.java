@@ -76,10 +76,10 @@ public class DockerTwakeCalendarExtension implements BeforeAllCallback, AfterAll
     }
 
     public OpenPaasUser newTestUser(String localPart) {
-        return DockerTwakeCalendarSetupSingleton.singleton
-                .getTwakeCalendarProvisioningService()
-                .createUser(localPart)
-                .block();
+        return dockerTwakeCalendarSetup
+            .getTwakeCalendarProvisioningService()
+            .createUser(localPart)
+            .block();
     }
 
     public TwakeCalendarProvisioningService twakeCalendarProvisioningService() {
