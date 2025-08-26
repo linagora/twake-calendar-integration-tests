@@ -90,7 +90,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks"));
 
@@ -102,7 +102,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
@@ -121,7 +121,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
@@ -136,7 +136,7 @@ class CardDavTest {
                 "         </d:mkcol>"))));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
@@ -157,7 +157,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
@@ -172,7 +172,7 @@ class CardDavTest {
                 "         </d:mkcol>"))));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/awesome"));
 
@@ -185,7 +185,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
@@ -200,12 +200,12 @@ class CardDavTest {
                 "         </d:mkcol>"))));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/awesome"));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
@@ -225,7 +225,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
@@ -247,7 +247,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome")
@@ -262,7 +262,7 @@ class CardDavTest {
                 "         </d:mkcol>"))));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/" + testUser.id() + "/awesome/v2")
@@ -284,7 +284,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(header -> testUser.basicAuth(header)
+            .headers(header -> testUser.impersonatedBasicAuth(header)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/addressbooks/awesome")
@@ -306,7 +306,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id() + "/contacts"));
 
@@ -322,7 +322,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
@@ -335,13 +335,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .get()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -353,7 +353,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .get()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -365,13 +365,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(("BEGIN:VCARD\n" +
@@ -383,7 +383,7 @@ class CardDavTest {
                 "END:VCARD\n"))));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .get()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -401,13 +401,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
@@ -420,13 +420,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -438,7 +438,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -450,18 +450,18 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id() + "/contacts"));
 
@@ -478,13 +478,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id() + "/contacts"));
 
@@ -504,13 +504,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id()));
 
@@ -531,13 +531,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id())
             .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
@@ -563,13 +563,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/other.vcf")
             .send(body(STRING)));
@@ -582,7 +582,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
             .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
@@ -601,7 +601,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
             .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
@@ -627,7 +627,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
             .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
@@ -639,7 +639,7 @@ class CardDavTest {
                 "        </d:propertyupdate>")));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + testUser.id())
             .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
@@ -666,18 +666,18 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
@@ -690,13 +690,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .head()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -708,7 +708,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .head()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -720,13 +720,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .get()
             .uri("/addressbooks/" + testUser.id() + "/contacts?export"));
 
@@ -744,12 +744,12 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -775,7 +775,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)).response()
@@ -789,7 +789,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("If-Match", "bad"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", "bad"))
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
@@ -802,14 +802,14 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)).response()
             .block();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("If-Match", "bad"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", "bad"))
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(("BEGIN:VCARD\n" +
@@ -828,7 +828,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response1 = dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)).response()
@@ -836,7 +836,7 @@ class CardDavTest {
         String etag = response1.responseHeaders().get("ETag");
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("If-Match", etag))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", etag))
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(("BEGIN:VCARD\n" +
@@ -855,7 +855,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response1 = dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)).response()
@@ -863,7 +863,7 @@ class CardDavTest {
         String etag1 = response1.responseHeaders().get("ETag");
 
         HttpClientResponse response2 = dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(("BEGIN:VCARD\n" +
@@ -885,13 +885,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
        executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("If-Match", "bad"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", "bad"))
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -903,13 +903,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String etag = dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)).response().block().responseHeaders().get("ETag");
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("If-Match", etag))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", etag))
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
@@ -921,7 +921,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "0"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -947,7 +947,7 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("REPORT"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
@@ -975,13 +975,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("REPORT"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
@@ -1018,18 +1018,18 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("REPORT"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
@@ -1065,13 +1065,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(("BEGIN:VCARD\n" +
@@ -1083,7 +1083,7 @@ class CardDavTest {
                 "END:VCARD\n"))));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("REPORT"))
             .uri("/addressbooks/" + testUser.id() + "/contacts")
@@ -1120,13 +1120,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1163,13 +1163,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1201,13 +1201,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1244,13 +1244,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1289,13 +1289,13 @@ class CardDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))

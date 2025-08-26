@@ -78,7 +78,7 @@ public class CalDavClient {
     }
 
     public void upsertCalendarEvent(OpenPaasUser user, String eventUid, String initialCalendarData) {
-        httpClient.headers(headers -> user.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics")
             .send(TestUtil.body(initialCalendarData))
@@ -96,7 +96,7 @@ public class CalDavClient {
     }
 
     public void deleteCalendarEvent(OpenPaasUser user, String eventUid) {
-        httpClient.headers(headers -> user.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .delete()
             .uri("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics")
             .responseSingle((response, responseContent) -> {
@@ -121,7 +121,7 @@ public class CalDavClient {
     }
 
     public Flux<String> findUserCalendarEventIds(OpenPaasUser openPaaSUser, CalendarURL calendarURL) {
-        return httpClient.headers(headers -> openPaaSUser.basicAuth(headers).add(HttpHeaderNames.CONTENT_TYPE, "application/xml"))
+        return httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers).add(HttpHeaderNames.CONTENT_TYPE, "application/xml"))
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri(calendarURL.asUri().toString())
             .responseSingle((response, responseContent) -> {
@@ -147,7 +147,7 @@ public class CalDavClient {
     public Flux<CalendarURL> findUserCalendars(OpenPaasUser openPaaSUser) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
             + "?personal=true&sharedDelegationStatus=accepted&sharedPublicSubscription=true&withRights=true";
-        return httpClient.headers(headers -> openPaaSUser.basicAuth(headers)
+        return httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
             .request(HttpMethod.GET)
             .uri(uri)
@@ -167,7 +167,7 @@ public class CalDavClient {
 
     public void postCounter(OpenPaasUser openPaaSUser, String attendeeEventUid, CounterRequest counterRequest) {
         URI uri = URI.create("/calendars/" + openPaaSUser.id() + "/" + openPaaSUser.id() + "/" + attendeeEventUid + ".ics");
-        httpClient.headers(headers -> openPaaSUser.basicAuth(headers)
+        httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/calendar+json")
                 .add("Accept", "application/json, text/plain, */*")
                 .add("x-http-method-override", "ITIP"))
@@ -204,7 +204,7 @@ public class CalDavClient {
             }
             """.replace("{{email}}", delegatedUser.email());
 
-        httpClient.headers(headers -> user.basicAuth(headers)
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)

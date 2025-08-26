@@ -43,7 +43,7 @@ public class CardDavClient {
     }
 
     public void upsertContact(OpenPaasUser openPaasUser, String addressBook, String vcardUid, byte[] vcardPayload) {
-        client.headers(headers -> openPaasUser.basicAuth(headers)
+        client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .put()
@@ -56,7 +56,7 @@ public class CardDavClient {
 
     public void deleteContact(OpenPaasUser openPaasUser, String addressBookId, String vcardUid) {
         String uri = String.format("/addressbooks/%s/%s/%s.vcf", openPaasUser.id(), addressBookId, vcardUid);
-        client.headers(headers -> openPaasUser.basicAuth(headers)
+        client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
             .delete()
             .uri(uri)

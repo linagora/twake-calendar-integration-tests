@@ -59,7 +59,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)
@@ -144,7 +144,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -169,7 +169,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)
@@ -201,13 +201,13 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
             .queryParam("offset", 0)
             .queryParam("sort", "fn")
@@ -290,13 +290,13 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -357,13 +357,13 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json/abcdef.vcf")
@@ -492,13 +492,13 @@ class CardJsonTest {
                 []
             ]""";
         with()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Content-Type", "application/vcard+json")
             .body(payload)
             .put("addressbooks/" + testUser.id() + "/contacts/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf");
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
             .queryParam("offset", 0)
             .queryParam("sort", "fn")
@@ -667,7 +667,7 @@ class CardJsonTest {
                 []
             ]""";
         with()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Content-Type", "application/vcard+json")
             .body(payload)
             .put("addressbooks/" + testUser.id() + "/contacts/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf");
@@ -737,13 +737,13 @@ class CardJsonTest {
                 []
             ]""";
         with()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Content-Type", "application/vcard+json")
             .body(payload)
             .put("addressbooks/" + testUser.id() + "/contacts/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf");
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
             .queryParam("offset", 0)
             .queryParam("sort", "fn")
@@ -912,7 +912,7 @@ class CardJsonTest {
                 []
             ]""";
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Content-Type", "application/vcard+json")
             .headers("If-Match", "Bad")
             .body(payload)
@@ -927,7 +927,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .body("""
                 {
@@ -945,7 +945,7 @@ class CardJsonTest {
             .statusCode(201);
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)
@@ -1059,7 +1059,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .body("""
                 {
@@ -1077,7 +1077,7 @@ class CardJsonTest {
             .statusCode(201);
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/vcard+json"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/vcard+json"))
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
             .send(body("""
@@ -1088,7 +1088,7 @@ class CardJsonTest {
                          }""")));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)
@@ -1202,7 +1202,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .body("""
                 {
@@ -1220,7 +1220,7 @@ class CardJsonTest {
             .statusCode(201);
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .delete("addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
@@ -1228,7 +1228,7 @@ class CardJsonTest {
             .statusCode(204);
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)
@@ -1316,13 +1316,13 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body(STRING)));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard")
             .queryParam("export", true)
         .when()
@@ -1347,7 +1347,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body("BEGIN:VCARD\n" +
@@ -1359,7 +1359,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/json, text/plain, */*")
             .queryParam("limit", 30)
             .queryParam("page", 1)
@@ -1443,7 +1443,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body("BEGIN:VCARD\n" +
@@ -1455,7 +1455,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/json, text/plain, */*")
             .queryParam("limit", 30)
             .queryParam("page", 1)
@@ -1488,7 +1488,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .send(body("BEGIN:VCARD\n" +
@@ -1500,7 +1500,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
             .request(HttpMethod.valueOf("MOVE"))
             .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
@@ -1513,7 +1513,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         String response1 = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
             .queryParam("offset", 0)
             .queryParam("sort", "fn")
@@ -1525,7 +1525,7 @@ class CardJsonTest {
             .body()
             .asString();
         String response2 = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
             .queryParam("offset", 0)
             .queryParam("sort", "fn")
@@ -1547,7 +1547,7 @@ class CardJsonTest {
 
         // Given alice set her calendar visible publicly
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body("""
@@ -1559,7 +1559,7 @@ class CardJsonTest {
 
         // And alice has a contact
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1573,7 +1573,7 @@ class CardJsonTest {
 
         // THEN bob can read the contact
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1582,7 +1582,7 @@ class CardJsonTest {
 
         // AND bob cannot update alice contacts
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(bob::basicAuth)
+            .headers(bob::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
             .send(body(STRING)));
@@ -1596,7 +1596,7 @@ class CardJsonTest {
 
         // Given alice set her calendar visible publicly
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body("""
@@ -1608,7 +1608,7 @@ class CardJsonTest {
 
         // And alice has a contact
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1622,7 +1622,7 @@ class CardJsonTest {
 
         // THEN bob can read the contact
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1631,7 +1631,7 @@ class CardJsonTest {
 
         // AND bob can update alice contacts
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(bob::basicAuth)
+            .headers(bob::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
             .send(body(STRING)));
@@ -1643,7 +1643,7 @@ class CardJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1661,7 +1661,7 @@ class CardJsonTest {
 
         // Alice has a contact
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1674,7 +1674,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1699,7 +1699,7 @@ class CardJsonTest {
 
         // THEN bob can read the contact
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1708,7 +1708,7 @@ class CardJsonTest {
 
         // AND bob cannot update alice contacts
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(bob::basicAuth)
+            .headers(bob::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
             .send(body(STRING)));
@@ -1723,7 +1723,7 @@ class CardJsonTest {
 
         // Alice has a contact
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1736,7 +1736,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1761,7 +1761,7 @@ class CardJsonTest {
 
         // THEN bob can read the contact
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1770,7 +1770,7 @@ class CardJsonTest {
 
         // AND bob can update alice contacts
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(bob::basicAuth)
+            .headers(bob::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
             .send(body(STRING)));
@@ -1778,7 +1778,7 @@ class CardJsonTest {
 
         // And bob cannot share
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1814,7 +1814,7 @@ class CardJsonTest {
 
         // Alice has a contact
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1827,7 +1827,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1852,7 +1852,7 @@ class CardJsonTest {
 
         // THEN bob can read the contact
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
             .get("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1861,7 +1861,7 @@ class CardJsonTest {
 
         // AND bob can update alice contacts
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(bob::basicAuth)
+            .headers(bob::impersonatedBasicAuth)
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
             .send(body(STRING)));
@@ -1869,7 +1869,7 @@ class CardJsonTest {
 
         // And bob cannot share
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1905,7 +1905,7 @@ class CardJsonTest {
 
         // Alice has a contact
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
             .put()
             .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
@@ -1918,7 +1918,7 @@ class CardJsonTest {
                 "END:VCARD\n")));
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
             .headers("Content-Type", "application/vcard+json")
             .body(String.format("""
@@ -1943,7 +1943,7 @@ class CardJsonTest {
 
         // THEN bob can read the contact
         String response = given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)

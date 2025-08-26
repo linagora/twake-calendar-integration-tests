@@ -61,7 +61,7 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
@@ -167,13 +167,13 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         String response = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
             .get("/calendars/" + testUser.id() + "/events.json")
@@ -266,13 +266,13 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/json, text/plain, */*"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/json, text/plain, */*"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -475,7 +475,7 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -483,7 +483,7 @@ class CalJsonTest {
             .statusCode(201);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -615,7 +615,7 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -623,7 +623,7 @@ class CalJsonTest {
             .statusCode(201);
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH 2\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -631,7 +631,7 @@ class CalJsonTest {
             .statusCode(204);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -763,7 +763,7 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -771,7 +771,7 @@ class CalJsonTest {
             .statusCode(201);
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .header("If-Match", "bad")
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH 2\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
@@ -785,7 +785,7 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -794,7 +794,7 @@ class CalJsonTest {
 
 
         String etag = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
         .when()
             .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
         .then()
@@ -802,7 +802,7 @@ class CalJsonTest {
             .header("Etag");
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .header("If-Match", etag)
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH 2\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
@@ -816,7 +816,7 @@ class CalJsonTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -824,7 +824,7 @@ class CalJsonTest {
             .statusCode(201);
 
         String body = given()
-            .headers("Authorization", testUser.basicAuth())
+            .headers("Authorization", testUser.impersonatedBasicAuth())
             .header("Accept", "application/calendar+json")
         .when()
             .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -1023,7 +1023,7 @@ class CalJsonTest {
         OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"unknown\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
             .put("/calendars/" + alice.id() + "/" + alice.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
@@ -1031,7 +1031,7 @@ class CalJsonTest {
             .statusCode(201);
 
         String body = given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"start\":\"20250228T230000\",\"end\":\"20250301T230000\",\"users\":[\"" + alice.id() + "\"],\"uids\":[\"1111632f-9917-4efc-b78f-243be5403074\"]}")
         .when()
             .post("/calendars/freebusy")
@@ -1052,13 +1052,13 @@ class CalJsonTest {
         OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
         String response = given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
@@ -1240,13 +1240,13 @@ class CalJsonTest {
         OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
@@ -1316,13 +1316,13 @@ class CalJsonTest {
         OpenPaasUser alice = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
@@ -1399,7 +1399,7 @@ class CalJsonTest {
                 alice.id()))));
 
         String response = given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
@@ -1582,13 +1582,13 @@ class CalJsonTest {
         OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
         execute(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
@@ -1596,13 +1596,13 @@ class CalJsonTest {
                 {"public_right":"{DAV:}read"}""")));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
             .send(body(ICS_1)));
 
         String response2 = given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
@@ -1612,7 +1612,7 @@ class CalJsonTest {
             .asString();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
             .send(body(ICS_2)));
@@ -1627,13 +1627,13 @@ class CalJsonTest {
         OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
         execute(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
@@ -1641,13 +1641,13 @@ class CalJsonTest {
                 {"public_right":"{DAV:}write"}""")));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
             .send(body(ICS_1)));
 
         String response2 = given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
@@ -1657,7 +1657,7 @@ class CalJsonTest {
             .asString();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
             .send(body(ICS_2)));
@@ -1672,13 +1672,13 @@ class CalJsonTest {
         OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
         execute(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
@@ -1686,7 +1686,7 @@ class CalJsonTest {
                 {"public_right":"{DAV:}write"}""")));
 
         execute(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers)
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("ACL"))
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
@@ -1694,13 +1694,13 @@ class CalJsonTest {
                 {"public_right":""}""")));
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
             .send(body(ICS_1)));
 
         given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
@@ -1708,7 +1708,7 @@ class CalJsonTest {
             .statusCode(403);
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
             .send(body(ICS_2)));
@@ -1723,19 +1723,19 @@ class CalJsonTest {
         OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
             .when()
             .post("/calendars/" + alice.id() + ".json");
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
             .send(body(ICS_1)));
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .header("Accept", "application/json, text/plain, */*")
             .header("Content-Type", "text/html; charset=UTF-8")
             .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read\":true}],\"remove\":[]}}").log().all()
@@ -1747,7 +1747,7 @@ class CalJsonTest {
         Thread.sleep(5000);
 
         String response2 = given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
@@ -1757,7 +1757,7 @@ class CalJsonTest {
             .asString();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
             .send(body(ICS_2)));
@@ -1773,25 +1773,25 @@ class CalJsonTest {
         OpenPaasUser bob = dockerExtension.newTestUser();
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
             .when()
             .post("/calendars/" + alice.id() + ".json");
         // provision bob principal...
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"c5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
             .when()
             .post("/calendars/" + bob.id() + ".json");
 
         executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> alice.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
             .send(body(ICS_1)));
 
         given()
-            .headers("Authorization", alice.basicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .header("Accept", "application/json, text/plain, */*")
             .header("Content-Type", "text/html; charset=UTF-8")
             .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read-write\":true}],\"remove\":[]}}").log().all()
@@ -1803,7 +1803,7 @@ class CalJsonTest {
         Thread.sleep(5000);
 
         String response2 = given()
-            .headers("Authorization", bob.basicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
@@ -1813,7 +1813,7 @@ class CalJsonTest {
             .asString();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> bob.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
             .send(body(ICS_2)));

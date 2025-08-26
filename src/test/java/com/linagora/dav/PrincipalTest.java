@@ -37,7 +37,7 @@ class PrincipalTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -64,7 +64,7 @@ class PrincipalTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -92,7 +92,7 @@ class PrincipalTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -119,7 +119,7 @@ class PrincipalTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("PROPFIND"))
