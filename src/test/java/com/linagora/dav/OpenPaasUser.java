@@ -36,11 +36,11 @@ public record OpenPaasUser(String id, String firstname, String lastname, String 
             document.getString("password"));
     }
 
-    HttpHeaders impersonatedBasicAuth(HttpHeaders headers) {
+    public HttpHeaders impersonatedBasicAuth(HttpHeaders headers) {
         return headers.add("Authorization", impersonatedBasicAuth(email));
     }
 
-    String impersonatedBasicAuth() {
+    public String impersonatedBasicAuth() {
         return impersonatedBasicAuth(email);
     }
 

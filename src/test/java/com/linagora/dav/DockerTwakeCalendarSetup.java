@@ -43,17 +43,21 @@ import reactor.netty.ByteBufFlux;
 import reactor.netty.http.client.HttpClient;
 
 public class DockerTwakeCalendarSetup {
+    public static final String SABRE_V3 = "sabre-v3-it";
+    public static final String SABRE_V4 = "sabre-v4-it";
+
     private static final Path definitionFilePath = Path.of("src/test/resources/rabbitmq-definitions.json");
 
     private final ComposeContainer environment;
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
 
-    {
+    public DockerTwakeCalendarSetup(String sabreVersion) {
         try {
             environment = new ComposeContainer(
                 new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
                 .waitingFor("twake-calendar-side-service", Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
+                .withEnv("SABRE_DAV_IMAGE", sabreVersion)
                 .withLogConsumer("sabre_dav", log -> System.out.print("sabre_dav " + log.getUtf8String()))
                 .withLogConsumer("twake-calendar-side-service", log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
         } catch (URISyntaxException e) {

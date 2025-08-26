@@ -16,7 +16,7 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.contracts;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
@@ -35,11 +35,15 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.linagora.dav.CardDavClient;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestContainersUtils;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 
-public class ContactAMQPMessageTest {
+public abstract class ContactAMQPMessageContract {
     public static final String QUEUE_NAME = "tcalendar:event:test";
 
     private final ConditionFactory calmlyAwait = Awaitility.with()
@@ -50,23 +54,22 @@ public class ContactAMQPMessageTest {
         .await();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
-    @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
-
     private CardDavClient cardDavClient;
     private Connection connection;
     private Channel channel;
+
+    public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
+            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        cardDavClient = new CardDavClient(dockerExtension.davHttpClient());
+        cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -87,7 +90,7 @@ public class ContactAMQPMessageTest {
     void shouldReceiveMessageFromContactCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:created", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
 
         String addressBook = "collected";
         String vcardUid = UUID.randomUUID().toString();
@@ -121,7 +124,7 @@ public class ContactAMQPMessageTest {
     void shouldReceiveMessageFromContactUpdatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:updated", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
 
         String addressBook = "collected";
         String vcardUid = UUID.randomUUID().toString();
@@ -167,7 +170,7 @@ public class ContactAMQPMessageTest {
     void shouldReceiveMessageFromContactDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "sabre:contact:deleted", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
 
         String addressBook = "collected";
         String vcardUid = UUID.randomUUID().toString();

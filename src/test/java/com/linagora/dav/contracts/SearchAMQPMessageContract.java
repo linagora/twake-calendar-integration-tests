@@ -16,7 +16,7 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.contracts;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
@@ -32,10 +32,13 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestContainersUtils;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -44,7 +47,7 @@ import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
 
-public class SearchAMQPMessageTest {
+public abstract class SearchAMQPMessageContract {
 
     public static final String QUEUE_NAME = "tcalendar:event:test";
 
@@ -56,23 +59,22 @@ public class SearchAMQPMessageTest {
         .await();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
-    @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension();
-
     private CalDavClient calDavClient;
     private Connection connection;
     private Channel channel;
+
+    public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension.getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
+            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
         factory.setPort(5672);
         factory.setUsername("guest");
         factory.setPassword("guest");
 
-        calDavClient = new CalDavClient(dockerExtension.davHttpClient());
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
 
         connection = factory.newConnection();
         channel = connection.createChannel();
@@ -93,8 +95,8 @@ public class SearchAMQPMessageTest {
     void shouldReceiveMessageFromEventCreatedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:created", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -268,8 +270,8 @@ public class SearchAMQPMessageTest {
         channel.queueDeclare(QUEUE_NAME, false, true, true, null);
         channel.queueBind(QUEUE_NAME, "calendar:event:updated", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -597,8 +599,8 @@ public class SearchAMQPMessageTest {
     void shouldReceiveMessageFromEventDeletedExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:deleted", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -772,8 +774,8 @@ public class SearchAMQPMessageTest {
     void shouldReceiveMessageFromEventCancelExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:cancel", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -961,8 +963,8 @@ public class SearchAMQPMessageTest {
     void shouldReceiveMessageFromEventRequestExchange() throws IOException {
         channel.queueBind(QUEUE_NAME, "calendar:event:request", "");
 
-        OpenPaasUser testUser = dockerExtension.newTestUser();
-        OpenPaasUser testUser2 = dockerExtension.newTestUser();
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(

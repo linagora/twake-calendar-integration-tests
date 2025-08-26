@@ -18,6 +18,8 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
+
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
@@ -32,7 +34,15 @@ public class DockerTwakeCalendarExtension implements BeforeAllCallback, AfterAll
 
     public static final boolean DEBUG = true;
 
-    private DockerTwakeCalendarSetup dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup();
+    private final DockerTwakeCalendarSetup dockerTwakeCalendarSetup;
+
+    public DockerTwakeCalendarExtension() {
+        this(SABRE_V4);
+    }
+
+    public DockerTwakeCalendarExtension(String sabreVersion) {
+        dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(sabreVersion);
+    }
 
     @Override
     public void beforeAll(ExtensionContext extensionContext) {

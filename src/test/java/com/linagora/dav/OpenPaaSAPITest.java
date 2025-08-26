@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.ContainerState;
 
+import com.linagora.dav.contracts.CalDavContract;
+
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
@@ -550,7 +552,7 @@ abstract class OpenPaaSAPITest {
                 .add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + adminId + "/" + adminId + "/abcd.ics")
-            .send(body(CalDavTest.ICS_1))
+            .send(body(CalDavContract.ICS_1))
             .response()
             .block()
             .status()
