@@ -186,7 +186,7 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()));
 
@@ -208,7 +208,7 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status = executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPPATCH"))
             .uri("/calendars/" + testUser.id())
             .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
@@ -220,7 +220,7 @@ class CalDavTest {
                 "        </d:propertyupdate>")));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()));
 
@@ -243,7 +243,7 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id()));
 
@@ -262,7 +262,7 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/calendars/" + testUser.id()  + "/testCalendar")
             .send(body("""
@@ -281,7 +281,7 @@ class CalDavTest {
 
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()  ));
 
@@ -305,7 +305,7 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
             .request(HttpMethod.valueOf("MKCOL"))
             .uri("/calendars/" + testUser.id()  + "/testCalendar")
             .send(body("""
@@ -323,13 +323,13 @@ class CalDavTest {
                 """)));
 
         int status2 =executeNoContent(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .delete()
             .uri("/calendars/" + testUser.id()  + "/testCalendar"));
 
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()  ));
 
@@ -353,13 +353,13 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id() + "/" + testUser.id()));
 
@@ -381,19 +381,19 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .delete()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id() + "/" + testUser.id()));
 
@@ -415,13 +415,13 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/xml"))
             .get()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
 
@@ -435,19 +435,19 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .delete()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         int status3 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/xml"))
             .get()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
 
@@ -461,19 +461,19 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_2)));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/xml"))
             .get()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
 
@@ -488,13 +488,13 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", "bad"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", "bad"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_2)));
@@ -508,20 +508,20 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", response.responseHeaders().get("ETag")))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", response.responseHeaders().get("ETag")))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_2)));
 
         DavResponse response2 = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/xml"))
             .get()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
 
@@ -536,13 +536,13 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)));
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", "bad"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", "bad"))
             .delete()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_2)));
@@ -556,20 +556,20 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", response.responseHeaders().get("ETag")))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8").add("If-Match", response.responseHeaders().get("ETag")))
             .delete()
             .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_2)));
 
         int status3 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Accept", "application/xml"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/xml"))
             .get()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
 
@@ -583,7 +583,7 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "0"))
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -608,14 +608,14 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         DavResponse response2 = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "0"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -654,19 +654,19 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .delete()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
 
         DavResponse response3 = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "0"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -704,20 +704,20 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         int status2 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_2)));
 
         DavResponse response3 = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "0"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -757,14 +757,14 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         DavResponse response2 = execute(dockerExtension.davHttpClient()
-            .headers(testUser::basicAuth)
+            .headers(testUser::impersonatedBasicAuth)
             .get()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "?export"));
 
@@ -826,7 +826,7 @@ class CalDavTest {
         OpenPaasUser testUser2 = dockerExtension.newTestUser();
 
         int status1 = executeNoContent(dockerExtension.davHttpClient()
-            .headers(headers -> testUser1.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser1.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser1.id()  + "/" + testUser1.id() + "/abcd.ics")
             .send(body("BEGIN:VCALENDAR\r\n" +
@@ -877,7 +877,7 @@ class CalDavTest {
                 "END:VCALENDAR\r\n")));
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(testUser2::basicAuth)
+            .headers(testUser2::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser2.id() + "/inbox"));
 
@@ -930,14 +930,14 @@ class CalDavTest {
         OpenPaasUser testUser = dockerExtension.newTestUser();
 
         HttpClientResponse response = dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
             .send(body(ICS_1)).response()
             .block();
 
         DavResponse response2 = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1028,7 +1028,7 @@ class CalDavTest {
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser2.basicAuth(headers)
+            .headers(headers -> testUser2.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1095,7 +1095,7 @@ class CalDavTest {
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser2.basicAuth(headers)
+            .headers(headers -> testUser2.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1162,7 +1162,7 @@ class CalDavTest {
         calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1233,7 +1233,7 @@ class CalDavTest {
         calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
@@ -1303,7 +1303,7 @@ class CalDavTest {
         calDavClient.deleteCalendarEvent(testUser2, attendeeEventId);
 
         DavResponse response = execute(dockerExtension.davHttpClient()
-            .headers(headers -> testUser.basicAuth(headers)
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))

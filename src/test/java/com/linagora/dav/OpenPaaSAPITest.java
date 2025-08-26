@@ -544,7 +544,7 @@ abstract class OpenPaaSAPITest {
         String adminId = getAdminId();
 
         int status = davHttpClient
-            .headers(headers -> headers.add("Authorization", OpenPaasUser.basicAuth("admin@open-paas.org"))
+            .headers(headers -> headers.add("Authorization", OpenPaasUser.impersonatedBasicAuth("admin@open-paas.org"))
                 .add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + adminId + "/" + adminId + "/abcd.ics")
@@ -599,7 +599,7 @@ abstract class OpenPaaSAPITest {
         String adminId = getAdminId();
 
         int status = davHttpClient
-            .headers(headers -> headers.add("Authorization", OpenPaasUser.basicAuth("admin@open-paas.org")))
+            .headers(headers -> headers.add("Authorization", OpenPaasUser.impersonatedBasicAuth("admin@open-paas.org")))
             .put()
             .uri("/addressbooks/" + adminId + "/contacts/abcdef.vcf")
             .send(body("BEGIN:VCARD\n" +
