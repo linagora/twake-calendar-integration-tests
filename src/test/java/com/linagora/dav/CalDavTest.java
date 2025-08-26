@@ -1367,6 +1367,61 @@ class CalDavTest {
             .replace("{attendeeEmail}", testUser2.email()));
     }
 
+    @Test
+    /* test an existing user in ldap by sending the whole uid containing domain name,
+     * ex: ldap_user1@open-paas.org:password */
+    void ldapUserAuthenticate() {
+        OpenPaasUser testUser = dockerExtension.newTestUser("ldap_user1");
+
+        DavResponse response = execute(dockerExtension.davHttpClient()
+                .headers(testUser::basicAuth)
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(207);
+    }
+
+    @Test
+    /* test an existing user in ldap by sending only the local part of the uid
+     * ex: ldap_user1:password */
+    void ldapLocalPartUserAuthenticate() {
+        OpenPaasUser testUser = dockerExtension.newTestUser("ldap_user1");
+
+        DavResponse response = execute(dockerExtension.davHttpClient()
+                .headers(testUser::localPartBasicAuth)
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(207);
+    }
+
+    @Test
+    /* test an existing user in ldap with a wrong password */
+    void ldapUserAuthenticateWrongPassword() {
+        // the password for ldap_user2 is secret123 in LDAP
+        OpenPaasUser testUser = dockerExtension.newTestUser("ldap_user2");
+
+        DavResponse response = execute(dockerExtension.davHttpClient()
+                .headers(testUser::basicAuth)
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(500);
+    }
+
+    @Test
+    /* test a non-existing user in ldap */
+    void ldapUserAuthenticateNonExistingUser() {
+        OpenPaasUser testUser = dockerExtension.newTestUser("ldap_user3");
+
+        DavResponse response = execute(dockerExtension.davHttpClient()
+                .headers(testUser::basicAuth)
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(500);
+    }
+
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
                                         String summary,
                                         String location,
