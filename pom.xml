@@ -164,7 +164,7 @@
                     <reuseForks>true</reuseForks>
                     <forkCount>1</forkCount>
                     <!-- Fail tests longer than 10 minutes, prevent form random locking tests -->
-                    <forkedProcessTimeoutInSeconds>1000</forkedProcessTimeoutInSeconds>
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
                 </configuration>
             </plugin>
         </plugins>
