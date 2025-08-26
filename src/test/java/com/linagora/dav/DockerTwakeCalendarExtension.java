@@ -54,6 +54,13 @@ public class DockerTwakeCalendarExtension implements ParameterResolver {
             .block();
     }
 
+    public OpenPaasUser newTestUser(String localPart) {
+        return DockerTwakeCalendarSetupSingleton.singleton
+                .getTwakeCalendarProvisioningService()
+                .createUser(localPart)
+                .block();
+    }
+
     public TwakeCalendarProvisioningService twakeCalendarProvisioningService() {
         return DockerTwakeCalendarSetupSingleton.singleton.getTwakeCalendarProvisioningService();
     }

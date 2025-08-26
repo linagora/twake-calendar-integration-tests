@@ -100,13 +100,19 @@ public class DockerTwakeCalendarSetup {
         return environment.getContainerByServiceName("redis").orElseThrow();
     }
 
+    public ContainerState getLdapContainer() {
+        return environment.getContainerByServiceName("ldap").orElseThrow();
+    }
+
     public List<ContainerState> getAllContainers() {
         return List.of(getCalendarSideServiceContainer(),
-            getRabbitMqContainer(),
-            getSabreDavContainer(),
-            getMongoDBContainer(),
-            getElasticsearchContainer(),
-            getRedisContainer());
+                getRabbitMqContainer(),
+                getSabreDavContainer(),
+                getMongoDBContainer(),
+                getElasticsearchContainer(),
+                getRedisContainer(),
+                getLdapContainer()
+        );
     }
 
     public TwakeCalendarProvisioningService getTwakeCalendarProvisioningService() {

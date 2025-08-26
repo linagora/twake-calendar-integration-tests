@@ -22,7 +22,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import org.bson.Document;
-import org.jetbrains.annotations.NotNull;
 
 import io.netty.handler.codec.http.HttpHeaders;
 
@@ -37,19 +36,44 @@ public record OpenPaasUser(String id, String firstname, String lastname, String 
             document.getString("password"));
     }
 
-    HttpHeaders basicAuth(HttpHeaders headers) {
-        return headers.add("Authorization", basicAuth(email));
+    HttpHeaders impersonatedBasicAuth(HttpHeaders headers) {
+        return headers.add("Authorization", impersonatedBasicAuth(email));
     }
 
-    String basicAuth() {
-        return basicAuth(email);
+    String impersonatedBasicAuth() {
+        return impersonatedBasicAuth(email);
     }
 
-    public static String basicAuth(String email) {
+    public static String impersonatedBasicAuth(String email) {
         String userPassword = "admin&" + email + ":secret123";
         byte[] base64UserPassword = Base64
             .getEncoder()
             .encode(userPassword.getBytes(StandardCharsets.UTF_8));
+        return "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8);
+    }
+
+    HttpHeaders basicAuth(HttpHeaders headers) {
+        return headers.add("Authorization", basicAuth(email));
+    }
+
+    public static String basicAuth(String email) {
+        String userPassword = email + ":secret";
+        byte[] base64UserPassword = Base64
+            .getEncoder()
+            .encode(userPassword.getBytes(StandardCharsets.UTF_8));
+        return "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8);
+    }
+
+    HttpHeaders localPartBasicAuth(HttpHeaders headers) {
+        return headers.add("Authorization", localPartBasicAuth(email));
+    }
+
+    // authenticate with user uid without "@open-pass.org"
+    public static String localPartBasicAuth(String email) {
+        String userPassword = email.split("@")[0] + ":secret";
+        byte[] base64UserPassword = Base64
+                .getEncoder()
+                .encode(userPassword.getBytes(StandardCharsets.UTF_8));
         return "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8);
     }
 }
