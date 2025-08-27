@@ -19,6 +19,7 @@
 package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,6 +36,8 @@ import reactor.netty.http.client.HttpClient;
 
 public class TwakeCalendarProvisioningService {
     public static final String PASSWORD = "secret";
+
+    private static final TechnicalTokenService technicalTokenService = new TechnicalTokenService.Impl("technicalTokenSecret", Duration.ofSeconds(3600));
 
     private final MongoDatabase database;
     private final HttpClient httpClient;
@@ -61,6 +64,38 @@ public class TwakeCalendarProvisioningService {
 
     public Mono<OpenPaasUser> createUser(String localPart) {
         return createUserInMongo(localPart);
+    }
+
+    public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin) {
+        Document resourceToSave = new Document()
+            .append("name", name)
+            .append("description", description)
+            .append("type", "resource")
+            .append("icon", "home")
+            .append("deleted", false)
+            .append("domain", openPaasDomain().get("_id"))
+            .append("creator", new org.bson.types.ObjectId(admin.id()))
+            .append("administrators", List.of(new Document()
+                .append("id", admin.id())
+                .append("objectType", "user")))
+            .append("timestamps", new Document()
+                .append("creation", java.util.Date.from(java.time.Instant.now()))
+                .append("updatedAt", java.util.Date.from(java.time.Instant.now())));
+
+        return Mono.from(database.getCollection("resources").insertOne(resourceToSave))
+            .flatMap(success -> Mono.from(
+                database.getCollection("resources").find(new Document("_id", success.getInsertedId())).first()))
+            .map(doc -> new OpenPaaSResource(
+                doc.getObjectId("_id").toString(),
+                doc.getString("name"),
+                doc.getString("description")
+            ));
+    }
+
+    public String generateToken() {
+        return technicalTokenService.generate(openPaasDomain().get("_id").toString())
+            .map(TechnicalTokenService.JwtToken::value)
+            .block();
     }
 
     private Mono<Void> createUserInUsersRepository(UUID randomUUID) {
