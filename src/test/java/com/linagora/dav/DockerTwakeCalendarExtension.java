@@ -22,19 +22,28 @@ import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
 
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.extension.AfterAllCallback;
+import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
+
 import reactor.netty.http.client.HttpClient;
 
-public class DockerTwakeCalendarExtension implements BeforeAllCallback, AfterAllCallback,ParameterResolver {
+public class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEachCallback, BeforeAllCallback, AfterAllCallback,ParameterResolver {
 
+    public static final String QUEUE_NAME = "tcalendar:event:test";
     public static final boolean DEBUG = true;
 
     private final DockerTwakeCalendarSetup dockerTwakeCalendarSetup;
+    private Channel channel;
+    private Connection connection;
 
     public DockerTwakeCalendarExtension() {
         this(SABRE_V4);
@@ -42,6 +51,29 @@ public class DockerTwakeCalendarExtension implements BeforeAllCallback, AfterAll
 
     public DockerTwakeCalendarExtension(String sabreVersion) {
         dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(sabreVersion);
+    }
+
+    @Override
+    public void beforeEach(ExtensionContext extensionContext) throws Exception {
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
+        factory.setPort(5672);
+        factory.setUsername("guest");
+        factory.setPassword("guest");
+
+        connection = factory.newConnection();
+        channel = connection.createChannel();
+        channel.queueDeclare(QUEUE_NAME, false, true, true, null);
+    }
+
+    @Override
+    public void afterEach(ExtensionContext extensionContext) throws Exception {
+        if (channel != null && channel.isOpen()) {
+            channel.close();
+        }
+        if (connection != null && connection.isOpen()) {
+            connection.close();
+        }
     }
 
     @Override
@@ -96,5 +128,9 @@ public class DockerTwakeCalendarExtension implements BeforeAllCallback, AfterAll
     public HttpClient davHttpClient() {
         return HttpClient.create()
             .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80");
+    }
+
+    public Channel getChannel() {
+        return channel;
     }
 }

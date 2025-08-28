@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 import java.io.IOException;
@@ -29,7 +30,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
@@ -40,10 +40,6 @@ import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.JsonUtil;
 import com.linagora.dav.OpenPaasUser;
-import com.linagora.dav.TestContainersUtils;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
 
 import net.fortuna.ical4j.model.Calendar;
 import net.minidev.json.JSONObject;
@@ -52,7 +48,6 @@ import net.minidev.json.parser.ParseException;
 
 public abstract class EmailAMQPMessageContract {
 
-    public static final String QUEUE_NAME = "tcalendar:event:test";
     public static final boolean NOT_COUNTER = false;
     public static final boolean COUNTER = true;
 
@@ -65,36 +60,13 @@ public abstract class EmailAMQPMessageContract {
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
-    private Connection connection;
-    private Channel channel;
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
-    void setUp() throws IOException, TimeoutException {
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
-        factory.setPort(5672);
-        factory.setUsername("guest");
-        factory.setPassword("guest");
-
+    void setUp() throws IOException {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
-
-        connection = factory.newConnection();
-        channel = connection.createChannel();
-        channel.queueDeclare(QUEUE_NAME, false, true, true, null);
-        channel.queueBind(QUEUE_NAME, "calendar:event:notificationEmail:send", "");
-    }
-
-    @AfterEach
-    void cleanUp() throws IOException, TimeoutException {
-        if (channel != null && channel.isOpen()) {
-            channel.close();
-        }
-        if (connection != null && connection.isOpen()) {
-            connection.close();
-        }
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:notificationEmail:send", "");
     }
 
     @Test
@@ -446,7 +418,7 @@ public abstract class EmailAMQPMessageContract {
 
     private byte[] getMessageFromQueue() {
         return awaitAtMost.atMost(Duration.ofSeconds(20))
-            .until(() -> channel.basicGet(QUEUE_NAME, true), Objects::nonNull)
+            .until(() -> dockerExtension().getChannel().basicGet(QUEUE_NAME, true), Objects::nonNull)
             .getBody();
     }
 
