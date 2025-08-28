@@ -37,6 +37,8 @@ import net.fortuna.ical4j.data.CalendarParserFactory;
 import net.fortuna.ical4j.data.ContentHandlerContext;
 import net.fortuna.ical4j.data.ParserException;
 import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.TimeZoneRegistry;
 import net.fortuna.ical4j.model.TimeZoneRegistryImpl;
 import net.fortuna.ical4j.util.CompatibilityHints;
@@ -89,5 +91,10 @@ public class CalendarUtil {
         } catch (ParserException e) {
             throw new RuntimeException("Error while parsing ICal object", e);
         }
+    }
+
+    public static void sanitize(Calendar calendar) {
+        calendar.removeAll(Property.PRODID);
+        calendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
     }
 }

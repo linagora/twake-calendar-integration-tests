@@ -38,6 +38,7 @@ import com.google.common.base.Preconditions;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+// copy from https://github.com/linagora/twake-calendar-side-service/blob/main/storage-api/src/main/java/com/linagora/calendar/storage/TechnicalTokenService.java
 public interface TechnicalTokenService {
 
     Mono<JwtToken> generate(String domainId);

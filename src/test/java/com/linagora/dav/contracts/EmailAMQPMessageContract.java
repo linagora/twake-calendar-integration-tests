@@ -38,6 +38,7 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.JsonUtil;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestContainersUtils;
 import com.rabbitmq.client.Channel;
@@ -45,8 +46,6 @@ import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 
 import net.fortuna.ical4j.model.Calendar;
-import net.fortuna.ical4j.model.Component;
-import net.fortuna.ical4j.model.Property;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
@@ -141,12 +140,10 @@ public abstract class EmailAMQPMessageContract {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        actualJson.remove("event");
-        expectedJson.remove("event");
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+        JsonUtil.sanitize(actualJson);
+        JsonUtil.sanitize(expectedJson);
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
@@ -248,12 +245,10 @@ public abstract class EmailAMQPMessageContract {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        actualJson.remove("event");
-        expectedJson.remove("event");
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+        JsonUtil.sanitize(actualJson);
+        JsonUtil.sanitize(expectedJson);
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
@@ -304,12 +299,10 @@ public abstract class EmailAMQPMessageContract {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        actualJson.remove("event");
-        expectedJson.remove("event");
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+        JsonUtil.sanitize(actualJson);
+        JsonUtil.sanitize(expectedJson);
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
@@ -371,12 +364,10 @@ public abstract class EmailAMQPMessageContract {
         JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
         Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        actualJson.remove("event");
-        expectedJson.remove("event");
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+        JsonUtil.sanitize(actualJson);
+        JsonUtil.sanitize(expectedJson);
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
@@ -445,10 +436,8 @@ public abstract class EmailAMQPMessageContract {
         Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
         Calendar actualOldCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
         Calendar expectedOldCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        actualJson.remove("event");
-        expectedJson.remove("event");
-        actualJson.remove("oldEvent");
-        expectedJson.remove("oldEvent");
+        JsonUtil.sanitize(actualJson);
+        JsonUtil.sanitize(expectedJson);
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);

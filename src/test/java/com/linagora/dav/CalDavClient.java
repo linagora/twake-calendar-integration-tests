@@ -95,11 +95,11 @@ public class CalDavClient {
             }).block();
     }
 
-    public void upsertCalendarEvent(String resourceId, String resourceEventId, String initialCalendarData, String token) {
+    public void upsertCalendarEvent(String entityId, String eventId, String calendarData, String token) {
         httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
             .put()
-            .uri("/calendars/" + resourceId + "/" + resourceId + "/" + resourceEventId + ".ics")
-            .send(TestUtil.body(initialCalendarData))
+            .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
+            .send(TestUtil.body(calendarData))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201 || response.status().code() == 204) {
                     return Mono.empty();
@@ -113,10 +113,10 @@ public class CalDavClient {
             }).block();
     }
 
-    public String getCalendarEvent(String resourceId, String resourceEventId, String token) {
+    public String getCalendarEvent(String entityId, String eventId, String token) {
         return httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
             .get()
-            .uri("/calendars/" + resourceId + "/" + resourceId + "/" + resourceEventId + ".ics")
+            .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 200) {
                     return responseContent.asByteArray().map(bytes -> new String(bytes, StandardCharsets.UTF_8));
