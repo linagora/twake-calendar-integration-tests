@@ -96,13 +96,30 @@ public class CalDavClient {
     }
 
     public void upsertCalendarEvent(String resourceId, String resourceEventId, String initialCalendarData, String token) {
-        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token).add("Content-Type", "text/calendar ; charset=utf-8"))
+        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
             .put()
             .uri("/calendars/" + resourceId + "/" + resourceId + "/" + resourceEventId + ".ics")
             .send(TestUtil.body(initialCalendarData))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201 || response.status().code() == 204) {
                     return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when create/update calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
+    public String getCalendarEvent(String resourceId, String resourceEventId, String token) {
+        return httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+            .get()
+            .uri("/calendars/" + resourceId + "/" + resourceId + "/" + resourceEventId + ".ics")
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return responseContent.asByteArray().map(bytes -> new String(bytes, StandardCharsets.UTF_8));
                 }
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))

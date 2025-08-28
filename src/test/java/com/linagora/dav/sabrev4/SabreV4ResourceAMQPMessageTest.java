@@ -16,7 +16,21 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.sabrev4;
 
-public record OpenPaaSResource(String id, String name, String description) {
+import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
+
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.contracts.ResourceAMQPMessageContract;
+
+public class SabreV4ResourceAMQPMessageTest extends ResourceAMQPMessageContract {
+    @RegisterExtension
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V4);
+
+    @Override
+    public DockerTwakeCalendarExtension dockerExtension() {
+        return dockerExtension;
+    }
 }
