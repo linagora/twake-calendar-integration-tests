@@ -95,6 +95,41 @@ public class CalDavClient {
             }).block();
     }
 
+    public void upsertCalendarEvent(String entityId, String eventId, String calendarData, String token) {
+        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+            .put()
+            .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
+            .send(TestUtil.body(calendarData))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201 || response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when create/update calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
+    public String getCalendarEvent(String entityId, String eventId, String token) {
+        return httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+            .get()
+            .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return responseContent.asByteArray().map(bytes -> new String(bytes, StandardCharsets.UTF_8));
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when create/update calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
     public void deleteCalendarEvent(OpenPaasUser user, String eventUid) {
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .delete()
@@ -163,6 +198,38 @@ public class CalDavClient {
                             """.formatted(response.status().code(), openPaaSUser.id(), errorBody))));
                 }
             }).flatMapMany(Flux::fromIterable);
+    }
+
+    public Optional<String> findFirstEventId(String resourceId, OpenPaasUser openPaaSUser) {
+        return findUserCalendarEventIds(resourceId, openPaaSUser)
+            .collectList()
+            .blockOptional()
+            .flatMap(e -> e.stream().findFirst());
+    }
+
+    public Flux<String> findUserCalendarEventIds(String resourceId, OpenPaasUser openPaaSUser) {
+        String calendarURI = "/calendars/" + resourceId + "/" + resourceId;
+        return httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers).add(HttpHeaderNames.CONTENT_TYPE, "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(calendarURI)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 207) {
+                    return responseContent.asByteArray();
+                } else {
+                    return responseContent.asString(StandardCharsets.UTF_8)
+                        .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                        .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                            Unexpected status code: %d when finding user calendar event ids in calendar '%s'
+                            %s
+                            """.formatted(response.status().code(), calendarURI, errorBody))));
+                }
+            }).flatMapIterable(bytes -> {
+                try {
+                    return XMLUtil.extractEventIdsFromXml(bytes);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to parse XML response of finding user calendar event ids in calendar " + calendarURI, e);
+                }
+            });
     }
 
     public void postCounter(OpenPaasUser openPaaSUser, String attendeeEventUid, CounterRequest counterRequest) {

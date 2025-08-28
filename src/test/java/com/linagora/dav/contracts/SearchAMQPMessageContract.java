@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
 import java.io.IOException;
@@ -27,9 +28,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
@@ -38,18 +37,12 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
-import com.linagora.dav.TestContainersUtils;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
 
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
 
 public abstract class SearchAMQPMessageContract {
-
-    public static final String QUEUE_NAME = "tcalendar:event:test";
 
     private final ConditionFactory calmlyAwait = Awaitility.with()
         .pollInterval(Duration.ofMillis(500))
@@ -60,40 +53,17 @@ public abstract class SearchAMQPMessageContract {
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
-    private Connection connection;
-    private Channel channel;
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
-    void setUp() throws IOException, TimeoutException {
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(
-            dockerExtension().getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
-        factory.setPort(5672);
-        factory.setUsername("guest");
-        factory.setPassword("guest");
-
+    void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
-
-        connection = factory.newConnection();
-        channel = connection.createChannel();
-        channel.queueDeclare(QUEUE_NAME, false, true, true, null);
-    }
-
-    @AfterEach
-    void cleanUp() throws IOException, TimeoutException {
-        if (channel != null && channel.isOpen()) {
-            channel.close();
-        }
-        if (connection != null && connection.isOpen()) {
-            connection.close();
-        }
     }
 
     @Test
     void shouldReceiveMessageFromEventCreatedExchange() throws IOException {
-        channel.queueBind(QUEUE_NAME, "calendar:event:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -267,8 +237,8 @@ public abstract class SearchAMQPMessageContract {
 
     @Test
     void shouldReceiveMessageFromEventUpdatedExchange() throws ParseException, IOException {
-        channel.queueDeclare(QUEUE_NAME, false, true, true, null);
-        channel.queueBind(QUEUE_NAME, "calendar:event:updated", "");
+        dockerExtension().getChannel().queueDeclare(QUEUE_NAME, false, true, true, null);
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -597,7 +567,7 @@ public abstract class SearchAMQPMessageContract {
 
     @Test
     void shouldReceiveMessageFromEventDeletedExchange() throws IOException {
-        channel.queueBind(QUEUE_NAME, "calendar:event:deleted", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:deleted", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -772,7 +742,7 @@ public abstract class SearchAMQPMessageContract {
 
     @Test
     void shouldReceiveMessageFromEventCancelExchange() throws IOException {
-        channel.queueBind(QUEUE_NAME, "calendar:event:cancel", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:cancel", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -961,7 +931,7 @@ public abstract class SearchAMQPMessageContract {
 
     @Test
     void shouldReceiveMessageFromEventRequestExchange() throws IOException {
-        channel.queueBind(QUEUE_NAME, "calendar:event:request", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:request", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -1142,7 +1112,7 @@ public abstract class SearchAMQPMessageContract {
 
     private byte[] getMessageFromQueue() {
         return awaitAtMost.atMost(Duration.ofSeconds(20))
-            .until(() -> channel.basicGet(QUEUE_NAME, true), Objects::nonNull)
+            .until(() -> dockerExtension().getChannel().basicGet(QUEUE_NAME, true), Objects::nonNull)
             .getBody();
     }
 
