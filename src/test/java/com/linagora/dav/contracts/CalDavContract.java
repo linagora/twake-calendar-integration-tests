@@ -21,9 +21,11 @@ package com.linagora.dav.contracts;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,7 +47,9 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestUtil;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -52,6 +57,7 @@ import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.ScheduleStatus;
+import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClientResponse;
 
 public abstract class CalDavContract {
@@ -1346,6 +1352,225 @@ public abstract class CalDavContract {
             .replace("{attendeeEmail}", testUser2.email()));
     }
 
+    @Test
+    void userShouldBeAbleToRequestParticipationOfResource() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", testUser)
+            .block();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarDataWithResource(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            resource.id());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
+
+        String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // To ensure calendar directory is activated
+        try {
+            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
+        } catch (Exception ignored) {
+        }
+
+        String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+
+        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN="Benoît TELLIER":mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{resourceId}", resource.id()));
+    }
+
+    @Test
+    void normalUserShouldNotBeAbleToAcceptParticipationOfResource() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", testUser2)
+            .block();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarDataWithResource(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            resource.id());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
+
+        String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // To ensure calendar directory is activated
+        try {
+            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
+        } catch (Exception ignored) {
+        }
+
+        String updatedCalendarData = generateCalendarDataWithResource(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            resource.id(),
+            "ACCEPTED");
+
+        assertThatThrownBy(() -> upsertResourceCalendarEvent(resource.id(), resourceEventId, testUser, updatedCalendarData))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void shouldBeAbleToAcceptParticipationOfResourceByUsingToken() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", testUser)
+            .block();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarDataWithResource(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            resource.id());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
+
+        String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // To ensure calendar directory is activated
+        try {
+            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
+        } catch (Exception ignored) {
+        }
+
+        String updatedCalendarData = generateCalendarDataWithResource(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            resource.id(),
+            "ACCEPTED");
+        calDavClient.upsertCalendarEvent(resource.id(), resourceEventId, updatedCalendarData, token);
+
+        String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        actualCalendar.removeAll(Property.PRODID);
+
+        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN;SCHEDULE-STATUS=1.1:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN="Benoît TELLIER":mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{resourceId}", resource.id()));
+    }
+
+    private void upsertResourceCalendarEvent(String resourceId, String eventId, OpenPaasUser user, String calendarData) {
+        dockerExtension().davHttpClient().headers(headers -> user.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + resourceId + "/" + resourceId + "/" + eventId + ".ics")
+            .send(TestUtil.body(calendarData))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201 || response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when create/update calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
                                         String summary,
                                         String location,
@@ -1400,5 +1625,65 @@ public abstract class CalDavContract {
             .replace("{dtstart}", dtstart)
             .replace("{dtend}", dtend)
             .replace("{partStat}", partStat);
+    }
+
+    private String generateCalendarDataWithResource(String eventUid, String organizerEmail, String attendeeEmail,
+                                        String summary,
+                                        String location,
+                                        String description,
+                                        String dtstart,
+                                        String dtend,
+                                        String resourceId) {
+        return generateCalendarDataWithResource(eventUid, organizerEmail, attendeeEmail, summary, location, description, dtstart, dtend, resourceId, "TENTATIVE");
+    }
+
+    private String generateCalendarDataWithResource(String eventUid, String organizerEmail, String attendeeEmail,
+                                        String summary,
+                                        String location,
+                                        String description,
+                                        String dtstart,
+                                        String dtend,
+                                        String resourceId,
+                                        String partStat) {
+
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT={partStat};RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary)
+            .replace("{location}", location)
+            .replace("{description}", description)
+            .replace("{dtstart}", dtstart)
+            .replace("{dtend}", dtend)
+            .replace("{partStat}", partStat)
+            .replace("{resourceId}", resourceId);
     }
 }
