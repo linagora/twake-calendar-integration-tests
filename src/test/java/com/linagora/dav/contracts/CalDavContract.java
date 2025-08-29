@@ -33,7 +33,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -826,9 +825,8 @@ public abstract class CalDavContract {
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/33")
     @Test
-    void inboxShouldContainInvites() {
+    void inboxShouldContainInvites() throws Exception {
         // CF https://sabre.io/dav/scheduling/
         OpenPaasUser testUser1 = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -889,48 +887,16 @@ public abstract class CalDavContract {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser2.id() + "/inbox"));
 
+
         assertThat(status1).isEqualTo(201);
         assertThat(response.status()).isEqualTo(207);
-        XmlAssert.assertThat(response.body())
-            .and("<?xml version=\"1.0\"?>\n" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/calendars/" + testUser2.id() + "/inbox/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><cal:schedule-inbox/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "<d:response><d:href>/calendars/" + testUser2.id() + "/inbox/sabredav-85eacd97-b6ea-47d4-9f0c-0d16cbb94761.ics</d:href><d:propstat><d:prop><d:getlastmodified>Mon, 17 Feb 2025 21:56:02 GMT</d:getlastmodified><d:getcontentlength>1558</d:getcontentlength><d:resourcetype/><d:getetag>&quot;a54079bf751be394f27ea363e7e8a072&quot;</d:getetag><d:getcontenttype>text/calendar; charset=utf-8</d:getcontenttype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
-            .ignoreChildNodesOrder()
-            .withDifferenceEvaluator((comparison, outcome) -> {
-                if (outcome.equals(ComparisonResult.DIFFERENT) &&
-                    comparison.getControlDetails().getXPath() != null &&
-                    comparison.getControlDetails().getXPath().contains("getetag")) {
-                    return SIMILAR;
-                }
-                if (outcome.equals(ComparisonResult.DIFFERENT) &&
-                    comparison.getControlDetails().getXPath() != null &&
-                    comparison.getControlDetails().getXPath().contains("href")) {
-                    return SIMILAR;
-                }
-                if (outcome.equals(ComparisonResult.DIFFERENT) &&
-                    comparison.getControlDetails().getXPath() != null &&
-                    comparison.getControlDetails().getXPath().contains("getlastmodified")) {
-                    return SIMILAR;
-                }
-                if (outcome.equals(ComparisonResult.DIFFERENT) &&
-                    comparison.getControlDetails().getXPath() == null &&
-                    comparison.getControlDetails().getValue() == null &&
-                    comparison.getControlDetails().getTarget() == null &&
-                    comparison.getControlDetails().getParentXPath().equals("/multistatus[1]/response[2]/propstat[1]/prop[1]")) {
-                    return SIMILAR;
-                }
-                if (outcome.equals(ComparisonResult.DIFFERENT) &&
-                    comparison.getControlDetails().getXPath() == null &&
-                    comparison.getControlDetails().getValue() == null &&
-                    comparison.getControlDetails().getTarget() == null &&
-                    comparison.getControlDetails().getParentXPath().equals("/multistatus[1]/response[2]")) {
-                    return SIMILAR;
-                }
-                return outcome;
-            })
-            .areSimilar();
+        System.out.println(XMLUtil.extractMultipleValueByXPath(response.body(),
+            "//d:multistatus/d:response/d:href", Map.of("d", "DAV:")));
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(),
+            "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+        assertThat(actual).hasSize(2);
+        assertThat(actual.get(0)).isEqualTo("/calendars/" + testUser2.id() + "/inbox/");
+        assertThat(actual.get(1)).startsWith("/calendars/" + testUser2.id() + "/inbox/sabredav-").endsWith(".ics");
     }
 
     @Test
