@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
@@ -684,9 +683,8 @@ public abstract class CardDavContract {
         assertThat(status).isEqualTo(201);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/34")
     @Test
-    void headShouldReturnFound() {
+    public void headShouldReturnFound() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         executeNoContent(dockerExtension().davHttpClient()
