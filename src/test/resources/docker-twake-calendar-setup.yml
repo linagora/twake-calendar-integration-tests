@@ -92,5 +92,6 @@ services:
       - LDAP_BASE_WITH_MAIL=ou=users,dc=open-paas.org,dc=lng
       - LDAP_SERVER=ldap://esn_ldap:389
       - LDAP_USERNAME_MODE=username
+      - LOG_TRACE=true
     networks:
       - emaily
