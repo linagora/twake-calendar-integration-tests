@@ -104,8 +104,6 @@ public class DockerTwakeCalendarSetup {
             getServiceUri(DockerService.MONGO, "mongodb").toString(),
             getServiceUri(DockerService.CALENDAR_SIDE_ADMIN, "http").toString());
 
-        twakeCalendarProvisioningService.createUserInUsersRepository("admin@open-paas.org").block();
-
         waitForRabbitMQToBeReady();
     }
 
