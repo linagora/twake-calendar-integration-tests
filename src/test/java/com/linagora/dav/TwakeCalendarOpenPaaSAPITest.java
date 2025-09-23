@@ -25,13 +25,13 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.testcontainers.containers.ContainerState;
 
 import io.netty.handler.codec.http.HttpMethod;
 import reactor.netty.http.client.HttpClient;
@@ -55,13 +55,13 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPITest {
     }
 
     @Override
-    ContainerState container() {
-        return extension.getDockerTwakeCalendarSetupSingleton().getCalendarSideServiceContainer();
+    URI backendURI() {
+        return extension.getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE, "http");
     }
 
     @Override
-    ContainerState getElasticsearchContainer() {
-        return extension.getDockerTwakeCalendarSetupSingleton().getElasticsearchContainer();
+    URI elasticSearchURI() {
+        return extension.getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.OPENSEARCH, "http");
     }
 
     @Test

@@ -18,8 +18,9 @@
 
 package com.linagora.dav;
 
+import java.net.URI;
+
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.testcontainers.containers.ContainerState;
 
 import reactor.netty.http.client.HttpClient;
 
@@ -42,12 +43,12 @@ public class LegacyOpenPaaSAPITest extends OpenPaaSAPITest {
     }
 
     @Override
-    ContainerState container() {
-        return extension.getDockerOpenPaasSetupSingleton().getOpenPaasContainer();
+    URI backendURI() {
+        return extension.getDockerOpenPaasSetupSingleton().getServiceUri(DockerOpenPaasSetup.DockerService.OPENPAAS, "http");
     }
 
     @Override
-    ContainerState getElasticsearchContainer() {
-        return extension.getDockerOpenPaasSetupSingleton().getElasticsearchContainer();
+    URI elasticSearchURI() {
+        return extension.getDockerOpenPaasSetupSingleton().getServiceUri(DockerOpenPaasSetup.DockerService.ELASTICSEARCH, "http");
     }
 }

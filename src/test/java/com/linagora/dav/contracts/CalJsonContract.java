@@ -18,11 +18,11 @@
 
 package com.linagora.dav.contracts;
 
-import static com.linagora.dav.contracts.CalDavContract.ICS_1;
-import static com.linagora.dav.contracts.CalDavContract.ICS_2;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
+import static com.linagora.dav.contracts.CalDavContract.ICS_1;
+import static com.linagora.dav.contracts.CalDavContract.ICS_2;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,8 +35,8 @@ import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
-import com.linagora.dav.TestContainersUtils;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
@@ -55,7 +55,7 @@ public abstract class CalJsonContract {
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerExtension().getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80")
+            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
             .build();
     }
 
