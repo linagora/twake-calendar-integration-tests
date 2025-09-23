@@ -27,6 +27,7 @@ import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1551,6 +1552,69 @@ public abstract class CalDavContract {
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{resourceId}", resource.id()));
+    }
+
+    @Test
+        /* test an existing user in ldap by sending the whole uid containing domain name,
+         * ex: ldap_user1@open-paas.org:password */
+    void ldapUserAuthenticate() {
+        OpenPaasUser testUser = dockerExtension().newTestUser("ldap_user1");
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(header -> header.add("Authorization", basicAuth(testUser.email(), testUser.password())))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(207);
+    }
+
+    @Test
+        /* test an existing user in ldap by sending only the local part of the uid
+         * ex: ldap_user1:password */
+    void ldapLocalPartUserAuthenticate() {
+        OpenPaasUser testUser = dockerExtension().newTestUser("ldap_user1");
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(header -> header.add("Authorization", basicAuth("ldap_user1", "secret")))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(207);
+    }
+
+    @Test
+        /* test an existing user in ldap with a wrong password */
+    void ldapUserAuthenticateWrongPassword() {
+        // the password for ldap_user2 is secret123 in LDAP
+        OpenPaasUser testUser = dockerExtension().newTestUser("ldap_user2");
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(header -> header.add("Authorization", basicAuth("ldap_user2", "invalidPass")))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(500);
+    }
+
+    @Test
+        /* test a non-existing user in ldap */
+    void ldapUserAuthenticateNonExistingUser() {
+        OpenPaasUser testUser = dockerExtension().newTestUser("ldap_user3");
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(header -> header.add("Authorization", basicAuth("non-existing-user", "invalidPass")))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser.id()));
+
+        assertThat(response.status()).isEqualTo(500);
+    }
+
+    public static String basicAuth(String email, String password) {
+        String userPassword = email + ":" + password;
+        byte[] base64UserPassword = Base64
+            .getEncoder()
+            .encode(userPassword.getBytes(StandardCharsets.UTF_8));
+        return "Basic " + new String(base64UserPassword, StandardCharsets.UTF_8);
     }
 
     private void upsertResourceCalendarEvent(String resourceId, String eventId, OpenPaasUser user, String calendarData) {
