@@ -74,6 +74,6 @@ public class DockerOpenPaasExtension implements BeforeAllCallback, AfterAllCallb
 
     public HttpClient davHttpClient() {
         return HttpClient.create()
-            .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(getDockerOpenPaasSetupSingleton().getSabreDavContainer()) + ":80");
+            .baseUrl(dockerOpenPaasSetupSingleton.getServiceUri(DockerOpenPaasSetup.DockerService.SABRE_DAV, "http").toString());
     }
 }

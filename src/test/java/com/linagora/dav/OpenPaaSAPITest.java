@@ -26,6 +26,7 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -55,9 +56,9 @@ abstract class OpenPaaSAPITest {
 
     abstract String domainId();
 
-    abstract ContainerState container();
+    abstract URI backendURI();
 
-    abstract ContainerState getElasticsearchContainer();
+    abstract URI elasticSearchURI();
 
     @BeforeEach
     void setUp() {
@@ -65,7 +66,7 @@ abstract class OpenPaaSAPITest {
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(container()) + ":8080")
+            .setBaseUri(backendURI().toString())
             .build();
 
         davHttpClient = davHttpClient();
@@ -561,7 +562,7 @@ abstract class OpenPaaSAPITest {
 
         Thread.sleep(1000);
         with()
-            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(getElasticsearchContainer()) + ":9200")
+            .baseUri(elasticSearchURI().toString())
             .post("_flush");
         Thread.sleep(1000);
 
@@ -621,7 +622,7 @@ abstract class OpenPaaSAPITest {
 
         Thread.sleep(1000);
         with()
-            .baseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(getElasticsearchContainer()) + ":9200")
+            .baseUri(elasticSearchURI().toString())
             .post("_flush");
         Thread.sleep(1000);
 

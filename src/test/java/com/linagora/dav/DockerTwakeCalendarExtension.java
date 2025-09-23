@@ -56,8 +56,8 @@ public class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEa
     @Override
     public void beforeEach(ExtensionContext extensionContext) throws Exception {
         ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(TestContainersUtils.getContainerPrivateIpAddress(getDockerTwakeCalendarSetupSingleton().getRabbitMqContainer()));
-        factory.setPort(5672);
+        factory.setHost(getDockerTwakeCalendarSetupSingleton().getHost(DockerTwakeCalendarSetup.DockerService.RABBITMQ));
+        factory.setPort(getDockerTwakeCalendarSetupSingleton().getPort(DockerTwakeCalendarSetup.DockerService.RABBITMQ));
         factory.setUsername("guest");
         factory.setPassword("guest");
 
@@ -127,7 +127,7 @@ public class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEa
 
     public HttpClient davHttpClient() {
         return HttpClient.create()
-            .baseUrl("http://" + TestContainersUtils.getContainerPrivateIpAddress(getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80");
+            .baseUrl(getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString());
     }
 
     public Channel getChannel() {

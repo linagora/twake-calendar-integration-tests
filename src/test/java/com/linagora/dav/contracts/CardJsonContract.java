@@ -18,10 +18,10 @@
 
 package com.linagora.dav.contracts;
 
-import static com.linagora.dav.contracts.CardDavContract.STRING;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
+import static com.linagora.dav.contracts.CardDavContract.STRING;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -31,12 +31,11 @@ import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
-import com.linagora.dav.TestContainersUtils;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
@@ -54,7 +53,7 @@ public abstract class CardJsonContract {
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri("http://" + TestContainersUtils.getContainerPrivateIpAddress(dockerExtension().getDockerTwakeCalendarSetupSingleton().getSabreDavContainer()) + ":80")
+            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
             .build();
     }
 

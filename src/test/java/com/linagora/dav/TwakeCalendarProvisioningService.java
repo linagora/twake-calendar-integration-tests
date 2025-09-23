@@ -42,12 +42,12 @@ public class TwakeCalendarProvisioningService {
     private final MongoDatabase database;
     private final HttpClient httpClient;
 
-    public TwakeCalendarProvisioningService(String mongoUri, String calendarSideServiceHost) {
+    public TwakeCalendarProvisioningService(String mongoUri, String calendarSideServiceUri) {
         MongoClient mongoClient = MongoClients.create(mongoUri);
         database = mongoClient.getDatabase("esn_docker");
 
         httpClient = HttpClient.create()
-            .baseUrl("http://" + calendarSideServiceHost + ":8000");
+            .baseUrl(calendarSideServiceUri);
     }
 
     public Document openPaasDomain() {
