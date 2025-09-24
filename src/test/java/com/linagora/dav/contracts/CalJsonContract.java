@@ -28,11 +28,13 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
@@ -49,8 +51,12 @@ import net.javacrumbs.jsonunit.core.Option;
 public abstract class CalJsonContract {
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
+    private CalDavClient calDavClient;
+
     @BeforeEach
     void setUp() {
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
@@ -472,6 +478,4177 @@ public abstract class CalJsonContract {
                 }
                     """, testUser.id(), testUser.id(),
                 testUser.id(), testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDaily() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "20300411T100000",
+            "20300411T110000",
+            "FREQ=DAILY");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-16T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-16T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-16T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyWithCountCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=DAILY;COUNT=2");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-12T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-12T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-12T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyWithUntilCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=DAILY;UNTIL=30250413T000000Z");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+            {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-12T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-12T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-12T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }            
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyWithInterval() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=DAILY;COUNT=2;INTERVAL=2");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-13T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-13T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-13T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithCountCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=WEEKLY;COUNT=2");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-18T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-18T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-18T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithUntilCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=WEEKLY;UNTIL=30250420T000000Z");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-18T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-18T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-18T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithInterval() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=WEEKLY;COUNT=2;INTERVAL=2");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-25T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-25T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-25T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithByDayCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=WEEKLY;BYDAY=FR;COUNT=3");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-22T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-22T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-22T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsMonthlyWithByMonthDayCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "20300411T100000",
+            "20300411T110000",
+            "FREQ=MONTHLY;BYMONTHDAY=15");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-05-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-05-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-05-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsMonthlyWithByMonthDayAndCountCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=MONTHLY;BYMONTHDAY=15;COUNT=3");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-05-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-05-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-05-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsMonthlyWithByMonthDayAndUntilCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            "FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=30250520T000000Z");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "3025-05-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "3025-05-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "3025-05-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/50")
+    @Test
+    void reportShouldListEventsWhenRruleIsYearlyWithByMonthCondition() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "20300411T100000",
+            "20300411T110000",
+            "FREQ=YEARLY;BYMONTH=5;BYMONTHDAY=15");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-11T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-11T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-11T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-05-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-05-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-05-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2031-05-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2031-05-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2031-05-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsFirstMondayOfEachMonth() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "20300411T100000",
+            "20300411T110000",
+            "FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-05-06T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-05-06T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-05-06T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-06-03T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-06-03T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-06-03T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyAndExdateIsPresent() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarDataWithExdate(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "20300411T100000",
+            "20300411T110000",
+            "FREQ=DAILY",
+            "20300416T100000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyAndRecurrenceIdIsPresent() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateRecurringCalendarDataWithRecurrenceId(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "20300411T100000",
+            "20300411T110000",
+            "FREQ=DAILY",
+            "20300416T100000",
+            "20300416T150000",
+            "20300416T160000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+
+        assertThatJson(response.body())
+            .whenIgnoringPaths("_embedded.dav:item[0].etag",
+                "_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .isEqualTo("""
+                {
+                  "_links": {
+                    "self": {
+                      "href": "/calendars/{organizerId}/{organizerId}.json"
+                    }
+                  },
+                  "_embedded": {
+                    "dav:item": [
+                      {
+                        "_links": {
+                          "self": {
+                            "href": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
+                          }
+                        },
+                        "etag": "\\"3114d89b8064004ff80b26671a29f953\\"",
+                        "data": [
+                          "vcalendar",
+                          [
+                            [
+                              "prodid",
+                              {},
+                              "text",
+                              "-//Sabre//Sabre VObject 4.1.3//EN"
+                            ],
+                            [
+                              "version",
+                              {},
+                              "text",
+                              "2.0"
+                            ],
+                            [
+                              "calscale",
+                              {},
+                              "text",
+                              "GREGORIAN"
+                            ]
+                          ],
+                          [
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T04:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER",
+                                    "schedule-status": "1.1"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-15T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ],
+                            [
+                              "vevent",
+                              [
+                                [
+                                  "uid",
+                                  {},
+                                  "text",
+                                  "{eventUid}"
+                                ],
+                                [
+                                  "dtstamp",
+                                  {},
+                                  "date-time",
+                                  "3025-04-11T02:20:32Z"
+                                ],
+                                [
+                                  "sequence",
+                                  {},
+                                  "integer",
+                                  1
+                                ],
+                                [
+                                  "dtstart",
+                                  {},
+                                  "date-time",
+                                  "2030-04-16T08:00:00Z"
+                                ],
+                                [
+                                  "dtend",
+                                  {},
+                                  "date-time",
+                                  "2030-04-16T09:00:00Z"
+                                ],
+                                [
+                                  "summary",
+                                  {},
+                                  "text",
+                                  "Sprint planning #01"
+                                ],
+                                [
+                                  "location",
+                                  {},
+                                  "text",
+                                  "Twake Meeting Room"
+                                ],
+                                [
+                                  "description",
+                                  {},
+                                  "text",
+                                  "This is a meeting to discuss the sprint planning for the next week."
+                                ],
+                                [
+                                  "organizer",
+                                  {
+                                    "cn": "Van Tung TRAN"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER"
+                                  },
+                                  "cal-address",
+                                  "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                  "attendee",
+                                  {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                  },
+                                  "cal-address",
+                                  "mailto:{organizerEmail}"
+                                ],
+                                [
+                                  "recurrence-id",
+                                  {},
+                                  "date-time",
+                                  "2030-04-16T03:00:00Z"
+                                ]
+                              ],
+                              []
+                            ]
+                          ]
+                        ],
+                        "status": 200
+                      }
+                    ]
+                  }
+                }
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email())
+                .replace("{organizerId}", testUser.id()));
     }
 
     @Test
@@ -1828,4 +6005,171 @@ public abstract class CalJsonContract {
     }
 
     // todo delegation
+
+    private String generateRecurringCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
+                                                 String summary,
+                                                 String location,
+                                                 String description,
+                                                 String dtstart,
+                                                 String dtend,
+                                                 String rrule) {
+
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            RRULE:{rrule}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary)
+            .replace("{location}", location)
+            .replace("{description}", description)
+            .replace("{dtstart}", dtstart)
+            .replace("{dtend}", dtend)
+            .replace("{rrule}", rrule);
+    }
+
+    private String generateRecurringCalendarDataWithExdate(String eventUid, String organizerEmail, String attendeeEmail,
+                                                           String summary,
+                                                           String location,
+                                                           String description,
+                                                           String dtstart,
+                                                           String dtend,
+                                                           String rrule,
+                                                           String exdate) {
+
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            RRULE:{rrule}
+            EXDATE;TZID=Asia/Ho_Chi_Minh:{exdate}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary)
+            .replace("{location}", location)
+            .replace("{description}", description)
+            .replace("{dtstart}", dtstart)
+            .replace("{dtend}", dtend)
+            .replace("{rrule}", rrule)
+            .replace("{exdate}", exdate);
+    }
+
+    private String generateRecurringCalendarDataWithRecurrenceId(String eventUid, String organizerEmail, String attendeeEmail,
+                                                                 String summary,
+                                                                 String location,
+                                                                 String description,
+                                                                 String dtstart,
+                                                                 String dtend,
+                                                                 String rrule,
+                                                                 String recurrenceId,
+                                                                 String recDtstart,
+                                                                 String recDtend) {
+
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            RRULE:{rrule}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{recDtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{recDtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:{recurrenceId}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary)
+            .replace("{location}", location)
+            .replace("{description}", description)
+            .replace("{dtstart}", dtstart)
+            .replace("{dtend}", dtend)
+            .replace("{rrule}", rrule)
+            .replace("{recurrenceId}", recurrenceId)
+            .replace("{recDtstart}", recDtstart)
+            .replace("{recDtend}", recDtend);
+    }
 }
