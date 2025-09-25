@@ -28,7 +28,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -414,6 +413,366 @@ public abstract class EmailAMQPMessageContract {
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
         assertThat(actualOldCalendar).isEqualTo(expectedOldCalendar);
+    }
+
+    @Test
+    void shouldReceiveNotificationEmailMessageOnRecurringEventWithExdate() throws ParseException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // Create a recurring event with EXDATE
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250401T090000Z
+            SEQUENCE:0
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            RRULE:FREQ=WEEKLY;BYDAY=FR
+            EXDATE;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            SUMMARY:Weekly meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email());
+
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
+            .get();
+
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        // --- Expected ICS extracted for readability ---
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250401T090000Z
+            SEQUENCE:0
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            RRULE:FREQ=WEEKLY;BYDAY=FR
+            EXDATE;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            SUMMARY:Weekly meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
+
+        // --- Expected JSON without event field ---
+        String expectedJsonString = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "REQUEST",
+              "notify": true,
+              "calendarURI": "{organizerId}",
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "isNewEvent": true
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
+        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expectedJsonString);
+
+        // Compare JSON (excluding the event field)
+        actualJson.remove("event");
+        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+
+        // Compare ICS separately
+        Calendar actualCalendar = CalendarUtil.parseIcs(((JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual)).getAsString("event"));
+        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedEventIcs);
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void shouldReceiveCancelMessageWhenRecurringEventOccurrenceIsExcluded() throws ParseException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // Create a recurring event
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250401T090000Z
+            SEQUENCE:0
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            RRULE:FREQ=WEEKLY;BYDAY=FR
+            SUMMARY:Weekly meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email());
+
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+
+        String attendeeEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
+            .get();
+        getMessageFromQueue(); // ignore creation message
+
+        // Update the event by adding an EXDATE (exclude one occurrence)
+        String updatedCalendarData = initialCalendarData.replace("SUMMARY:Weekly meeting",
+            "SUMMARY:Weekly meeting\nEXDATE;TZID=Asia/Ho_Chi_Minh:30250411T090000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        // Consume queue (first is creation, second is cancellation)
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        // --- Expected CANCEL ICS ---
+        String expectedCancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:0
+            SUMMARY:Weekly meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
+
+        // --- Expected JSON without event ---
+        String expectedJsonString = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "CANCEL",
+              "notify": true,
+              "calendarURI": "{organizerId}",
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
+        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expectedJsonString);
+
+        // Compare JSON without ICS
+        actualJson.remove("event");
+        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+
+        // --- Compare ICS separately ---
+        Calendar actualCalendar = CalendarUtil.parseIcs(((JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual)).getAsString("event"));
+        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedCancelIcs);
+
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void shouldReceiveNotificationEmailMessageOnRecurringEventOccurrenceUpdate() throws ParseException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // Create recurring event (weekly on Tuesday 09:00–10:00)
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250920T090000Z
+            SEQUENCE:0
+            DTSTART;TZID=Europe/Paris:30250923T090000
+            DTEND;TZID=Europe/Paris:30250923T100000
+            RRULE:FREQ=WEEKLY;BYDAY=TU
+            SUMMARY:Weekly meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email());
+
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+
+        String attendeeEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
+            .get();
+        getMessageFromQueue();
+
+        // Override one occurrence (move from 23/09 09:00–10:00 → 24/09 14:00–15:00)
+        String updatedOccurrenceData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250920T090000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:30250923T090000
+            DTEND;TZID=Europe/Paris:30250923T100000
+            RRULE:FREQ=WEEKLY;BYDAY=TU
+            SUMMARY:Weekly meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250920T090000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:30250924T140000
+            DTEND;TZID=Europe/Paris:30250924T150000
+            RECURRENCE-ID;TZID=Europe/Paris:30250923T090000
+            SUMMARY:Weekly meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email());
+
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedOccurrenceData);
+
+        // Consume queue
+        getMessageFromQueue();
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        // --- Expected ICS for the updated occurrence ---
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250920T090000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:30250924T140000
+            DTEND;TZID=Europe/Paris:30250924T150000
+            RECURRENCE-ID;TZID=Europe/Paris:30250923T090000
+            SUMMARY:Weekly meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
+
+        // --- Expected JSON with changes ---
+        String expectedJsonString = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "REQUEST",
+              "notify": true,
+              "calendarURI": "{organizerId}",
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "changes": {
+                "dtstart": {
+                  "previous": {
+                    "isAllDay": false,
+                    "date": "3025-09-23 09:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Europe/Paris"
+                  },
+                  "current": {
+                    "isAllDay": false,
+                    "date": "3025-09-24 14:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Europe/Paris"
+                  }
+                },
+                "dtend": {
+                  "previous": {
+                    "isAllDay": false,
+                    "date": "3025-09-23 10:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Europe/Paris"
+                  },
+                  "current": {
+                    "isAllDay": false,
+                    "date": "3025-09-24 15:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Europe/Paris"
+                  }
+                }
+              }
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
+        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expectedJsonString);
+
+        // Compare JSON without ICS
+        actualJson.remove("event");
+        JsonUtil.sanitize(actualJson);
+        JsonUtil.sanitize(expectedJson);
+        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
+
+        // Compare ICS separately
+        Calendar actualCalendar = CalendarUtil.parseIcs(((JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual)).getAsString("event"));
+        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedEventIcs);
+        CalendarUtil.sanitize(actualCalendar);
+        CalendarUtil.sanitize(expectedCalendar);
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     private byte[] getMessageFromQueue() {
