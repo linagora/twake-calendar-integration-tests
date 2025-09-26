@@ -171,7 +171,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPITest {
                         ]
                       },
                       {
-                        "name": "linagora.esn.contacts",
+                        "name": "linagora.esn.contact",
                         "configurations": [
                           {
                             "name": "features",
@@ -181,6 +181,15 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPITest {
                               "isSharingAddressbookEnabled": true,
                               "isDomainMembersAddressbookEnabled": true
                             }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "calendar",
+                        "configurations": [
+                          {
+                            "name": "alarmEmails",
+                            "value": null
                           }
                         ]
                       }
@@ -378,7 +387,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPITest {
             .get("api/themes/" + domainId() + "/logo").prettyPeek()
             .then()
             .statusCode(301)
-            .header("Location", "https://e-calendrier.avocat.fr/assets/images/white-logo.svg");
+            .header("Location", "https://e-calendrier.avocat.fr/calendar/assets/images/white-logo.svg");
     }
 
     // No data in opensearch
