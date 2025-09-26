@@ -51,6 +51,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
+import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -1560,20 +1561,20 @@ public abstract class CalDavContract {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         String eventUid = UUID.randomUUID().toString();
-        String calendarData = generateRecurringCalendarDataWithRecurrenceIdAndExdate(
-            eventUid,
-            testUser.email(),
-            testUser2.email(),
-            "Sprint planning #01",
-            "Twake Meeting Room",
-            "This is a meeting to discuss the sprint planning for the next week.",
-            "20300411T100000",
-            "20300411T110000",
-            "FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=5",
-            "20300603T100000",
-            "20300506T100000",
-            "20300506T150000",
-            "20300506T160000");
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=5")
+            .exDate("20300603T100000")
+            .recurrenceOverride("20300506T100000", "20300506T150000", "20300506T160000")
+            .build()
+            .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -1607,9 +1608,11 @@ public abstract class CalDavContract {
         Calendar actualCalendar = CalendarUtil.parseIcs(actual);
         Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
         actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponents(Component.VEVENT).forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP));
+        actualCalendar.getComponents(Component.VEVENT)
+            .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
         expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponents(Component.VEVENT).forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP));
+        expectedCalendar.getComponents(Component.VEVENT)
+            .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
 
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
@@ -1809,76 +1812,5 @@ public abstract class CalDavContract {
             .replace("{dtend}", dtend)
             .replace("{partStat}", partStat)
             .replace("{resourceId}", resourceId);
-    }
-
-    private String generateRecurringCalendarDataWithRecurrenceIdAndExdate(String eventUid, String organizerEmail, String attendeeEmail,
-                                                                          String summary,
-                                                                          String location,
-                                                                          String description,
-                                                                          String dtstart,
-                                                                          String dtend,
-                                                                          String rrule,
-                                                                          String exdate,
-                                                                          String recurrenceId,
-                                                                          String recDtstart,
-                                                                          String recDtend) {
-
-        return """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
-            BEGIN:VTIMEZONE
-            TZID:Asia/Ho_Chi_Minh
-            BEGIN:STANDARD
-            TZOFFSETFROM:+0700
-            TZOFFSETTO:+0700
-            TZNAME:ICT
-            DTSTART:19700101T000000
-            END:STANDARD
-            END:VTIMEZONE
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:1
-            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
-            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
-            SUMMARY:{summary}
-            LOCATION:{location}
-            DESCRIPTION:{description}
-            RRULE:{rrule}
-            EXDATE;TZID=Asia/Ho_Chi_Minh:{exdate}
-            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
-            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            END:VEVENT
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:1
-            DTSTART;TZID=Asia/Ho_Chi_Minh:{recDtstart}
-            DTEND;TZID=Asia/Ho_Chi_Minh:{recDtend}
-            SUMMARY:{summary}
-            LOCATION:{location}
-            DESCRIPTION:{description}
-            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
-            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:{recurrenceId}
-            END:VEVENT
-            END:VCALENDAR
-            """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", organizerEmail)
-            .replace("{attendeeEmail}", attendeeEmail)
-            .replace("{summary}", summary)
-            .replace("{location}", location)
-            .replace("{description}", description)
-            .replace("{dtstart}", dtstart)
-            .replace("{dtend}", dtend)
-            .replace("{rrule}", rrule)
-            .replace("{exdate}", exdate)
-            .replace("{recurrenceId}", recurrenceId)
-            .replace("{recDtstart}", recDtstart)
-            .replace("{recDtend}", recDtend);
     }
 }
