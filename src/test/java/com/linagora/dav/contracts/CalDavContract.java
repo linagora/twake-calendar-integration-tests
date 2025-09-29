@@ -51,6 +51,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
+import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -1552,6 +1553,68 @@ public abstract class CalDavContract {
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{resourceId}", resource.id()));
+    }
+
+    @Test
+    void reportShouldShowRecurringEvent() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=5")
+            .exDate("20300603T100000")
+            .recurrenceOverride("20300506T100000", "20300506T150000", "20300506T160000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser2.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser2.id() + "/" + testUser2.id())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:time-range start="20300411T000000" end="20300911T110000"/>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """)));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+        );
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponents(Component.VEVENT)
+            .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponents(Component.VEVENT)
+            .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
+
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     @Test

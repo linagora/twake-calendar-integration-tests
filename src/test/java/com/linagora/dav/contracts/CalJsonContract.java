@@ -28,15 +28,24 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.Streams;
+import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TwakeCalendarEvent;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
@@ -47,10 +56,56 @@ import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CalJsonContract {
+    public record EventData(String uid, String dtstart, String dtend, Optional<String> recurrenceId) {
+        public static class Builder {
+            private Optional<String> uid = Optional.empty();
+            private Optional<String> dtstart = Optional.empty();
+            private Optional<String> dtend = Optional.empty();
+            private Optional<String> recurrenceId = Optional.empty();
+
+            public Builder uid(String uid) {
+                this.uid = Optional.of(uid);
+                return this;
+            }
+
+            public Builder dtstart(String dtstart) {
+                this.dtstart = Optional.of(dtstart);
+                return this;
+            }
+
+            public Builder dtend(String dtend) {
+                this.dtend = Optional.of(dtend);
+                return this;
+            }
+
+            public Builder recurrenceId(String recurrenceId) {
+                this.recurrenceId = Optional.of(recurrenceId);
+                return this;
+            }
+
+            public EventData build() {
+                return new EventData(
+                    uid.get(),
+                    dtstart.get(),
+                    dtend.get(),
+                    recurrenceId
+                );
+            }
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+    }
+
     public abstract DockerTwakeCalendarExtension dockerExtension();
+
+    private CalDavClient calDavClient;
 
     @BeforeEach
     void setUp() {
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
@@ -472,6 +527,793 @@ public abstract class CalJsonContract {
                 }
                     """, testUser.id(), testUser.id(),
                 testUser.id(), testUser.id()));
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDaily() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=DAILY")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-16T03:00:00Z")
+                .dtend("2030-04-16T04:00:00Z")
+                .recurrenceId("2030-04-16T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyWithCountCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=DAILY;COUNT=2")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-12T03:00:00Z")
+                .dtend("3025-04-12T04:00:00Z")
+                .recurrenceId("3025-04-12T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyWithUntilCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=DAILY;UNTIL=30250413T000000Z")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+            {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-12T03:00:00Z")
+                .dtend("3025-04-12T04:00:00Z")
+                .recurrenceId("3025-04-12T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyWithInterval() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=DAILY;COUNT=2;INTERVAL=2")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-13T03:00:00Z")
+                .dtend("3025-04-13T04:00:00Z")
+                .recurrenceId("3025-04-13T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithCountCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=WEEKLY;COUNT=2")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-18T03:00:00Z")
+                .dtend("3025-04-18T04:00:00Z")
+                .recurrenceId("3025-04-18T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithUntilCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=WEEKLY;UNTIL=30250420T000000Z")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-18T03:00:00Z")
+                .dtend("3025-04-18T04:00:00Z")
+                .recurrenceId("3025-04-18T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithInterval() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=WEEKLY;COUNT=2;INTERVAL=2")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-25T03:00:00Z")
+                .dtend("3025-04-25T04:00:00Z")
+                .recurrenceId("3025-04-25T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsWeeklyWithByDayCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=WEEKLY;BYDAY=FR;COUNT=3")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-15T03:00:00Z")
+                .dtend("3025-04-15T04:00:00Z")
+                .recurrenceId("3025-04-15T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(2)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-22T03:00:00Z")
+                .dtend("3025-04-22T04:00:00Z")
+                .recurrenceId("3025-04-22T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsMonthlyWithByMonthDayCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=MONTHLY;BYMONTHDAY=15")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-05-15T03:00:00Z")
+                .dtend("2030-05-15T04:00:00Z")
+                .recurrenceId("2030-05-15T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsMonthlyWithByMonthDayAndCountCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=MONTHLY;BYMONTHDAY=15;COUNT=3")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-15T03:00:00Z")
+                .dtend("3025-04-15T04:00:00Z")
+                .recurrenceId("3025-04-15T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(2)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-05-15T03:00:00Z")
+                .dtend("3025-05-15T04:00:00Z")
+                .recurrenceId("3025-05-15T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsMonthlyWithByMonthDayAndUntilCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("30250411T100000")
+            .dtend("30250411T110000")
+            .rrule("FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=30250520T000000Z")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-04-15T03:00:00Z")
+                .dtend("3025-04-15T04:00:00Z")
+                .recurrenceId("3025-04-15T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(2)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("3025-05-15T03:00:00Z")
+                .dtend("3025-05-15T04:00:00Z")
+                .recurrenceId("3025-05-15T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/50")
+    @Test
+    void reportShouldListEventsWhenRruleIsYearlyWithByMonthCondition() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=YEARLY;BYMONTH=5;BYMONTHDAY=15")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-11T03:00:00Z")
+                .dtend("2030-04-11T04:00:00Z")
+                .recurrenceId("2030-04-11T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-05-15T03:00:00Z")
+                .dtend("2030-05-15T04:00:00Z")
+                .recurrenceId("2030-05-15T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsFirstMondayOfEachMonth() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-05-06T03:00:00Z")
+                .dtend("2030-05-06T04:00:00Z")
+                .recurrenceId("2030-05-06T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-03T03:00:00Z")
+                .dtend("2030-06-03T04:00:00Z")
+                .recurrenceId("2030-06-03T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyAndExdateIsPresent() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=DAILY")
+            .exDate("20300416T100000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    void reportShouldListEventsWhenRruleIsDailyAndRecurrenceIdIsPresent() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=DAILY")
+            .recurrenceOverride("20300416T100000", "20300416T150000", "20300416T160000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+
+        List<EventData> result = getEventData(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
+                .build()
+        );
+
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-16T08:00:00Z")
+                .dtend("2030-04-16T09:00:00Z")
+                .recurrenceId("2030-04-16T03:00:00Z")
+                .build()
+        );
     }
 
     @Test
@@ -1828,4 +2670,22 @@ public abstract class CalJsonContract {
     }
 
     // todo delegation
+
+    private List<EventData> getEventData(String json) throws JsonProcessingException {
+        JsonNode root = new ObjectMapper().readTree(json);
+        JsonNode vevents = root.at("/_embedded/dav:item/0/data/2");
+        return Streams.stream(vevents.elements()).map(vevent -> {
+            String uid = getEventDataField(vevent.get(1), "uid").get();
+            String dtstart = getEventDataField(vevent.get(1), "dtstart").get();
+            String dtend = getEventDataField(vevent.get(1), "dtend").get();
+            Optional<String> recurrenceId = getEventDataField(vevent.get(1), "recurrence-id");
+            return new EventData(uid, dtstart, dtend, recurrenceId);
+        }).toList();
+    }
+
+    private Optional<String> getEventDataField(JsonNode vevent, String fieldName) {
+        return Streams.stream(vevent.elements())
+            .filter(jsonNode -> jsonNode.get(0).asText().equals(fieldName))
+            .map(jsonNode -> jsonNode.get(3).asText()).findAny();
+    }
 }
