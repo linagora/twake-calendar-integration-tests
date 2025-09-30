@@ -2032,6 +2032,142 @@ public abstract class CalJsonContract {
     }
 
     @Test
+    void reportFreeBusyShouldShowBusyPeriodWhenEventIsRecurring() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser3 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=DAILY")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")));
+
+        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode freebusy = root.at("/data/2/0");
+
+        assertThatJson(freebusy)
+            .whenIgnoringPaths("[1][2][3]")  // ignore dtstamp
+            .isEqualTo("""
+                  [
+                    "vfreebusy",
+                    [
+                      [
+                        "dtstart",
+                        {},
+                        "date-time",
+                        "2030-04-12T02:00:00Z"
+                      ],
+                      [
+                        "dtend",
+                        {},
+                        "date-time",
+                        "2030-04-12T05:00:00Z"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "2025-09-29T10:09:00Z"
+                      ],
+                      [
+                        "freebusy",
+                        {},
+                        "period",
+                        [
+                          "2030-04-12T03:00:00Z",
+                          "2030-04-12T04:00:00Z"
+                        ]
+                      ]
+                    ],
+                    []
+                  ]
+                  """);
+    }
+
+    @Test
+    void reportFreeBusyShouldNotShowBusyPeriodWhenEventIsTransparentAndRecurring() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser3 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=DAILY")
+            .transparent("TRANSPARENT")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")));
+
+        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode freebusy = root.at("/data/2/0");
+
+        assertThatJson(freebusy)
+            .whenIgnoringPaths("[1][2][3]")  // ignore dtstamp
+            .isEqualTo("""
+                  [
+                    "vfreebusy",
+                    [
+                      [
+                        "dtstart",
+                        {},
+                        "date-time",
+                        "2030-04-12T02:00:00Z"
+                      ],
+                      [
+                        "dtend",
+                        {},
+                        "date-time",
+                        "2030-04-12T05:00:00Z"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "2025-09-29T10:09:00Z"
+                      ]
+                    ],
+                    []
+                  ]
+                  """);
+    }
+
+    @Test
     void shouldCreateCalendar() {
         OpenPaasUser alice = dockerExtension().newTestUser();
 
