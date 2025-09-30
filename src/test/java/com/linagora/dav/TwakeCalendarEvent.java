@@ -41,6 +41,7 @@ import net.fortuna.ical4j.model.property.Organizer;
 import net.fortuna.ical4j.model.property.RRule;
 import net.fortuna.ical4j.model.property.RecurrenceId;
 import net.fortuna.ical4j.model.property.Summary;
+import net.fortuna.ical4j.model.property.Transp;
 import net.fortuna.ical4j.model.property.Uid;
 import net.fortuna.ical4j.model.property.Version;
 
@@ -55,6 +56,7 @@ public record TwakeCalendarEvent(Calendar calendar) {
         private Optional<String> description = Optional.empty();
         private Optional<String> dtstart = Optional.empty();
         private Optional<String> dtend = Optional.empty();
+        private Optional<String> transparent = Optional.empty();
         private Optional<String> rrule = Optional.empty();
         private Optional<String> exDate = Optional.empty();
         private Optional<Organizer> organizer = Optional.empty();
@@ -91,6 +93,11 @@ public record TwakeCalendarEvent(Calendar calendar) {
 
         public Builder dtend(String dtend) {
             this.dtend = Optional.of(dtend);
+            return this;
+        }
+
+        public Builder transparent(String transparent) {
+            this.transparent = Optional.of(transparent);
             return this;
         }
 
@@ -160,6 +167,7 @@ public record TwakeCalendarEvent(Calendar calendar) {
             description.ifPresent(d -> event.add(new Description(d)));
             organizer.ifPresent(o -> event.add(o));
             attendees.build().forEach(event::add);
+            transparent.ifPresent(t -> event.add(new Transp(t)));
 
             return event;
         }
