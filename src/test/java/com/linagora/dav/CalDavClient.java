@@ -20,6 +20,9 @@ package com.linagora.dav;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +35,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Streams;
+import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -41,6 +45,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
 public class CalDavClient {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public record CounterRequest(String calendarData,
                                  String sender,
@@ -313,5 +318,224 @@ public class CalDavClient {
         String calendarIdWithExt = parts[3];
         String calendarId = calendarIdWithExt.replace(".json", "");
         return new CalendarURL(userId, calendarId);
+    }
+
+    public void subscribeToSharedCalendar(OpenPaasUser user, SubscribedCalendarRequest subscribedCalendarRequest) {
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
+
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(subscribedCalendarRequest.serialize().getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when subscribing to shared calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
+    public void deleteSubscribedCalendar(OpenPaasUser user, String calendarURI) {
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.DELETE)
+            .uri(calendarURI)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when deleting subscribed calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), calendarURI, errorBody))));
+            }).block();
+    }
+
+    public void updateCalendarAcl(OpenPaasUser user, String publicRight) {
+       updateCalendarAcl(user, CalendarURL.from(user.id()), publicRight);
+    }
+
+    /**
+     * <p>Examples of {@code public_right} values:
+     * <ul>
+     *     <li><b>Hide calendar</b>:
+     *     <pre>{@code
+     *     {"public_right": ""}
+     *     }</pre>
+     *     </li>
+     *
+     *     <li><b>See all details</b>:
+     *     <pre>{@code
+     *     {"public_right": "{DAV:}read"}
+     *     }</pre>
+     *     </li>
+     *
+     *     <li><b>Edit (full access)</b>:
+     *     <pre>{@code
+     *     {"public_right": "{DAV:}write"}
+     *     }</pre>
+     *     </li>
+     * </ul>
+     */
+    public void updateCalendarAcl(OpenPaasUser user, CalendarURL calendarURL, String publicRight) {
+        String uri = calendarURL.asUri() + ".json";
+        String payload = """
+            {
+              "public_right":"%s"
+            }
+            """.formatted(publicRight);
+
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*")
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.valueOf("ACL"))
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when updating ACL for calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
+    public Flux<JsonNode> reportCalendarEvents(OpenPaasUser user, String calendarURI, Instant start, Instant end) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss").withZone(ZoneOffset.UTC);
+        String payload = """
+            {
+              "match": {
+                "start": "%s",
+                "end": "%s"
+              }
+            }
+            """.formatted(formatter.format(start), formatter.format(end));
+
+        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*")
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(calendarURI)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return responseContent.asString(StandardCharsets.UTF_8);
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException(
+                        "Unexpected status code: %d when reporting events for calendar '%s'%n%s"
+                            .formatted(response.status().code(), calendarURI, errorBody))));
+            })
+            .flatMapMany(body -> {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode root = mapper.readTree(body);
+                    ArrayNode items = (ArrayNode) root.path("_embedded").path("dav:item");
+                    return Flux.fromIterable(items);
+                } catch (Exception e) {
+                    return Flux.error(new RuntimeException("Failed to parse REPORT response for calendar " + calendarURI, e));
+                }
+            });
+    }
+
+    public Flux<JsonNode> findUserSubscribedCalendars(OpenPaasUser requester) {
+        return findUserSubscribedCalendars(requester, requester.id());
+    }
+
+    public Flux<JsonNode> findUserSubscribedCalendars(OpenPaasUser user, String targetUserId) {
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + targetUserId + ".json"
+            + "?sharedPublicSubscription=true&withRights=true";
+
+        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
+            .request(HttpMethod.GET)
+            .uri(uri)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == HttpStatus.SC_OK) {
+                    return responseContent.asString(StandardCharsets.UTF_8);
+                } else {
+                    return responseContent.asString(StandardCharsets.UTF_8)
+                        .switchIfEmpty(Mono.just(""))
+                        .flatMap(errorBody -> Mono.error(new RuntimeException(
+                            "Unexpected status code: %d when finding subscribed calendars for user '%s'%s%n%s"
+                                .formatted(response.status().code(), user.id(), uri, errorBody))));
+                }
+            })
+            .flatMapMany(json -> {
+                try {
+                    JsonNode root = MAPPER.readTree(json);
+                    ArrayNode calendars = (ArrayNode) root.path("_embedded").path("dav:calendar");
+                    return Flux.fromIterable(calendars);
+                } catch (Exception e) {
+                    return Flux.error(new RuntimeException("Failed to parse subscribed calendars JSON", e));
+                }
+            });
+    }
+
+    public void createNewCalendar(OpenPaasUser user, String id, String name) {
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
+
+        String payload = """
+            {
+              "id": "%s",
+              "dav:name": "%s",
+              "apple:color": "#FF0000",
+              "caldav:description": "Calendar for %s"
+            }
+            """.formatted(id, name, name);
+
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_JSON)
+                .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == HttpStatus.SC_CREATED) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when creating calendar '%s' for user '%s'
+                        %s
+                        """.formatted(response.status().code(), id, user.id(), responseBody))));
+            })
+            .block();
+    }
+
+    public void deleteCalendar(OpenPaasUser user, CalendarURL calendarURL) {
+        String uri = calendarURL.asUri() + ".json";
+
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_JSON))
+            .request(HttpMethod.DELETE)
+            .uri(uri)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == HttpStatus.SC_NO_CONTENT) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when deleting calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, responseBody))));
+            })
+            .block();
     }
 }
