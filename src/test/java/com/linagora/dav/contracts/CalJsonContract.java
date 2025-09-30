@@ -56,6 +56,7 @@ import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CalJsonContract {
+
     public record EventData(String uid, String dtstart, String dtend, Optional<String> recurrenceId) {
         public static class Builder {
             private Optional<String> uid = Optional.empty();
@@ -97,6 +98,8 @@ public abstract class CalJsonContract {
             return new Builder();
         }
     }
+
+    public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
@@ -1895,6 +1898,140 @@ public abstract class CalJsonContract {
     }
 
     @Test
+    void reportFreeBusyShouldShowBusyPeriod() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser3 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")));
+
+        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode freebusy = root.at("/data/2/0");
+
+        assertThatJson(freebusy)
+            .whenIgnoringPaths("[1][2][3]")  // ignore dtstamp
+            .isEqualTo("""
+                  [
+                    "vfreebusy",
+                    [
+                      [
+                        "dtstart",
+                        {},
+                        "date-time",
+                        "2030-04-11T02:00:00Z"
+                      ],
+                      [
+                        "dtend",
+                        {},
+                        "date-time",
+                        "2030-04-11T05:00:00Z"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "2025-09-29T10:09:00Z"
+                      ],
+                      [
+                        "freebusy",
+                        {},
+                        "period",
+                        [
+                          "2030-04-11T03:00:00Z",
+                          "2030-04-11T04:00:00Z"
+                        ]
+                      ]
+                    ],
+                    []
+                  ]
+                  """);
+    }
+
+    @Test
+    void reportFreeBusyShouldNotShowBusyPeriodWhenEventIsTransparent() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser3 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .attendee(testUser2.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .transparent("TRANSPARENT")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")));
+
+        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode freebusy = root.at("/data/2/0");
+
+        assertThatJson(freebusy)
+            .whenIgnoringPaths("[1][2][3]")  // ignore dtstamp
+            .isEqualTo("""
+                  [
+                    "vfreebusy",
+                    [
+                      [
+                        "dtstart",
+                        {},
+                        "date-time",
+                        "2030-04-11T02:00:00Z"
+                      ],
+                      [
+                        "dtend",
+                        {},
+                        "date-time",
+                        "2030-04-11T05:00:00Z"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "2025-09-29T10:09:00Z"
+                      ]
+                    ],
+                    []
+                  ]
+                  """);
+    }
+
+    @Test
     void shouldCreateCalendar() {
         OpenPaasUser alice = dockerExtension().newTestUser();
 
@@ -2672,7 +2809,7 @@ public abstract class CalJsonContract {
     // todo delegation
 
     private List<EventData> getEventData(String json) throws JsonProcessingException {
-        JsonNode root = new ObjectMapper().readTree(json);
+        JsonNode root = OBJECT_MAPPER.readTree(json);
         JsonNode vevents = root.at("/_embedded/dav:item/0/data/2");
         return Streams.stream(vevents.elements()).map(vevent -> {
             String uid = getEventDataField(vevent.get(1), "uid").get();
