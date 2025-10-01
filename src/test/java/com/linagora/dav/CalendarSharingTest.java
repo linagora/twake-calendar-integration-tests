@@ -34,8 +34,6 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
-import reactor.netty.http.client.HttpClient;
-
 public class CalendarSharingTest {
 
     @RegisterExtension
@@ -48,9 +46,7 @@ public class CalendarSharingTest {
 
     @BeforeEach
     void setUp() {
-        calDavClient = new CalDavClient(HttpClient.create()
-            .baseUrl("http://localhost:8001"));
-
+        calDavClient = new CalDavClient(extension.davHttpClient());
         extension.getDockerOpenPaasSetupSingleton()
             .getOpenPaaSProvisioningService()
             .enableSharedCalendarModule()
@@ -61,7 +57,7 @@ public class CalendarSharingTest {
     }
 
     @Disabled("Sabre DAV wrongly allows subscribing to private calendars. " +
-        "Expected: forbidden")
+        "Expected: forbidden. https://github.com/linagora/esn-sabre/issues/52")
     @Test
     void cannotSubscribeToPrivateCalendar() {
         // Given: Bob sets his calendar as private
@@ -86,7 +82,13 @@ public class CalendarSharingTest {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
 
         // WHEN: Alice subscribes to Bob's calendar
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
@@ -150,7 +152,13 @@ public class CalendarSharingTest {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // WHEN: Alice subscribes to Bob's readonly calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Alice's copy of Bob's calendar should also contain the event (with description)
@@ -176,7 +184,13 @@ public class CalendarSharingTest {
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
         // AND: Alice subscribes to Bob's readonly calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Bob adds a new event in his own calendar
@@ -244,7 +258,13 @@ public class CalendarSharingTest {
         calDavClient.upsertCalendarEvent(bob, eventUid, originalEvent);
 
         // AND: Alice subscribes to Bob's readonly calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Bob modifies event1
@@ -309,7 +329,13 @@ public class CalendarSharingTest {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // AND: Alice subscribes to Bob's readonly calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
@@ -342,12 +368,51 @@ public class CalendarSharingTest {
     }
 
     @Test
+    void subscriptionIsRevokedWhenSourceBecomesPrivate() {
+        // GIVEN: Bob sets his calendar as publicly-readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Alice subscribes to Bob's calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob public shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // CONFIRM: Alice initially sees the subscription
+        List<JsonNode> aliceSubscribedBefore = calDavClient.findUserSubscribedCalendars(alice)
+            .collectList().block();
+        assertThat(aliceSubscribedBefore)
+            .anySatisfy(node -> assertThat(node.get("dav:name").asText()).isEqualTo("Bob public shared"));
+
+        // WHEN: Bob changes his calendar to private
+        calDavClient.updateCalendarAcl(bob, "");
+
+        // THEN: Alice should no longer see the subscription
+        List<JsonNode> aliceSubscribedAfter = calDavClient.findUserSubscribedCalendars(alice)
+            .collectList().block();
+        assertThat(aliceSubscribedAfter)
+            .noneSatisfy(node -> assertThat(node.get("dav:name").asText()).isEqualTo("Bob public shared"));
+    }
+
+    @Test
     void synchronizedCalendarsAreNotListedPublicly() {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
         // AND: Alice subscribes to Bob's calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Cedric tries to list Alice's calendars
@@ -366,7 +431,13 @@ public class CalendarSharingTest {
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
         // AND: Alice subscribes to Bob's calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob readonly shared", true);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice unsubscribes (deletes her copy)
