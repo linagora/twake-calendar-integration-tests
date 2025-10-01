@@ -529,11 +529,8 @@ public class CalendarSharingTest {
                 .isEqualTo("Subscribed copy of Bob custom calendar"));
     }
 
-    @Disabled("Sabre DAV emits AMQP messages for Alice's subscribed copy. " +
-        "Expected: only Bob's original calendar should emit events. " +
-        "See https://github.com/linagora/esn-sabre/issues/53")
     @Test
-    void noAmqpMessagesEmittedForSubscribedCopy() throws Exception {
+    void amqpMessagesEmittedForSubscribedCopy() throws Exception {
         String queueName = "sharing-test" + alice.id();
         channel.queueDeclare(queueName, false, true, true, null);
         channel.queueBind(queueName, "calendar:event:created", "");
@@ -583,7 +580,7 @@ public class CalendarSharingTest {
         Thread.sleep(2000);
 
         assertThat(messages)
-            .noneSatisfy(json ->
+            .anySatisfy(json ->
                 assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
     }
 
