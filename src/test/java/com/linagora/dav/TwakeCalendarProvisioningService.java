@@ -25,7 +25,10 @@ import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoClients;
 import com.mongodb.reactivestreams.client.MongoDatabase;
@@ -167,5 +170,35 @@ public class TwakeCalendarProvisioningService {
                         Mono.from(
                                 database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
                 .map(OpenPaasUser::fromDocument);
+    }
+
+    public Mono<Void> enableSharedCalendarModule() {
+        ObjectId domainId = openPaasDomain().getObjectId("_id");
+
+        List<Document> newConfigurations = List.of(new Document("name", "features").append("value", new Document("isSharingCalendarEnabled", true)));
+
+        Document newModule = new Document("configurations", newConfigurations)
+            .append("name", "linagora.esn.calendar");
+
+        var collection = database.getCollection("configurations");
+
+        return Mono.from(collection.updateOne(
+                Filters.and(
+                    Filters.eq("domain_id", domainId),
+                    Filters.eq("user_id", null),
+                    Filters.elemMatch("modules", Filters.eq("name", "linagora.esn.calendar"))),
+                Updates.set("modules.$.configurations", newConfigurations)))
+            .flatMap(result -> {
+                if (result.getMatchedCount() == 0) {
+                    return Mono.from(collection.updateOne(
+                        Filters.and(
+                            Filters.eq("domain_id", domainId),
+                            Filters.eq("user_id", null)),
+                        Updates.push("modules", newModule)));
+                } else {
+                    return Mono.empty();
+                }
+            })
+            .then();
     }
 }
