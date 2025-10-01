@@ -45,6 +45,7 @@ import org.xmlunit.diff.ComparisonResult;
 import org.xmlunit.diff.DifferenceEvaluator;
 
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
@@ -1052,7 +1053,7 @@ public abstract class CalDavContract {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         calDavClient.findUserCalendars(testUser).collectList().block();
-        calDavClient.grantFullDelegation(testUser2, testUser2.id(), testUser);
+        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.READ);
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -1191,7 +1192,7 @@ public abstract class CalDavContract {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
         calDavClient.findUserCalendars(testUser).collectList().block();
-        calDavClient.grantFullDelegation(testUser2, testUser2.id(), testUser);
+        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.READ);
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(

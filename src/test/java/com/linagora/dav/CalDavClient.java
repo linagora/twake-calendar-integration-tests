@@ -18,6 +18,8 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.TestUtil.body;
+
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -46,6 +48,22 @@ import reactor.netty.http.client.HttpClient;
 
 public class CalDavClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    public enum DelegationRight {
+        READ("\"dav:read\": true"),
+        READ_WRITE("\"dav:read-write\":true"),
+        ADMIN("\"dav:administration\": true");
+
+        private final String value;
+
+        DelegationRight(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
+    }
 
     public record CounterRequest(String calendarData,
                                  String sender,
@@ -259,7 +277,7 @@ public class CalDavClient {
             }).block();
     }
 
-    public void grantFullDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser) {
+    public void grantDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser, DelegationRight right) {
         String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
 
         String payload = """
@@ -267,15 +285,58 @@ public class CalDavClient {
               "share": {
                 "set": [
                   {
-                    "dav:href": "mailto:{{email}}",
-                    "dav:administration": true
+                    "dav:href": "mailto:{email}",
+                    {right}
                   }
                 ],
                 "remove": []
               }
             }
-            """.replace("{{email}}", delegatedUser.email());
+            """.replace("{email}", delegatedUser.email())
+            .replace("{right}", right.getValue());
 
+        sendDelegationRequest(user, uri, payload);
+    }
+
+    public void revokeDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser) {
+        String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
+
+        String payload = """
+            {
+                "share": {
+                    "set": [],
+                    "remove": [
+                        {
+                            "dav:href": "{email}"
+                        }
+                    ]
+                }
+            }
+            """.replace("{email}", delegatedUser.email());
+
+        sendDelegationRequest(user, uri, payload);
+    }
+
+    public DavResponse findEventsByTime(OpenPaasUser user, String baseId, String calendarId, String start, String end) {
+        return findEventsByTime(user, new CalendarURL(baseId, calendarId), start, end);
+    }
+
+    public DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL, String start, String end) {
+        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(calendarURL.asUri().toString() + ".json")
+            .send(body("""
+                {"match":{"start":"{start}","end":"{end}"}}"""
+                .replace("{start}", start)
+                .replace("{end}", end)))
+            .responseSingle((response, content) -> content.asString()
+                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
+            .block();
+    }
+
+    private void sendDelegationRequest(OpenPaasUser user, String uri, String payload) {
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
@@ -289,9 +350,9 @@ public class CalDavClient {
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
                     .flatMap(errorBody -> Mono.error(new RuntimeException("""
-                    Unexpected status code: %d when sharing calendar '%s'
-                    %s
-                    """.formatted(response.status().code(), uri, errorBody))));
+                        Unexpected status code: %d when sharing calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
             }).block();
     }
 

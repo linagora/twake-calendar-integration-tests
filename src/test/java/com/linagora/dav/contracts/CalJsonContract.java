@@ -29,7 +29,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -39,11 +38,11 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.collect.Streams;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
+import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 
@@ -56,48 +55,6 @@ import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CalJsonContract {
-
-    public record EventData(String uid, String dtstart, String dtend, Optional<String> recurrenceId) {
-        public static class Builder {
-            private Optional<String> uid = Optional.empty();
-            private Optional<String> dtstart = Optional.empty();
-            private Optional<String> dtend = Optional.empty();
-            private Optional<String> recurrenceId = Optional.empty();
-
-            public Builder uid(String uid) {
-                this.uid = Optional.of(uid);
-                return this;
-            }
-
-            public Builder dtstart(String dtstart) {
-                this.dtstart = Optional.of(dtstart);
-                return this;
-            }
-
-            public Builder dtend(String dtend) {
-                this.dtend = Optional.of(dtend);
-                return this;
-            }
-
-            public Builder recurrenceId(String recurrenceId) {
-                this.recurrenceId = Optional.of(recurrenceId);
-                return this;
-            }
-
-            public EventData build() {
-                return new EventData(
-                    uid.get(),
-                    dtstart.get(),
-                    dtend.get(),
-                    recurrenceId
-                );
-            }
-        }
-
-        public static Builder builder() {
-            return new Builder();
-        }
-    }
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -561,13 +518,12 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
 
-
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
 
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-15T03:00:00Z")
                 .dtend("2030-04-15T04:00:00Z")
@@ -576,7 +532,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-16T03:00:00Z")
                 .dtend("2030-04-16T04:00:00Z")
@@ -614,11 +570,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -627,7 +583,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-12T03:00:00Z")
                 .dtend("3025-04-12T04:00:00Z")
@@ -665,11 +621,11 @@ public abstract class CalJsonContract {
             .send(body("""
             {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -678,7 +634,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-12T03:00:00Z")
                 .dtend("3025-04-12T04:00:00Z")
@@ -716,11 +672,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -729,7 +685,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-13T03:00:00Z")
                 .dtend("3025-04-13T04:00:00Z")
@@ -767,11 +723,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -780,7 +736,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-18T03:00:00Z")
                 .dtend("3025-04-18T04:00:00Z")
@@ -818,11 +774,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -831,7 +787,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-18T03:00:00Z")
                 .dtend("3025-04-18T04:00:00Z")
@@ -869,11 +825,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -882,7 +838,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-25T03:00:00Z")
                 .dtend("3025-04-25T04:00:00Z")
@@ -920,11 +876,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -932,7 +888,7 @@ public abstract class CalJsonContract {
                 .build()
         );
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-15T03:00:00Z")
                 .dtend("3025-04-15T04:00:00Z")
@@ -941,7 +897,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(2)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-22T03:00:00Z")
                 .dtend("3025-04-22T04:00:00Z")
@@ -979,11 +935,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-15T03:00:00Z")
                 .dtend("2030-04-15T04:00:00Z")
@@ -992,7 +948,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-05-15T03:00:00Z")
                 .dtend("2030-05-15T04:00:00Z")
@@ -1030,11 +986,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -1043,7 +999,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-15T03:00:00Z")
                 .dtend("3025-04-15T04:00:00Z")
@@ -1052,7 +1008,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(2)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-05-15T03:00:00Z")
                 .dtend("3025-05-15T04:00:00Z")
@@ -1090,11 +1046,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-11T03:00:00Z")
                 .dtend("3025-04-11T04:00:00Z")
@@ -1103,7 +1059,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-04-15T03:00:00Z")
                 .dtend("3025-04-15T04:00:00Z")
@@ -1112,7 +1068,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(2)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("3025-05-15T03:00:00Z")
                 .dtend("3025-05-15T04:00:00Z")
@@ -1151,11 +1107,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-11T03:00:00Z")
                 .dtend("2030-04-11T04:00:00Z")
@@ -1164,7 +1120,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-05-15T03:00:00Z")
                 .dtend("2030-05-15T04:00:00Z")
@@ -1202,11 +1158,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-05-06T03:00:00Z")
                 .dtend("2030-05-06T04:00:00Z")
@@ -1215,7 +1171,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-06-03T03:00:00Z")
                 .dtend("2030-06-03T04:00:00Z")
@@ -1254,11 +1210,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-15T03:00:00Z")
                 .dtend("2030-04-15T04:00:00Z")
@@ -1297,11 +1253,11 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-15T03:00:00Z")
                 .dtend("2030-04-15T04:00:00Z")
@@ -1310,7 +1266,7 @@ public abstract class CalJsonContract {
         );
 
         assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
+            JsonCalendarEventData.builder()
                 .uid(eventUid)
                 .dtstart("2030-04-16T08:00:00Z")
                 .dtend("2030-04-16T09:00:00Z")
@@ -2940,25 +2896,5 @@ public abstract class CalJsonContract {
 
         assertThat(response2).isEqualTo(ICS_1);
         assertThat(status).isEqualTo(201);
-    }
-
-    // todo delegation
-
-    private List<EventData> getEventData(String json) throws JsonProcessingException {
-        JsonNode root = OBJECT_MAPPER.readTree(json);
-        JsonNode vevents = root.at("/_embedded/dav:item/0/data/2");
-        return Streams.stream(vevents.elements()).map(vevent -> {
-            String uid = getEventDataField(vevent.get(1), "uid").get();
-            String dtstart = getEventDataField(vevent.get(1), "dtstart").get();
-            String dtend = getEventDataField(vevent.get(1), "dtend").get();
-            Optional<String> recurrenceId = getEventDataField(vevent.get(1), "recurrence-id");
-            return new EventData(uid, dtstart, dtend, recurrenceId);
-        }).toList();
-    }
-
-    private Optional<String> getEventDataField(JsonNode vevent, String fieldName) {
-        return Streams.stream(vevent.elements())
-            .filter(jsonNode -> jsonNode.get(0).asText().equals(fieldName))
-            .map(jsonNode -> jsonNode.get(3).asText()).findAny();
     }
 }
