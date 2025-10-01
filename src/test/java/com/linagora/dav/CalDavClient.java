@@ -453,14 +453,37 @@ public class CalDavClient {
     }
 
     public Flux<JsonNode> findUserSubscribedCalendars(OpenPaasUser requester) {
-        return findUserSubscribedCalendars(requester, requester.id());
+        return findUserCalendarsWithOptions(requester, requester.id(), true, false, true);
     }
 
-    public Flux<JsonNode> findUserSubscribedCalendars(OpenPaasUser user, String targetUserId) {
-        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + targetUserId + ".json"
-            + "?sharedPublicSubscription=true&withRights=true";
+    public Flux<JsonNode> findUserSubscribedCalendars(OpenPaasUser requester, String targetUserId) {
+        return findUserCalendarsWithOptions(requester, targetUserId, true, false, true);
+    }
 
-        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+    public Flux<JsonNode> findUserCalendarsWithOptions(OpenPaasUser requester, String targetUserId,
+                                                       boolean sharedPublicSubscription,
+                                                       boolean withDelegation,
+                                                       boolean withRights) {
+        StringBuilder uriBuilder = new StringBuilder(CalendarURL.CALENDAR_URL_PATH_PREFIX)
+            .append("/")
+            .append(targetUserId)
+            .append(".json")
+            .append("?");
+
+        if (sharedPublicSubscription) {
+            uriBuilder.append("sharedPublicSubscription=true&");
+        }
+        if (withRights) {
+            uriBuilder.append("withRights=true&");
+        }
+        if (withDelegation) {
+            uriBuilder.append("sharedDelegationStatus=accepted&");
+        }
+
+        // Remove trailing '&' or '?' if present
+        String uri = uriBuilder.toString().replaceAll("[&?]$", "");
+
+        return httpClient.headers(headers -> requester.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
             .request(HttpMethod.GET)
             .uri(uri)
@@ -471,8 +494,8 @@ public class CalDavClient {
                     return responseContent.asString(StandardCharsets.UTF_8)
                         .switchIfEmpty(Mono.just(""))
                         .flatMap(errorBody -> Mono.error(new RuntimeException(
-                            "Unexpected status code: %d when finding subscribed calendars for user '%s'%s%n%s"
-                                .formatted(response.status().code(), user.id(), uri, errorBody))));
+                            "Unexpected status code: %d when finding calendars for user '%s'%n%s"
+                                .formatted(response.status().code(), targetUserId, errorBody))));
                 }
             })
             .flatMapMany(json -> {
@@ -481,10 +504,11 @@ public class CalDavClient {
                     ArrayNode calendars = (ArrayNode) root.path("_embedded").path("dav:calendar");
                     return Flux.fromIterable(calendars);
                 } catch (Exception e) {
-                    return Flux.error(new RuntimeException("Failed to parse subscribed calendars JSON", e));
+                    return Flux.error(new RuntimeException("Failed to parse calendars JSON", e));
                 }
             });
     }
+
 
     public void createNewCalendar(OpenPaasUser user, String id, String name) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
@@ -538,4 +562,48 @@ public class CalDavClient {
             })
             .block();
     }
+
+    /**
+     * Examples of rights:
+     *  - Administration (manage + admin): "dav:administration"
+     *  - Read/Write: "dav:read-write"
+     *  - Read Only: "dav:read"
+     */
+    public void delegateCalendar(OpenPaasUser owner, String calendarId, OpenPaasUser delegate, String rightKey) {
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + owner.id() + "/" + calendarId + ".json";
+
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {
+                    "dav:href": "mailto:%s",
+                    "%s": true
+                  }
+                ],
+                "remove": []
+              }
+            }
+            """.formatted(delegate.email(), rightKey);
+
+        httpClient.headers(headers -> owner.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json"))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when delegating calendar '%s' to %s
+                        %s
+                        """.formatted(response.status().code(), uri, delegate.email(), errorBody))));
+            })
+            .block();
+    }
+
 }

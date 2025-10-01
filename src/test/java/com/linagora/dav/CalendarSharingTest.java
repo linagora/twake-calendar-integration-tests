@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
+import java.util.stream.StreamSupport;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -154,6 +155,36 @@ public class CalendarSharingTest {
                 assertThat(node.path("apple:color").asText()).isEqualTo("#0000FF");
                 assertThat(node.path("calendarserver:source").path("_links").path("self").path("href").asText())
                     .contains(bob.id());
+            });
+    }
+
+    @Test
+    void canDelegateReadWriteManageCalendar() {
+        // GIVEN: Bob has a calendar and delegates it to Alice with administration rights (manage)
+        String calendarId = bob.id(); // default calendar
+        calDavClient.delegateCalendar(bob, calendarId, alice, "dav:administration");
+
+        // WHEN: Alice lists her delegated
+        List<JsonNode> aliceDelegatedCalendars = calDavClient.findUserCalendarsWithOptions(alice, alice.id(), true, true , true)
+            .collectList()
+            .block();
+
+        // THEN: Alice should see Bob's delegated calendar
+        assertThat(aliceDelegatedCalendars)
+            .anySatisfy(node -> {
+                // Delegated source points to Bob's calendar
+                assertThat(node.path("calendarserver:delegatedsource").asText())
+                    .contains(bob.id());
+
+                // Invite contains Alice
+                JsonNode invites = node.path("invite");
+                JsonNode aliceInvite = StreamSupport.stream(invites.spliterator(), false)
+                    .filter(invite -> invite.path("href").asText().contains(alice.email()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No invite entry found for Alice (" + alice.email() + ")"));
+
+                assertThat(aliceInvite.path("href").asText()).contains(alice.email());
+                assertThat(aliceInvite.path("access").asInt()).isEqualTo(5);  // full rights
             });
     }
 
