@@ -24,8 +24,10 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,9 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
 
 public class CalendarSharingTest {
 
@@ -43,9 +48,11 @@ public class CalendarSharingTest {
 
     private OpenPaasUser bob;
     private OpenPaasUser alice;
+    private Channel channel;
+    private Connection connection;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         calDavClient = new CalDavClient(extension.davHttpClient());
         extension.getDockerOpenPaasSetupSingleton()
             .getOpenPaaSProvisioningService()
@@ -54,6 +61,24 @@ public class CalendarSharingTest {
 
         bob = extension.newTestUser();
         alice = extension.newTestUser();
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost(extension.getDockerOpenPaasSetupSingleton().getHost(DockerOpenPaasSetup.DockerService.RABBITMQ));
+        factory.setPort(extension.getDockerOpenPaasSetupSingleton().getPort(DockerOpenPaasSetup.DockerService.RABBITMQ));
+        factory.setUsername("guest");
+        factory.setPassword("guest");
+
+        connection = factory.newConnection();
+        channel = connection.createChannel();
+    }
+
+    @AfterEach
+    void afterEach() throws Exception {
+        if (channel != null && channel.isOpen()) {
+            channel.close();
+        }
+        if (connection != null && connection.isOpen()) {
+            connection.close();
+        }
     }
 
     @Disabled("Sabre DAV wrongly allows subscribing to private calendars. " +
@@ -111,7 +136,13 @@ public class CalendarSharingTest {
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
 
         // WHEN: Alice subscribes to Bob's calendar
-        SubscribedCalendarRequest subscribedCalendarRequest = subscribeRequest(bob.id(), "Bob writable shared", false);
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Alice should see the subscription in her calendars
@@ -221,7 +252,6 @@ public class CalendarSharingTest {
             subscribedCalendarURI,
             Instant.parse("2025-09-01T00:00:00Z"),
             Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
-
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
@@ -499,13 +529,122 @@ public class CalendarSharingTest {
                 .isEqualTo("Subscribed copy of Bob custom calendar"));
     }
 
-    private SubscribedCalendarRequest subscribeRequest(String userSourceId, String name, boolean readOnly) {
-        return SubscribedCalendarRequest.builder()
-            .id(UUID.randomUUID().toString())
-            .sourceUserId(userSourceId)
-            .name(name)
-            .color(readOnly ? "#00FF00" : "#0000FF")
-            .readOnly(readOnly)
+    @Disabled("Sabre DAV emits AMQP messages for Alice's subscribed copy. " +
+        "Expected: only Bob's original calendar should emit events. " +
+        "See https://github.com/linagora/esn-sabre/issues/53")
+    @Test
+    void noAmqpMessagesEmittedForSubscribedCopy() throws Exception {
+        String queueName = "sharing-test" + alice.id();
+        channel.queueDeclare(queueName, false, true, true, null);
+        channel.queueBind(queueName, "calendar:event:created", "");
+        channel.queueBind(queueName, "calendar:event:updated", "");
+        channel.queueBind(queueName, "calendar:event:deleted", "");
+
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Alice subscribes to Bob's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
             .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Listen to Alice's AMQP queue
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
+
+        // WHEN: Bob adds an event in his own calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Follow-up sync with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251001T090000Z
+            DTEND:20251001T100000Z
+            SUMMARY:Bob's new event
+            DESCRIPTION:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // THEN: Ensure no message is emitted for Alice's copy (but Bob's is fine)
+        String aliceCalendarPath = "/calendars/" + alice.id();
+        Thread.sleep(2000);
+
+        assertThat(messages)
+            .noneSatisfy(json ->
+                assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+    }
+
+    @Test
+    void noAmqpAlarmMessagesEmittedForSubscribedCopy() throws Exception {
+        String queueName = "sharing-test-alarms-" + alice.id();
+        channel.queueDeclare(queueName, false, false, true, null);
+        channel.queueBind(queueName, "calendar:event:alarm:created", "");
+        channel.queueBind(queueName, "calendar:event:alarm:updated", "");
+        channel.queueBind(queueName, "calendar:event:alarm:deleted", "");
+
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Alice subscribes to Bob's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Listen to Alice's AMQP queue
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
+
+        // WHEN: Bob adds an event in his own calendar WITH an alarm
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Bob's alarmed event
+            DESCRIPTION:Meeting with alarm
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:%s
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // THEN: Ensure no alarm message is emitted for Alice's copy
+        String aliceCalendarPath = "/calendars/" + alice.id();
+        Thread.sleep(2000);
+
+        assertThat(messages)
+            .noneSatisfy(json ->
+                assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
     }
 }
