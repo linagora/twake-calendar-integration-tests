@@ -28,58 +28,35 @@ import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
 import java.util.stream.StreamSupport;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
 
-public class CalendarSharingTest {
+public abstract class CalendarSharingContract {
 
-    @RegisterExtension
-    static DockerOpenPaasExtension extension = new DockerOpenPaasExtension();
+    public abstract DockerTwakeCalendarExtension extension();
 
     private CalDavClient calDavClient;
 
     private OpenPaasUser bob;
     private OpenPaasUser alice;
     private Channel channel;
-    private Connection connection;
 
     @BeforeEach
     void setUp() throws Exception {
-        calDavClient = new CalDavClient(extension.davHttpClient());
-        extension.getDockerOpenPaasSetupSingleton()
-            .getOpenPaaSProvisioningService()
+        calDavClient = new CalDavClient(extension().davHttpClient());
+        extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 
-        bob = extension.newTestUser();
-        alice = extension.newTestUser();
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(extension.getDockerOpenPaasSetupSingleton().getHost(DockerOpenPaasSetup.DockerService.RABBITMQ));
-        factory.setPort(extension.getDockerOpenPaasSetupSingleton().getPort(DockerOpenPaasSetup.DockerService.RABBITMQ));
-        factory.setUsername("guest");
-        factory.setPassword("guest");
-
-        connection = factory.newConnection();
-        channel = connection.createChannel();
-    }
-
-    @AfterEach
-    void afterEach() throws Exception {
-        if (channel != null && channel.isOpen()) {
-            channel.close();
-        }
-        if (connection != null && connection.isOpen()) {
-            connection.close();
-        }
+        bob = extension().newTestUser();
+        alice = extension().newTestUser();
+        channel = extension().getChannel();
     }
 
     @Disabled("Sabre DAV wrongly allows subscribing to private calendars. " +
@@ -477,7 +454,7 @@ public class CalendarSharingTest {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Cedric tries to list Alice's calendars
-        OpenPaasUser cedric = extension.newTestUser();
+        OpenPaasUser cedric = extension().newTestUser();
         List<JsonNode> cedricViewOnAliceCalendars = calDavClient.findUserSubscribedCalendars(cedric, alice.id())
             .collectList()
             .block();
