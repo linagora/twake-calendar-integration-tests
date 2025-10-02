@@ -307,7 +307,7 @@ public class CalDavClient {
                     "set": [],
                     "remove": [
                         {
-                            "dav:href": "{email}"
+                            "dav:href": "mailto:{email}"
                         }
                     ]
                 }
