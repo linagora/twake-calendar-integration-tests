@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
+import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -536,6 +538,64 @@ public abstract class CalDavDelegationContract {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
         assertThat(result.get(0).summary().get()).isEqualTo("Busy");
+    }
+
+    @Test
+    void canExportWhenCalendarIsReadable() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .clazz("PRIVATE")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
+
+        DavResponse response2 = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "?export"));
+
+        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
+    }
+
+    @Test
+    void canExportWhenCalendarIsWritable() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .clazz("PRIVATE")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ_WRITE);
+
+        DavResponse response2 = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "?export"));
+
+        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
     }
 
     @Test
