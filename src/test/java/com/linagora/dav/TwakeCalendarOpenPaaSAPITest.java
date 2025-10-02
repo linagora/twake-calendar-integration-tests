@@ -33,34 +33,36 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import com.linagora.dav.contracts.OpenPaaSAPIContract;
+
 import io.netty.handler.codec.http.HttpMethod;
 import reactor.netty.http.client.HttpClient;
 
-public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPITest {
+public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
     @RegisterExtension
     static DockerTwakeCalendarExtension extension = new DockerTwakeCalendarExtension();
 
-    OpenPaasUser createUser() {
+    public OpenPaasUser createUser() {
         return extension.newTestUser();
     }
 
     @Override
-    HttpClient davHttpClient() {
+    public HttpClient davHttpClient() {
         return extension.davHttpClient();
     }
 
     @Override
-    String domainId() {
+    public String domainId() {
         return extension.domainId();
     }
 
     @Override
-    URI backendURI() {
+    public URI backendURI() {
         return extension.getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE, "http");
     }
 
     @Override
-    URI elasticSearchURI() {
+    public URI elasticSearchURI() {
         return extension.getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.OPENSEARCH, "http");
     }
 

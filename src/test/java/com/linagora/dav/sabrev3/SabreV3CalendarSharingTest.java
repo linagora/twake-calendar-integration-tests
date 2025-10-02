@@ -22,7 +22,7 @@ import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V3;
 
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import com.linagora.dav.CalendarSharingContract;
+import com.linagora.dav.contracts.CalendarSharingContract;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 
 public class SabreV3CalendarSharingTest extends CalendarSharingContract {

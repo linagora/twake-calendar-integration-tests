@@ -22,33 +22,35 @@ import java.net.URI;
 
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import com.linagora.dav.contracts.OpenPaaSAPIContract;
+
 import reactor.netty.http.client.HttpClient;
 
-public class LegacyOpenPaaSAPITest extends OpenPaaSAPITest {
+public class LegacyOpenPaaSAPITest extends OpenPaaSAPIContract {
     @RegisterExtension
     static DockerOpenPaasExtension extension = new DockerOpenPaasExtension();
 
-    OpenPaasUser createUser() {
+    public OpenPaasUser createUser() {
         return extension.newTestUser();
     }
 
     @Override
-    HttpClient davHttpClient() {
+    public HttpClient davHttpClient() {
         return extension.davHttpClient();
     }
 
     @Override
-    String domainId() {
+    public String domainId() {
         return extension.domainId();
     }
 
     @Override
-    URI backendURI() {
+    public URI backendURI() {
         return extension.getDockerOpenPaasSetupSingleton().getServiceUri(DockerOpenPaasSetup.DockerService.OPENPAAS, "http");
     }
 
     @Override
-    URI elasticSearchURI() {
+    public URI elasticSearchURI() {
         return extension.getDockerOpenPaasSetupSingleton().getServiceUri(DockerOpenPaasSetup.DockerService.ELASTICSEARCH, "http");
     }
 }
