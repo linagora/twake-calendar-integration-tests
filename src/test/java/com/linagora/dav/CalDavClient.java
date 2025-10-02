@@ -101,9 +101,14 @@ public class CalDavClient {
     }
 
     public void upsertCalendarEvent(OpenPaasUser user, String eventUid, String initialCalendarData) {
-        httpClient.headers(headers -> user.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+        URI calendarURI = URI.create("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics");
+        upsertCalendarEvent(user, calendarURI, initialCalendarData);
+    }
+
+    public void upsertCalendarEvent(OpenPaasUser userRequest, URI calendarURI, String initialCalendarData) {
+        httpClient.headers(headers -> userRequest.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
-            .uri("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics")
+            .uri(calendarURI.toString())
             .send(TestUtil.body(initialCalendarData))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201 || response.status().code() == 204) {
@@ -154,9 +159,14 @@ public class CalDavClient {
     }
 
     public void deleteCalendarEvent(OpenPaasUser user, String eventUid) {
+        URI calendarURI = URI.create("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics");
+        deleteCalendarEvent(user, calendarURI);
+    }
+
+    public void deleteCalendarEvent(OpenPaasUser user, URI calendarURI) {
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .delete()
-            .uri("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics")
+            .uri(calendarURI.toString())
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 204) {
                     return Mono.empty();
