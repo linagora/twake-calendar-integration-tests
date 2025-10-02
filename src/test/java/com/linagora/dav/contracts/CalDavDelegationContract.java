@@ -506,6 +506,72 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
+    void cannotReadPrivateEventWhenCalendarIsReadable() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .clazz("PRIVATE")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
+        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        DavResponse response = calDavClient.findEventsByTime(testUser2,
+            calendarURL,
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary().get()).isEqualTo("Busy");
+    }
+
+    @Test
+    void cannotReadPrivateEventWhenPCalendarIsWritable() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .clazz("PRIVATE")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ_WRITE);
+        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        DavResponse response = calDavClient.findEventsByTime(testUser2,
+            calendarURL,
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary().get()).isEqualTo("Busy");
+    }
+
+    @Test
     void copiedCalendarShouldContainsNewEvent() throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();

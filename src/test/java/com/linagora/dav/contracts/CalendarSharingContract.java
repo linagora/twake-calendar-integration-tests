@@ -230,6 +230,114 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    void cannotReadPrivateEventWhenPubliclyReadable() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's readonly calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Alice's copy of Bob's calendar should also contain the event (with description)
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+            alice,
+            subscribedCalendarURI,
+            Instant.parse("2025-09-01T00:00:00Z"),
+            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+
+        assertThat(aliceEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("[\"summary\",{},\"text\",\"Busy\"]");
+                assertThat(json).doesNotContain(description);
+            });
+    }
+
+    @Test
+    void cannotReadPrivateEventWhenPubliclyWritable() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's readonly calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Alice's copy of Bob's calendar should also contain the event (with description)
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+            alice,
+            subscribedCalendarURI,
+            Instant.parse("2025-09-01T00:00:00Z"),
+            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+
+        assertThat(aliceEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("[\"summary\",{},\"text\",\"Busy\"]");
+                assertThat(json).doesNotContain(description);
+            });
+    }
+
+    @Test
     void copyNewEventsFromReadonlyCalendar() {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
