@@ -18,9 +18,11 @@
 
 package com.linagora.dav;
 
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -33,10 +35,13 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.rabbitmq.client.Channel;
 
 public abstract class CalendarSharingContract {
+
+    public static final ObjectMapper MAPPER = new ObjectMapper();
 
     public abstract DockerTwakeCalendarExtension extension();
 
@@ -44,6 +49,7 @@ public abstract class CalendarSharingContract {
 
     private OpenPaasUser bob;
     private OpenPaasUser alice;
+    private OpenPaasUser cedric;
     private Channel channel;
 
     @BeforeEach
@@ -56,6 +62,7 @@ public abstract class CalendarSharingContract {
 
         bob = extension().newTestUser();
         alice = extension().newTestUser();
+        cedric = extension().newTestUser();
         channel = extension().getChannel();
     }
 
@@ -142,7 +149,7 @@ public abstract class CalendarSharingContract {
         calDavClient.delegateCalendar(bob, calendarId, alice, "dav:administration");
 
         // WHEN: Alice lists her delegated
-        List<JsonNode> aliceDelegatedCalendars = calDavClient.findUserCalendarsWithOptions(alice, alice.id(), true, true , true)
+        List<JsonNode> aliceDelegatedCalendars = calDavClient.findUserCalendarsWithOptions(alice, alice.id(), true, true, true)
             .collectList()
             .block();
 
@@ -651,5 +658,598 @@ public abstract class CalendarSharingContract {
         assertThat(messages)
             .noneSatisfy(json ->
                 assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+    }
+
+    @Test
+    void rejectUpdateOnReadOnlyCalendar() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:Initial event by Bob
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND: Alice subscribes to Bob's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice tries to update Bob's event in her subscribed copy
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"), Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice tries to update the event
+        // THEN: The update should be rejected
+        String updatedEventData = calendarData.replace("SUMMARY:Bob's readonly event",
+            "SUMMARY:Alice tries to update Bob's event");
+
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEventData))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403")
+            .hasMessageContaining("User did not have the required privileges");
+    }
+
+    @Test
+    void propagateEventUpdatesFromSubscribedCopyToSource() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String originalEvent = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251010T090000Z
+            DTEND:20251010T100000Z
+            SUMMARY:Shared event
+            DESCRIPTION:Event created by Bob
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, originalEvent);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Alice sees Bob's event in her subscribed copy
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        Supplier<List<JsonNode>> aliceEventsSupplier = () -> calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        List<JsonNode> aliceEvents = aliceEventsSupplier.get();
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice updates the event
+        String updatedEvent = originalEvent
+            .replace("DESCRIPTION:Event created by Bob", "DESCRIPTION:Alice updated the event");
+
+        calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
+
+        // THEN: Bob should see the updated event in his own calendar
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).doesNotContain("Event created by Bob");
+                assertThat(json).contains("Alice updated the event");
+            });
+
+        // Alice should see the updated event
+        List<JsonNode> aliceEventsAfter = aliceEventsSupplier.get();
+        assertThat(aliceEventsAfter)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).doesNotContain("Event created by Bob");
+                assertThat(json).contains("Alice updated the event");
+            });
+    }
+
+    @Test
+    void propagateEventDeletionFromSubscribedCopyToSource() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event with Alice and Cedric in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251012T090000Z
+            DTEND:20251012T100000Z
+            SUMMARY:Shared event to be deleted
+            DESCRIPTION:Event with Alice and Cedric
+            ATTENDEE;CN=Alice:mailto:%s
+            ATTENDEE;CN=Cedric:mailto:cedric@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, eventData);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+
+        Supplier<List<JsonNode>> aliceEventsSupplier = () -> calDavClient.reportCalendarEvents(
+                alice, aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        // AND: Alice sees the event in her subscribed copy
+        List<JsonNode> aliceEvents = aliceEventsSupplier.get();
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice deletes the event from her copy
+        calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
+
+        // THEN: Bob should not see the event anymore
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob, bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .noneSatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+            });
+
+        // AND: Alice should not see the event anymore in her copy
+        List<JsonNode> aliceEventsAfter = aliceEventsSupplier.get();
+        assertThat(aliceEventsAfter)
+            .noneSatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+            });
+    }
+
+    @Test
+    void triggersITIPRequestWhenAttendeeAdded() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String originalEvent = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251015T090000Z
+            DTEND:20251015T100000Z
+            SUMMARY:Team sync
+            DESCRIPTION:Initial event by Bob
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, originalEvent);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice updates the event by adding Cedric as attendee
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        String updatedEvent = originalEvent.replace("END:VEVENT",
+            "ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:mailto:" + cedric.email() + "\r\nEND:VEVENT");
+        calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
+
+        // THEN: Bob should see the updated event in his own calendar
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains(cedric.email());
+            });
+
+        // AND: Cedric should have an iTIP request in his inbox
+        String cedricInboxUri = "/calendars/" + cedric.id() + "/inbox/";
+        List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(cedric, cedricInboxUri, Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(cedricInboxItems)
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains("\"REQUEST\"");
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("mailto:" + cedric.email());
+                assertThat(json).contains("\"partstat\":\"NEEDS-ACTION\"");
+            });
+    }
+
+    @Test
+    void triggersITIPRequestWhenEventUpdated() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar with Cedric & Alice as attendees
+        String eventUid = "event-" + UUID.randomUUID();
+        String originalEvent = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251020T090000Z
+            DTEND:20251020T100000Z
+            SUMMARY:Planning meeting
+            DESCRIPTION:Initial event by Bob
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email(), alice.email(), cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, originalEvent);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice updates the event (changes description)
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        String updatedEvent = originalEvent.replace("DESCRIPTION:Initial event by Bob",
+            "DESCRIPTION:Updated by Alice");
+
+        calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
+
+        // THEN: Bob should see the updated event in his own calendar
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("Updated by Alice");
+            });
+
+        // AND: Both Alice and Cedric should receive an iTIP UPDATE request
+        List<OpenPaasUser> attendees = List.of(alice, cedric);
+
+        for (OpenPaasUser attendee : attendees) {
+            String inboxUri = "/calendars/" + attendee.id() + "/inbox/";
+            List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
+                    attendee,
+                    inboxUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList().block();
+
+            assertThat(inboxItems)
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("mailto:" + attendee.email());
+                    assertThat(json).contains("Updated by Alice");
+                    assertThatJson(item)
+                        .inPath("data[1]")
+                        .isArray()
+                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                            .isEqualTo("""
+                                ["method", {}, "text", "REQUEST"]"""));
+                });
+        }
+    }
+
+    @Test
+    void triggersITIPCancelWhenEventDeleted() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar with Cedric & Alice as attendees
+        String eventUid = "event-" + UUID.randomUUID();
+        String originalEvent = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251025T090000Z
+            DTEND:20251025T100000Z
+            SUMMARY:Planning meeting
+            DESCRIPTION:Initial event by Bob
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email(), alice.email(), cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, originalEvent);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // CONFIRM: Alice sees the event
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEventsBefore = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+        assertThat(aliceEventsBefore).hasSize(1);
+
+        String eventHref = aliceEventsBefore.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice deletes the event from her subscribed copy
+        calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
+
+        // THEN: Bob should no longer see the event in his own calendar
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEventsAfter = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+        assertThat(bobEventsAfter).isEmpty();
+
+        // AND: Both Alice and Cedric should receive an iTIP CANCEL request
+        List<OpenPaasUser> attendees = List.of(alice, cedric);
+
+        for (OpenPaasUser attendee : attendees) {
+            String inboxUri = "/calendars/" + attendee.id() + "/inbox/";
+            List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
+                    attendee,
+                    inboxUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList().block();
+
+            assertThat(inboxItems)
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("mailto:" + attendee.email());
+
+                    assertThatJson(item)
+                        .inPath("data[1]")
+                        .isArray()
+                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                            .isEqualTo("""
+                                ["method", {}, "text", "CANCEL"]"""));
+                });
+        }
+    }
+
+    @Test
+    void triggersITIPCancelWhenAttendeeRemoved() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event with Alice and Cedric as attendees
+        String eventUid = "event-" + UUID.randomUUID();
+        String originalEvent = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251030T090000Z
+            DTEND:20251030T100000Z
+            SUMMARY:Planning sync
+            DESCRIPTION:Initial event by Bob
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email(), alice.email(), cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, originalEvent);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // CONFIRM: Alice sees the event
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice updates the event by removing Cedric from attendees
+        String updatedEvent = originalEvent.replace("ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:mailto:" + cedric.email() + "\n",
+            "" /* remove Cedric */);
+        calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
+
+        // THEN: Bob should see the updated event without Cedric
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).doesNotContain(cedric.email());
+            });
+
+        // AND: Cedric should receive an iTIP CANCEL request in his inbox
+        String cedricInboxUri = "/calendars/" + cedric.id() + "/inbox/";
+        List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(
+                cedric,
+                cedricInboxUri,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(cedricInboxItems)
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("mailto:" + cedric.email());
+
+                // check it is a CANCEL method
+                assertThatJson(item.path("data").get(1))
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                            ["method", {}, "text", "CANCEL"]"""));
+            });
     }
 }
