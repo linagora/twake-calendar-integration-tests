@@ -97,6 +97,24 @@ public abstract class CalJsonContract {
         public static Builder builder() {
             return new Builder();
         }
+
+        public static List<EventData> from(String json) throws JsonProcessingException {
+            JsonNode root = OBJECT_MAPPER.readTree(json);
+            JsonNode vevents = root.at("/_embedded/dav:item/0/data/2");
+            return Streams.stream(vevents.elements()).map(vevent -> {
+                String uid = getEventDataField(vevent.get(1), "uid").get();
+                String dtstart = getEventDataField(vevent.get(1), "dtstart").get();
+                String dtend = getEventDataField(vevent.get(1), "dtend").get();
+                Optional<String> recurrenceId = getEventDataField(vevent.get(1), "recurrence-id");
+                return new EventData(uid, dtstart, dtend, recurrenceId);
+            }).toList();
+        }
+
+        private static Optional<String> getEventDataField(JsonNode vevent, String fieldName) {
+            return Streams.stream(vevent.elements())
+                .filter(jsonNode -> jsonNode.get(0).asText().equals(fieldName))
+                .map(jsonNode -> jsonNode.get(3).asText()).findAny();
+        }
     }
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -561,8 +579,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
 
-
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
 
@@ -614,7 +631,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -665,7 +682,7 @@ public abstract class CalJsonContract {
             .send(body("""
             {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -716,7 +733,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -767,7 +784,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -818,7 +835,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -869,7 +886,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -920,7 +937,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
@@ -979,7 +996,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1030,7 +1047,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
@@ -1090,7 +1107,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
@@ -1151,7 +1168,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1202,7 +1219,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1254,7 +1271,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).isEqualTo(
@@ -1297,7 +1314,7 @@ public abstract class CalJsonContract {
             .send(body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
 
-        List<EventData> result = getEventData(response.body());
+        List<EventData> result = EventData.from(response.body());
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -2940,25 +2957,5 @@ public abstract class CalJsonContract {
 
         assertThat(response2).isEqualTo(ICS_1);
         assertThat(status).isEqualTo(201);
-    }
-
-    // todo delegation
-
-    private List<EventData> getEventData(String json) throws JsonProcessingException {
-        JsonNode root = OBJECT_MAPPER.readTree(json);
-        JsonNode vevents = root.at("/_embedded/dav:item/0/data/2");
-        return Streams.stream(vevents.elements()).map(vevent -> {
-            String uid = getEventDataField(vevent.get(1), "uid").get();
-            String dtstart = getEventDataField(vevent.get(1), "dtstart").get();
-            String dtend = getEventDataField(vevent.get(1), "dtend").get();
-            Optional<String> recurrenceId = getEventDataField(vevent.get(1), "recurrence-id");
-            return new EventData(uid, dtstart, dtend, recurrenceId);
-        }).toList();
-    }
-
-    private Optional<String> getEventDataField(JsonNode vevent, String fieldName) {
-        return Streams.stream(vevent.elements())
-            .filter(jsonNode -> jsonNode.get(0).asText().equals(fieldName))
-            .map(jsonNode -> jsonNode.get(3).asText()).findAny();
     }
 }
