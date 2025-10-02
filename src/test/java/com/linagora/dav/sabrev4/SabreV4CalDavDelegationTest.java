@@ -16,18 +16,18 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav.sabrev3;
+package com.linagora.dav.sabrev4;
 
-import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V3;
+import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
 
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.contracts.DelegationContract;
+import com.linagora.dav.contracts.CalDavDelegationContract;
 
-public class SabreV3DelegationTest extends DelegationContract {
+public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V3);
+    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V4);
 
     @Override
     public DockerTwakeCalendarExtension dockerExtension() {

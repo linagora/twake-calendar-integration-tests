@@ -19,32 +19,20 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
-import static com.linagora.dav.contracts.CalDavContract.ICS_1;
-import static com.linagora.dav.contracts.CalDavContract.ICS_2;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
-import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
@@ -56,15 +44,13 @@ import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
-import net.javacrumbs.jsonunit.core.Option;
 
-public abstract class DelegationContract {
+public abstract class CalDavDelegationContract {
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
@@ -84,24 +70,27 @@ public abstract class DelegationContract {
 
     @Test
     void listCalendarsShouldShowDelegatedCalendar() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
 
-        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.ADMIN);
+        // GIVEN Bob has a calendar
+        // WHEN Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
         String response = given()
-            .headers("Authorization", testUser.impersonatedBasicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
             .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + testUser.id() + ".json")
-            .then()
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
             .extract()
             .body()
             .asString();
 
+        // THEN a copy of bob calendar is created in Alice calendar list
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[0]")
             .isEqualTo(String.format("""
@@ -195,62 +184,63 @@ public abstract class DelegationContract {
                         }
                     ]
                 }  
-                """.replace("{userId}", testUser.id()))
-                .replace("{userId2}", testUser2.id())
-                .replace("{userEmail}", testUser.email()));
+                """.replace("{userId}", alice.id()))
+                .replace("{userId2}", bob.id())
+                .replace("{userEmail}", alice.email()));
     }
 
-    @Disabled("revokeDelegation return 500")
     @Test
     void listCalendarsShouldNotShowDelegatedCalendarWhenDelegationHasBeenRevoked() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
 
-        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.READ);
+        // GIVEN Alice has a copy of bob calendar is created in Alice calendar list
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        calDavClient.revokeDelegation(testUser2, testUser2.id(), testUser);
+        // WHEN Bob revokes rights for Alice
+        calDavClient.revokeDelegation(bob, bob.id(), alice);
 
         String response = given()
-            .headers("Authorization", testUser.impersonatedBasicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
             .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + testUser.id() + ".json")
-            .then()
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
             .extract()
             .body()
             .asString();
 
-        assertThatJson(response)
-            .inPath("_embedded.dav:calendar[0]")
-            .isEqualTo(String.format("""
-                """.replace("{userId}", testUser.id()))
-                .replace("{userId2}", testUser2.id())
-                .replace("{userEmail}", testUser.email()));
+
+        // THEN a copy of bob calendar is removed from Alice calendar list
+        assertThat(response).doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
     }
 
     @Test
     void listCalendarsShouldShowDelegatedCalendarWithReadWriteRight() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
 
-        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.READ_WRITE);
+        // GIVEN Bob has a calendar
+        // WHEN Bob delegates read write to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
         String response = given()
-            .headers("Authorization", testUser.impersonatedBasicAuth())
+            .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
             .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + testUser.id() + ".json")
-            .then()
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
             .extract()
             .body()
             .asString();
 
+        // THEN Alice copy of bob calendar is updated accordingly
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[0]")
             .isEqualTo(String.format("""
@@ -324,31 +314,34 @@ public abstract class DelegationContract {
                         }
                     ]
                 }
-                """.replace("{userId}", testUser.id()))
-                .replace("{userId2}", testUser2.id())
-                .replace("{userEmail}", testUser.email()));
+                """.replace("{userId}", alice.id()))
+                .replace("{userId2}", bob.id())
+                .replace("{userEmail}", alice.email()));
     }
 
     @Test
     void listCalendarsShouldShowSharingRightOfDelegation() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
 
-        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.ADMIN);
+        // GIVEN Bob has a calendar
+        // WHEN Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
         String response = given()
-            .headers("Authorization", testUser2.impersonatedBasicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
             .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + testUser2.id() + ".json")
-            .then()
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
             .extract()
             .body()
             .asString();
 
+        // THEN the sharing right is shown on Bob source calendar
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[0]")
             .isEqualTo(String.format("""
@@ -431,33 +424,39 @@ public abstract class DelegationContract {
                         }
                     ]
                 }
-                """.replace("{userId}", testUser.id()))
-                .replace("{userId2}", testUser2.id())
-                .replace("{userEmail}", testUser.email()));
+                """.replace("{userId}", alice.id()))
+                .replace("{userId2}", bob.id())
+                .replace("{userEmail}", alice.email()));
     }
 
     @Test
-    void listCalendarsShouldNotShowSharingRightOfDelegationWhenCloneHasBeenDeleted() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+    void listCalendarsShouldNotShowSharingRightOfDelegationWhenCopiedCalendarHasBeenDeleted() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
 
-        calDavClient.grantDelegation(testUser2, testUser2.id(), testUser, DelegationRight.ADMIN);
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser).collectList().block().getFirst();
-        calDavClient.deleteCalendar(testUser, calendarURL);
+        // GIVEN Alice has a copy of bob calendar is created in Alice calendar list
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+
+        // WHEN Alice deletes this calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
 
         String response = given()
-            .headers("Authorization", testUser2.impersonatedBasicAuth())
+            .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", 2)
             .queryParam("personal", true)
             .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + testUser2.id() + ".json")
-            .then()
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
             .extract()
             .body()
             .asString();
 
+
+        // THEN the sharing right is removed on Bob source calendar
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[0].invite")
             .isEqualTo(String.format("""
@@ -471,7 +470,7 @@ public abstract class DelegationContract {
                         "inviteStatus": 2
                     }
                 ]
-                """.replace("{userId2}", testUser2.id())));
+                """.replace("{userId2}", bob.id())));
     }
 
     @Test
@@ -618,7 +617,7 @@ public abstract class DelegationContract {
     }
 
     @Test
-    void noAmqpMessagesEmittedForCopiedCalendar() throws Exception {
+    void amqpMessagesShouldBeEmittedForCopiedCalendar() throws Exception {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:deleted", "");
@@ -641,6 +640,38 @@ public abstract class DelegationContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+        Thread.sleep(3000);
+
+        assertThat(messages)
+            .anySatisfy(json ->
+                assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id()));
+    }
+
+    @Test
+    void noAmqpAlarmMessagesEmittedForCopiedCalendar() throws Exception {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .alarmTrigger("-PT15M")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
         Thread.sleep(3000);

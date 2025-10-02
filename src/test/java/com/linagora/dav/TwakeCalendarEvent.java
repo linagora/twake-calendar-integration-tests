@@ -26,10 +26,12 @@ import com.google.common.collect.ImmutableList;
 
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.ParameterList;
+import net.fortuna.ical4j.model.component.VAlarm;
 import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.parameter.Cn;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.fortuna.ical4j.model.parameter.TzId;
+import net.fortuna.ical4j.model.property.Action;
 import net.fortuna.ical4j.model.property.Attendee;
 import net.fortuna.ical4j.model.property.CalScale;
 import net.fortuna.ical4j.model.property.Description;
@@ -42,6 +44,7 @@ import net.fortuna.ical4j.model.property.RRule;
 import net.fortuna.ical4j.model.property.RecurrenceId;
 import net.fortuna.ical4j.model.property.Summary;
 import net.fortuna.ical4j.model.property.Transp;
+import net.fortuna.ical4j.model.property.Trigger;
 import net.fortuna.ical4j.model.property.Uid;
 import net.fortuna.ical4j.model.property.Version;
 
@@ -63,6 +66,7 @@ public record TwakeCalendarEvent(Calendar calendar) {
         private Optional<String> recurrenceId = Optional.empty();
         private Optional<String> overrideStart = Optional.empty();
         private Optional<String> overrideEnd = Optional.empty();
+        private Optional<String> alarmTrigger = Optional.empty();
 
         private final ImmutableList.Builder<Attendee> attendees = new ImmutableList.Builder<>();
 
@@ -133,9 +137,14 @@ public record TwakeCalendarEvent(Calendar calendar) {
             return this;
         }
 
+        public Builder alarmTrigger(String alarmTrigger) {
+            this.alarmTrigger = Optional.of(alarmTrigger);
+            return this;
+        }
+
         public TwakeCalendarEvent build() {
-            if (uid.isEmpty() || dtstart.isEmpty() || dtend.isEmpty()) {
-                throw new IllegalStateException("uid, dtstart, dtend are mandatory");
+            if (uid.isEmpty() || dtstart.isEmpty() || dtend.isEmpty() || organizer.isEmpty()) {
+                throw new IllegalStateException("uid, dtstart, dtend, organizer are mandatory");
             }
 
             Calendar calendar = new Calendar();
@@ -168,6 +177,16 @@ public record TwakeCalendarEvent(Calendar calendar) {
             organizer.ifPresent(o -> event.add(o));
             attendees.build().forEach(event::add);
             transparent.ifPresent(t -> event.add(new Transp(t)));
+
+            alarmTrigger.ifPresent(trigger -> {
+                VAlarm alarm = new VAlarm();
+                alarm.add(new Attendee(organizer.get().getValue()));
+                alarm.add(new Action("EMAIL"));
+                alarm.add(new Summary("Test alarm"));
+                alarm.add(new Description("Event reminder"));
+                alarm.add(new Trigger(new ParameterList(List.of()), trigger));
+                event.add(alarm);
+            });
 
             return event;
         }
