@@ -34,6 +34,7 @@ import net.fortuna.ical4j.model.parameter.TzId;
 import net.fortuna.ical4j.model.property.Action;
 import net.fortuna.ical4j.model.property.Attendee;
 import net.fortuna.ical4j.model.property.CalScale;
+import net.fortuna.ical4j.model.property.Clazz;
 import net.fortuna.ical4j.model.property.Description;
 import net.fortuna.ical4j.model.property.DtEnd;
 import net.fortuna.ical4j.model.property.DtStart;
@@ -60,6 +61,7 @@ public record TwakeCalendarEvent(Calendar calendar) {
         private Optional<String> dtstart = Optional.empty();
         private Optional<String> dtend = Optional.empty();
         private Optional<String> transparent = Optional.empty();
+        private Optional<String> clazz = Optional.empty();
         private Optional<String> rrule = Optional.empty();
         private Optional<String> exDate = Optional.empty();
         private Optional<Organizer> organizer = Optional.empty();
@@ -102,6 +104,11 @@ public record TwakeCalendarEvent(Calendar calendar) {
 
         public Builder transparent(String transparent) {
             this.transparent = Optional.of(transparent);
+            return this;
+        }
+
+        public Builder clazz(String clazz) {
+            this.clazz = Optional.of(clazz);
             return this;
         }
 
@@ -177,6 +184,7 @@ public record TwakeCalendarEvent(Calendar calendar) {
             organizer.ifPresent(o -> event.add(o));
             attendees.build().forEach(event::add);
             transparent.ifPresent(t -> event.add(new Transp(t)));
+            clazz.ifPresent(value -> event.add(new Clazz(value)));
 
             alarmTrigger.ifPresent(trigger -> {
                 VAlarm alarm = new VAlarm();
