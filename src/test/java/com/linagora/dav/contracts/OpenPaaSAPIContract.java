@@ -16,7 +16,7 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav;
+package com.linagora.dav.contracts;
 
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
@@ -32,9 +32,9 @@ import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.ContainerState;
 
-import com.linagora.dav.contracts.CalDavContract;
+import com.linagora.dav.DavResponse;
+import com.linagora.dav.OpenPaasUser;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
@@ -45,20 +45,20 @@ import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
 import reactor.netty.http.client.HttpClient;
 
-abstract class OpenPaaSAPITest {
+public abstract class OpenPaaSAPIContract {
 
     private HttpClient davHttpClient;
     private String domainId;
 
-    abstract OpenPaasUser createUser();
+    public abstract OpenPaasUser createUser();
 
-    abstract HttpClient davHttpClient();
+    public abstract HttpClient davHttpClient();
 
-    abstract String domainId();
+    public abstract String domainId();
 
-    abstract URI backendURI();
+    public abstract URI backendURI();
 
-    abstract URI elasticSearchURI();
+    public abstract URI elasticSearchURI();
 
     @BeforeEach
     void setUp() {
