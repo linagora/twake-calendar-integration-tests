@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.TestUtil.execute;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
@@ -30,6 +31,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
 import java.util.stream.StreamSupport;
 
+import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
@@ -335,6 +338,96 @@ public abstract class CalendarSharingContract {
                 assertThat(json).contains("[\"summary\",{},\"text\",\"Busy\"]");
                 assertThat(json).doesNotContain(description);
             });
+    }
+
+    @Test
+    void cannExportWhenPubliclyReadable() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's readonly calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Subscribed calendar can be exported
+        DavResponse response2 = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "?export"));
+
+        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
+    }
+
+    @Test
+    void cannExportWhenPubliclyWritable() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's readonly calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Subscribed calendar can be exported
+        DavResponse response2 = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "?export"));
+
+        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
     }
 
     @Test
