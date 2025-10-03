@@ -26,18 +26,25 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Streams;
 
-public record JsonCalendarEventData(String uid,
+public record JsonCalendarEventData(Optional<String> method,
+                                    String uid,
                                     Optional<String> summary,
                                     String dtstart,
                                     String dtend,
                                     Optional<String> recurrenceId) {
 
     public static class Builder {
+        private Optional<String> method = Optional.empty();
         private Optional<String> uid = Optional.empty();
         private Optional<String> summary = Optional.empty();
         private Optional<String> dtstart = Optional.empty();
         private Optional<String> dtend = Optional.empty();
         private Optional<String> recurrenceId = Optional.empty();
+
+        public Builder method(String method) {
+            this.method = Optional.of(method);
+            return this;
+        }
 
         public Builder uid(String uid) {
             this.uid = Optional.of(uid);
@@ -66,6 +73,7 @@ public record JsonCalendarEventData(String uid,
 
         public JsonCalendarEventData build() {
             return new JsonCalendarEventData(
+                method,
                 uid.get(),
                 summary,
                 dtstart.get(),
@@ -83,19 +91,22 @@ public record JsonCalendarEventData(String uid,
 
     public static List<JsonCalendarEventData> from(String json) throws JsonProcessingException {
         JsonNode root = OBJECT_MAPPER.readTree(json);
-        JsonNode vevents = root.at("/_embedded/dav:item/0/data/2");
-        return Streams.stream(vevents.elements()).map(vevent -> {
-            String uid = getEventDataField(vevent.get(1), "uid").get();
-            Optional<String> summary = getEventDataField(vevent.get(1), "summary");
-            String dtstart = getEventDataField(vevent.get(1), "dtstart").get();
-            String dtend = getEventDataField(vevent.get(1), "dtend").get();
-            Optional<String> recurrenceId = getEventDataField(vevent.get(1), "recurrence-id");
-            return new JsonCalendarEventData(uid, summary, dtstart, dtend, recurrenceId);
+        JsonNode items = root.at("/_embedded/dav:item");
+        return Streams.stream(items.elements()).flatMap(jsonNode -> {
+            Optional<String> method = getFieldValue(jsonNode.at("/data/1"), "method");
+            return Streams.stream(jsonNode.at("/data/2").elements()).map(vevent -> {
+                String uid = getFieldValue(vevent.get(1), "uid").get();
+                Optional<String> summary = getFieldValue(vevent.get(1), "summary");
+                String dtstart = getFieldValue(vevent.get(1), "dtstart").get();
+                String dtend = getFieldValue(vevent.get(1), "dtend").get();
+                Optional<String> recurrenceId = getFieldValue(vevent.get(1), "recurrence-id");
+                return new JsonCalendarEventData(method, uid, summary, dtstart, dtend, recurrenceId);
+            });
         }).toList();
     }
 
-    private static Optional<String> getEventDataField(JsonNode vevent, String fieldName) {
-        return Streams.stream(vevent.elements())
+    private static Optional<String> getFieldValue(JsonNode element, String fieldName) {
+        return Streams.stream(element.elements())
             .filter(jsonNode -> jsonNode.get(0).asText().equals(fieldName))
             .map(jsonNode -> jsonNode.get(3).asText()).findAny();
     }

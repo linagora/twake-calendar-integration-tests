@@ -105,6 +105,11 @@ public class CalDavClient {
         upsertCalendarEvent(user, calendarURI, initialCalendarData);
     }
 
+    public void upsertCalendarEvent(OpenPaasUser user, CalendarURL calendarURL, String eventUid, String initialCalendarData) {
+        URI calendarURI = URI.create(calendarURL.asUri() + "/" + eventUid + ".ics");
+        upsertCalendarEvent(user, calendarURI, initialCalendarData);
+    }
+
     public void upsertCalendarEvent(OpenPaasUser userRequest, URI calendarURI, String initialCalendarData) {
         httpClient.headers(headers -> userRequest.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
@@ -160,6 +165,11 @@ public class CalDavClient {
 
     public void deleteCalendarEvent(OpenPaasUser user, String eventUid) {
         URI calendarURI = URI.create("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics");
+        deleteCalendarEvent(user, calendarURI);
+    }
+
+    public void deleteCalendarEvent(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
+        URI calendarURI = URI.create(calendarURL.asUri() + "/" + eventUid + ".ics");
         deleteCalendarEvent(user, calendarURI);
     }
 
@@ -325,6 +335,10 @@ public class CalDavClient {
             """.replace("{email}", delegatedUser.email());
 
         sendDelegationRequest(user, uri, payload);
+    }
+
+    public DavResponse findEventsByTime(OpenPaasUser user, String start, String end) {
+        return findEventsByTime(user, CalendarURL.from(user.id()), start, end);
     }
 
     public DavResponse findEventsByTime(OpenPaasUser user, String baseId, String calendarId, String start, String end) {

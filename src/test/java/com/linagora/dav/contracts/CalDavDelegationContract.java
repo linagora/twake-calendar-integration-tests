@@ -23,6 +23,7 @@ import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -805,5 +806,251 @@ public abstract class CalDavDelegationContract {
         assertThat(messages)
             .noneSatisfy(json ->
                 assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id()));
+    }
+
+    @Test
+    void putCalendarEventShouldThrowErrorWhenCopiedCalendarOnlyHasReadRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+
+        // WHEN Alice tries to create an event in Bob calendar copy
+        // THEN a 403 error is thrown
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, calendarData))
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
+    }
+
+    @Test
+    void putCalendarEventShouldCreateNewEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(alice.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+
+        // WHEN Alice creates an event in Bob calendar copy
+        calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, calendarData);
+
+        DavResponse response = calDavClient.findEventsByTime(bob,
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        // THEN the event is created in Bob original calendar
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning #01");
+    }
+
+    @Test
+    void putCalendarEventShouldUpdateEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob has an event in his calendar
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice updates the event in Bob calendar copy
+        String updatedCalendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Updated Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, updatedCalendarData);
+
+        DavResponse response = calDavClient.findEventsByTime(bob,
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        // THEN the event is updated in Bob original calendar
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary().get()).isEqualTo("Updated Sprint planning #01");
+    }
+
+    @Test
+    void shouldDeleteCalendarEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob has an event in his calendar
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice deletes the event in Bob calendar copy
+        calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
+
+        DavResponse response = calDavClient.findEventsByTime(bob,
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        // THEN the event is deleted in Bob original calendar
+        assertThat(result).hasSize(0);
+    }
+
+    @Test
+    void putCalendarEventShouldSendITIPRequestWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .attendee(cedric.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+
+        // WHEN Alice creates an event in Bob calendar copy with Cedric as attendee
+        calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, calendarData);
+
+        // THEN an ITIP request is sent to Cedric
+        DavResponse response = calDavClient.findEventsByTime(cedric,
+            cedric.id(),
+            "inbox",
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).method().get()).isEqualTo("REQUEST");
+        assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning #01");
+    }
+
+    @Test
+    void deleteCalendarEventShouldSendITIPCancelWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob has an event in his calendar
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .attendee(cedric.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice deletes the event in Bob calendar copy
+        calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
+
+        // THEN an ITIP cancel is sent to Cedric
+        DavResponse response = calDavClient.findEventsByTime(cedric,
+            cedric.id(),
+            "inbox",
+            "20300310T000000",
+            "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result).anySatisfy(eventData -> {
+            assertThat(eventData.uid()).isEqualTo(eventUid);
+            assertThat(eventData.method().get()).isEqualTo("CANCEL");
+            assertThat(eventData.summary().get()).isEqualTo("Sprint planning #01");
+        });
     }
 }
