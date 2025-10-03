@@ -722,4 +722,23 @@ public class CalDavClient {
             }).block();
     }
 
+    public Mono<Void> sendITIPRequest(OpenPaasUser requester, URI recipientCalendarUri, String jsonBody) {
+        return httpClient.headers(headers -> requester.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/json")
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.valueOf("ITIP"))
+            .uri(recipientCalendarUri.toString())
+            .send(Mono.just(Unpooled.wrappedBuffer(jsonBody.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(body -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when sending ITIP to '%s'
+                        %s
+                        """.formatted(response.status().code(), recipientCalendarUri, body))));
+            });
+    }
 }
