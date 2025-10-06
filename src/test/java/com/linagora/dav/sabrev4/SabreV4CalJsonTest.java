@@ -20,7 +20,6 @@ package com.linagora.dav.sabrev4;
 
 import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtension;
@@ -33,11 +32,5 @@ public class SabreV4CalJsonTest extends CalJsonContract {
     @Override
     public DockerTwakeCalendarExtension dockerExtension() {
         return dockerExtension;
-    }
-
-    @Disabled("CORS fails on Sabre v4 CF https://github.com/linagora/esn-sabre/issues/54")
-    @Override
-    public void shouldSupportOptions() {
-
     }
 }

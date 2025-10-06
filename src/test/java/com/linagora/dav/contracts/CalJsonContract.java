@@ -247,19 +247,19 @@ public abstract class CalJsonContract {
 
         given().log().all()
             .header("Origin", "https://it-calendar")
-            .options("/calendars/" + testUser.id() + ".json").prettyPeek()
+            .options("/calendars/" + testUser.id() + ".json")
             .then()
             .statusCode(200);
 
         given().log().all()
             .header("Origin", "https://it-calendar")
-            .options("/calendars/" + testUser.id() + "/events.json").prettyPeek()
+            .options("/calendars/" + testUser.id() + "/events.json")
         .then()
             .statusCode(200);
 
         given().log().all()
             .header("Origin", "https://it-calendar")
-            .options("/calendars/" + testUser.id() + "/" + testUser.id() + ".json").prettyPeek()
+            .options("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
         .then()
             .statusCode(200);
     }
