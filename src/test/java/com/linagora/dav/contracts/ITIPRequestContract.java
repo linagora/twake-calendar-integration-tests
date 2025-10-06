@@ -447,7 +447,7 @@ public abstract class ITIPRequestContract {
             .isNotEmpty();
     }
 
-    @Disabled("Sabre currently ignores the specified calendar path. See https://github.com/linagora/esn-sabre/issues/49")
+    @Disabled("Sabre currently ignores the specified calendar path. See https://github.com/linagora/esn-sabre/issues/56")
     @Test
     void itipShouldRespectSpecifiedCalendarPath() throws Exception {
         // GIVEN Bob has multiple calendars (default + custom)
