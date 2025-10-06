@@ -242,6 +242,29 @@ public abstract class CalJsonContract {
     }
 
     @Test
+    public void shouldSupportOptions() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        given().log().all()
+            .header("Origin", "https://it-calendar")
+            .options("/calendars/" + testUser.id() + ".json").prettyPeek()
+            .then()
+            .statusCode(200);
+
+        given().log().all()
+            .header("Origin", "https://it-calendar")
+            .options("/calendars/" + testUser.id() + "/events.json").prettyPeek()
+        .then()
+            .statusCode(200);
+
+        given().log().all()
+            .header("Origin", "https://it-calendar")
+            .options("/calendars/" + testUser.id() + "/" + testUser.id() + ".json").prettyPeek()
+        .then()
+            .statusCode(200);
+    }
+
+    @Test
     void shouldListEvents() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
