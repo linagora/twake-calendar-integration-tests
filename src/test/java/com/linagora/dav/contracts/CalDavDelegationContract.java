@@ -32,6 +32,7 @@ import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -1052,5 +1053,428 @@ public abstract class CalDavDelegationContract {
             assertThat(eventData.method().get()).isEqualTo("CANCEL");
             assertThat(eventData.summary().get()).isEqualTo("Sprint planning #01");
         });
+    }
+
+    @Test
+    void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN bob delegated his calendar to Alice in readonly mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice attempts to manage rights on her local copy
+        // THEN is gets rejected
+        assertThatThrownBy(() -> calDavClient.updateCalendarAcl(alice, calendarURL, "{DAV:}read"))
+            .hasMessageContaining("Unexpected status code: 403 when updating ACL for calendar");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/55")
+    @Test
+    void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN bob delegated his calendar to Alice in read-write mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice attempts to manage rights on her local copy
+        // THEN is gets rejected
+        assertThatThrownBy(() -> calDavClient.updateCalendarAcl(alice, calendarURL, "{DAV:}read"))
+            .hasMessageContaining("Unexpected status code: 403 when updating ACL for calendar");
+    }
+
+    @Test
+    void grantDelegationShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice in read mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice attempts to delegate her local copy to Cedric
+        // THEN is gets rejected
+        assertThatThrownBy(() -> calDavClient.grantDelegation(alice, calendarURL.calendarId(), cedric, DelegationRight.READ))
+            .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
+    }
+
+    @Test
+    void grantDelegationShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice in read-write mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice attempts to delegate her local copy to Cedric
+        // THEN is gets rejected
+        assertThatThrownBy(() -> calDavClient.grantDelegation(alice, calendarURL.calendarId(), cedric, DelegationRight.READ))
+            .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
+    }
+
+    @Test
+    void updateCalendarAclShouldRunSuccessfullyWhenDelegatedUserHasAdminRight() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice in admin mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice attempts to manage rights on her local copy
+        calDavClient.updateCalendarAcl(alice, calendarURL, "{DAV:}read");
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + bob.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        // THEN the right is updated in Bob original calendar
+        assertThatJson(response)
+            .inPath("_embedded.dav:calendar[0]")
+            .isEqualTo(String.format("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "/calendars/{userId2}/{userId2}.json"
+                        }
+                    },
+                    "dav:name": "#default",
+                    "calendarserver:ctag": "http://sabre.io/ns/sync/1",
+                    "invite": [
+                        {
+                            "href": "principals/users/{userId2}",
+                            "principal": "principals/users/{userId2}",
+                            "properties": [],
+                            "access": 1,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "mailto:{userEmail}",
+                            "principal": "principals/users/{userId}",
+                            "properties": [],
+                            "access": 5,
+                            "comment": null,
+                            "inviteStatus": 2
+                        }
+                    ],
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId2}/calendar-proxy-read",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "{DAV:}authenticated",
+                            "protected": true
+                        }
+                    ]
+                }
+                """.replace("{userId}", alice.id()))
+                .replace("{userId2}", bob.id())
+                .replace("{userEmail}", alice.email()));
+    }
+
+    @Test
+    void grantDelegationShouldRunSuccessfullyWhenDelegatedUserHasAdminRight() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice in admin mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice delegates her local copy to Cedric
+        calDavClient.grantDelegation(alice, calendarURL.calendarId(), cedric, DelegationRight.READ);
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + bob.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        // THEN the right is updated in Bob original calendar
+        assertThatJson(response)
+            .inPath("_embedded.dav:calendar[0]")
+            .isEqualTo(String.format("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "/calendars/{userId2}/{userId2}.json"
+                        }
+                    },
+                    "dav:name": "#default",
+                    "calendarserver:ctag": "http://sabre.io/ns/sync/1",
+                    "invite": [
+                        {
+                            "href": "principals/users/{userId2}",
+                            "principal": "principals/users/{userId2}",
+                            "properties": [],
+                            "access": 1,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "mailto:{userEmail}",
+                            "principal": "principals/users/{userId}",
+                            "properties": [],
+                            "access": 5,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "mailto:{userEmail3}",
+                            "principal": "principals/users/{userId3}",
+                            "properties": [],
+                            "access": 2,
+                            "comment": null,
+                            "inviteStatus": 2
+                        }
+                    ],
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId2}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId2}/calendar-proxy-read",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId2}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{urn:ietf:params:xml:ns:caldav}read-free-busy",
+                            "principal": "{DAV:}authenticated",
+                            "protected": true
+                        }
+                    ]
+                }
+                """.replace("{userId}", alice.id()))
+                .replace("{userId2}", bob.id())
+                .replace("{userId3}", cedric.id())
+                .replace("{userEmail}", alice.email())
+                .replace("{userEmail3}", cedric.email()));
+    }
+
+    @Test
+    void rightMetadataOfCopiedCalendarShouldBeUpdatedWhenOriginalCalendarIsUpdated() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice in read mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        // WHEN Bob updates public rights on his calendar
+        // AND Bob delegates his calendar to Cedric in read mode
+        calDavClient.updateCalendarAcl(bob,"{DAV:}read");
+        calDavClient.grantDelegation(bob, bob.id(), cedric, DelegationRight.READ);
+
+        String response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + alice.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        // THEN the right is updated in Alice local copy of Bob original calendar
+        assertThatJson(response)
+            .inPath("_embedded.dav:calendar[0]")
+            .isEqualTo(String.format("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "${json-unit.ignore}"
+                        }
+                    },
+                    "calendarserver:delegatedsource": "/calendars/{userId2}/{userId2}.json",
+                    "dav:name": "#default",
+                    "calendarserver:ctag": "http://sabre.io/ns/sync/1",
+                    "invite": [
+                        {
+                            "href": "principals/users/{userId2}",
+                            "principal": "principals/users/{userId2}",
+                            "properties": [],
+                            "access": 1,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "mailto:{userEmail}",
+                            "principal": "principals/users/{userId}",
+                            "properties": [],
+                            "access": 2,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "mailto:{userEmail3}",
+                            "principal": "principals/users/{userId3}",
+                            "properties": [],
+                            "access": 2,
+                            "comment": null,
+                            "inviteStatus": 2
+                        }
+                    ],
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{userId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{userId}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId}/calendar-proxy-read",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{userId}/calendar-proxy-write",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "{DAV:}authenticated",
+                            "protected": true
+                        }
+                    ]
+                }
+                """.replace("{userId}", alice.id()))
+                .replace("{userId2}", bob.id())
+                .replace("{userId3}", cedric.id())
+                .replace("{userEmail}", alice.email())
+                .replace("{userEmail3}", cedric.email()));
     }
 }
