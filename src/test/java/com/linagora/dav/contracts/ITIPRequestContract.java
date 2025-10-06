@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -71,6 +72,7 @@ public abstract class ITIPRequestContract {
 
         bobCustomCalendarId = UUID.randomUUID().toString();
         calDavClient.createNewCalendar(bob, bobCustomCalendarId, "Bob Custom Calendar");
+        warmupItipServer();
     }
 
     @Test
@@ -117,16 +119,13 @@ public abstract class ITIPRequestContract {
         // THEN. Bob’s default calendar should have the event
         String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
 
-        List<JsonNode> defaultCalendarEvents =
-            awaitAtMost.until(() -> bobEventsForUri.apply(bobDefaultCalendarUri), nodes -> !nodes.isEmpty());
-
-        assertThat(defaultCalendarEvents)
+        awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
             .anySatisfy(item -> {
                 String json = item.toString();
                 assertThat(json).contains(eventUid);
                 assertThat(json).contains("mailto:" + bob.email());
                 assertThat(json).contains("Meeting from Cedric");
-            });
+            }));
 
         // THEN. Bob’s custom calendar should remain empty
         String bobCustomCalendarUri = "/calendars/" + bob.id() + "/" + bobCustomCalendarId;
@@ -396,5 +395,145 @@ public abstract class ITIPRequestContract {
                           "mailto:%s"
                         ]""".formatted(bob.email())));
         }));
+    }
+
+    @Disabled("Sabre allows any user to send ITIP to another user's calendar, should be forbidden. See https://github.com/linagora/esn-sabre/issues/49")
+    @Test
+    void itipShouldNotBeAllowedWhenSenderHasNoWriteAccess() throws Exception {
+        // GIVEN Cedric and Bob, and Cedric has no write access to Bob’s calendars
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Unauthorized Meeting
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        // WHEN Cedric sends an ITIP REQUEST to Bob’s calendar
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(cedric, URI.create(bobCalendarUri), body).block();
+        Thread.sleep(1000);
+
+        // THEN (expected in the future): should fail with permission denied or 403
+        // BUT current Sabre behavior: it still creates the event
+        // So we just assert this unexpected behavior to document it
+        List<JsonNode> events = calDavClient.reportCalendarEvents(bob, bobCalendarUri + "/" + bob.id(),
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(events)
+            .as("Currently Sabre still allows unauthorized ITIP creation (see issue #49)")
+            .isNotEmpty();
+    }
+
+    @Disabled("Sabre currently ignores the specified calendar path. See https://github.com/linagora/esn-sabre/issues/49")
+    @Test
+    void itipShouldRespectSpecifiedCalendarPath() throws Exception {
+        // GIVEN Bob has multiple calendars (default + custom)
+        String calendarA = bob.id(); // default calendar
+        String calendarB = bobCustomCalendarId;
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting on Specific Calendar
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        // WHEN Cedric sends an ITIP REQUEST explicitly targeting Bob’s calendarB
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        String bobCalendarBUri = "/calendars/" + bob.id() + "/" + calendarB;
+        calDavClient.sendITIPRequest(cedric, URI.create(bobCalendarBUri), body).block();
+
+        // THEN the event should appear in the specific target calendar (calendarB)
+        Function<String, List<JsonNode>> eventsForUri = uri ->
+            calDavClient.reportCalendarEvents(bob, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        Thread.sleep(1000);
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + calendarA;
+        List<JsonNode> eventsInDefault = eventsForUri.apply(bobDefaultCalendarUri);
+        List<JsonNode> eventsInB = eventsForUri.apply("/calendars/" + bob.id() + "/" + calendarB);
+
+        assertThat(eventsInB)
+            .as("Expected the ITIP event to appear in the explicitly targeted calendarB")
+            .anySatisfy(item -> assertThat(item.toString()).contains(eventUid));
+
+        assertThat(eventsInDefault)
+            .as("Default calendar should not receive this event once issue #49 is fixed")
+            .noneSatisfy(item -> assertThat(item.toString()).contains(eventUid));
+    }
+
+    private void warmupItipServer() {
+        OpenPaasUser randomUser = extension().newTestUser();
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:WarmUp
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, randomUser.email(), randomUser.email());
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(randomUser.email())
+            .recipient(randomUser.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(randomUser, URI.create("/calendars/" + randomUser.id()), body).block();
     }
 }

@@ -446,7 +446,11 @@ public class CalDavClient {
     }
 
     public void updateCalendarAcl(OpenPaasUser user, String publicRight) {
-       updateCalendarAcl(user, CalendarURL.from(user.id()), publicRight);
+        updateCalendarAcl(user, CalendarURL.from(user.id()), publicRight);
+    }
+
+    public void updateCalendarAcl(OpenPaasUser user, CalendarURL calendarURL, String publicRight) {
+        updateCalendarAcl(user, URI.create(calendarURL.asUri() + ".json"), publicRight);
     }
 
     /**
@@ -471,8 +475,8 @@ public class CalDavClient {
      *     </li>
      * </ul>
      */
-    public void updateCalendarAcl(OpenPaasUser user, CalendarURL calendarURL, String publicRight) {
-        String uri = calendarURL.asUri() + ".json";
+    public void updateCalendarAcl(OpenPaasUser user, URI calendarURL, String publicRight) {
+        String uri = calendarURL.toString();
         String payload = """
             {
               "public_right":"%s"
