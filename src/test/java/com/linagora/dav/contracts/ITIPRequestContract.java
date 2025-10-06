@@ -508,7 +508,7 @@ public abstract class ITIPRequestContract {
     }
 
     private void warmupItipServer() {
-        OpenPaasUser randomUser = extension().newTestUser();
+        OpenPaasUser warmupUser = bob;
         String eventUid = "event-" + UUID.randomUUID();
         String ics = """
             BEGIN:VCALENDAR
@@ -526,14 +526,14 @@ public abstract class ITIPRequestContract {
             ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
             END:VEVENT
             END:VCALENDAR
-            """.formatted(eventUid, randomUser.email(), randomUser.email());
+            """.formatted(eventUid, warmupUser.email(), warmupUser.email());
         String body = ITIPJsonBodyRequest.builder()
             .ical(ics)
-            .sender(randomUser.email())
-            .recipient(randomUser.email())
+            .sender(warmupUser.email())
+            .recipient(warmupUser.email())
             .uid(eventUid)
             .method("REQUEST")
             .buildJson();
-        calDavClient.sendITIPRequest(randomUser, URI.create("/calendars/" + randomUser.id()), body).block();
+        calDavClient.sendITIPRequest(warmupUser, URI.create("/calendars/" + warmupUser.id()), body).block();
     }
 }
