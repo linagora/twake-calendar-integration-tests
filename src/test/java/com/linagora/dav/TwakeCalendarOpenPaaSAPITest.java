@@ -95,10 +95,10 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                             "name": "davserver",
                             "value": {
                               "frontend": {
-                                "url": "https://dav.linagora.com"
+                                "url": "http://esn_sabre"
                               },
                               "backend": {
-                                "url": "https://dav.linagora.com"
+                                "url": "http://esn_sabre"
                               }
                             }
                           },
@@ -377,7 +377,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .body()
             .asString();
 
-        assertThatJson(body).isEqualTo("[{\"name\":\"core\",\"configurations\":[{\"name\":\"davserver\",\"value\":{\"frontend\":{\"url\":\"https://dav.linagora.com\"},\"backend\":{\"url\":\"https://dav.linagora.com\"}}}]}]");
+        assertThatJson(body).isEqualTo("[{\"name\":\"core\",\"configurations\":[{\"name\":\"davserver\",\"value\":{\"frontend\":{\"url\":\"http://esn_sabre\"},\"backend\":{\"url\":\"http://esn_sabre\"}}}]}]");
     }
 
     @Test
