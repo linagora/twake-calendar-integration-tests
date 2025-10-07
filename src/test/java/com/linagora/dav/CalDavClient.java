@@ -691,4 +691,35 @@ public class CalDavClient {
             .block();
     }
 
+    public void updateCalendarSetting(OpenPaasUser user, CalendarURL calendarURL, String name, String color) {
+        String uri = calendarURL.asUri() + ".json";
+        String payload = """
+            {
+              "id": "{id}",
+              "dav:name": "{name}",
+              "apple:color": "{color}"
+            }
+            """.replace("{id}", calendarURL.calendarId())
+            .replace("{name}", name)
+            .replace("{color}", color);
+
+        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*")
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when updating setting for calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
 }

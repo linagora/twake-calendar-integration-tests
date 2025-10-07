@@ -19,11 +19,13 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.TestUtil.execute;
+import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +33,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
 import java.util.stream.StreamSupport;
 
+import org.assertj.core.api.Assertions;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -43,9 +46,16 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.rabbitmq.client.Channel;
+
+import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.config.EncoderConfig;
+import io.restassured.config.RestAssuredConfig;
+import io.restassured.http.ContentType;
 
 public abstract class CalendarSharingContract {
 
@@ -67,6 +77,13 @@ public abstract class CalendarSharingContract {
             .getTwakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
+
+        RestAssured.requestSpecification = new RequestSpecBuilder()
+            .setContentType(ContentType.JSON)
+            .setAccept(ContentType.JSON)
+            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
+            .setBaseUri(extension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
+            .build();
 
         bob = extension().newTestUser();
         alice = extension().newTestUser();
@@ -1457,5 +1474,96 @@ public abstract class CalendarSharingContract {
                         .isEqualTo("""
                             ["method", {}, "text", "CANCEL"]"""));
             });
+    }
+
+    @Test
+    void userCanUpdateSettingOfCopiedCalendar() {
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
+
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+
+        assertThat(subscribedList)
+            .satisfiesOnlyOnce(node -> {
+                assertThat(node.path("dav:name").asText()).isEqualTo("new name");
+                assertThat(node.path("apple:color").asText()).isEqualTo("#009688");
+            });
+    }
+
+    @Test
+    void updateNameAndColorOfCopiedCalendarShouldNotAffectOriginalCalendar() {
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + bob.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        Assertions.assertThat(response)
+            .doesNotContain("\"dav:name\":\"new name\"")
+            .doesNotContain("\"apple:color\":\"#009688\"");
+    }
+
+    @Test
+    void updateNameAndColorOfOriginalCalendarShouldNotAffectCopiedCalendar() {
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        calDavClient.updateCalendarSetting(bob, CalendarURL.from(bob.id()), "new name", "#009688");
+
+        String response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + alice.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        Assertions.assertThat(response)
+            .doesNotContain("\"dav:name\":\"new name\"")
+            .doesNotContain("\"apple:color\":\"#009688\"");
     }
 }
