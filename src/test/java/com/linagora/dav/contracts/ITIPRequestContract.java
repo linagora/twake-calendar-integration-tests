@@ -71,8 +71,8 @@ public abstract class ITIPRequestContract {
         cedric = extension().newTestUser();
 
         bobCustomCalendarId = UUID.randomUUID().toString();
-        calDavClient.createNewCalendar(bob, bobCustomCalendarId, "Bob Custom Calendar");
-        warmupItipServer();
+
+        calDavClient.createNewCalendar(bob, bobCustomCalendarId, "Bob Custom Calendar", 2);
     }
 
     @Test
@@ -505,35 +505,5 @@ public abstract class ITIPRequestContract {
         assertThat(eventsInDefault)
             .as("Default calendar should not receive this event once issue #49 is fixed")
             .noneSatisfy(item -> assertThat(item.toString()).contains(eventUid));
-    }
-
-    private void warmupItipServer() {
-        OpenPaasUser warmupUser = bob;
-        String eventUid = "event-" + UUID.randomUUID();
-        String ics = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Example Corp.//CalDAV Client//EN
-            CALSCALE:GREGORIAN
-            METHOD:REQUEST
-            BEGIN:VEVENT
-            UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
-            SUMMARY:WarmUp
-            ORGANIZER;CN=Cedric:mailto:%s
-            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
-            END:VEVENT
-            END:VCALENDAR
-            """.formatted(eventUid, warmupUser.email(), warmupUser.email());
-        String body = ITIPJsonBodyRequest.builder()
-            .ical(ics)
-            .sender(warmupUser.email())
-            .recipient(warmupUser.email())
-            .uid(eventUid)
-            .method("REQUEST")
-            .buildJson();
-        calDavClient.sendITIPRequest(warmupUser, URI.create("/calendars/" + warmupUser.id()), body).block();
     }
 }

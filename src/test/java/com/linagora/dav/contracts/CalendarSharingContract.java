@@ -731,7 +731,7 @@ public abstract class CalendarSharingContract {
         // GIVEN: Bob creates a new calendar (non-default)
         String bobCalendarId = UUID.randomUUID().toString();
         String bobCalendarName = "Bob custom calendar";
-        calDavClient.createNewCalendar(bob, bobCalendarId, bobCalendarName);
+        calDavClient.createNewCalendar(bob, bobCalendarId, bobCalendarName, 2);
 
         CalendarURL bobCustomCalendar = new CalendarURL(bob.id(), bobCalendarId);
 

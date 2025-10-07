@@ -598,8 +598,7 @@ public class CalDavClient {
             });
     }
 
-
-    public void createNewCalendar(OpenPaasUser user, String id, String name) {
+    public void createNewCalendar(OpenPaasUser user, String id, String name, int order) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
 
         String payload = """
@@ -607,9 +606,10 @@ public class CalDavClient {
               "id": "%s",
               "dav:name": "%s",
               "apple:color": "#FF0000",
-              "caldav:description": "Calendar for %s"
+              "caldav:description": "Calendar for %s",
+              "apple:order": %d
             }
-            """.formatted(id, name, name);
+            """.formatted(id, name, name, order);
 
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_JSON)
