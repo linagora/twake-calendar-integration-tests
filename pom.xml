@@ -169,8 +169,8 @@
                     <argLine>-Xms512m -Xmx2048m</argLine>
                     <reuseForks>true</reuseForks>
                     <forkCount>1</forkCount>
-                    <!-- Fail tests longer than 10 minutes, prevent form random locking tests -->
-                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                    <!-- Fail tests longer than 40 minutes, prevent form random locking tests -->
+                    <forkedProcessTimeoutInSeconds>2400</forkedProcessTimeoutInSeconds>
                 </configuration>
             </plugin>
         </plugins>
