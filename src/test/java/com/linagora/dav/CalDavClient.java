@@ -446,7 +446,11 @@ public class CalDavClient {
     }
 
     public void updateCalendarAcl(OpenPaasUser user, String publicRight) {
-       updateCalendarAcl(user, CalendarURL.from(user.id()), publicRight);
+        updateCalendarAcl(user, CalendarURL.from(user.id()), publicRight);
+    }
+
+    public void updateCalendarAcl(OpenPaasUser user, CalendarURL calendarURL, String publicRight) {
+        updateCalendarAcl(user, URI.create(calendarURL.asUri() + ".json"), publicRight);
     }
 
     /**
@@ -471,8 +475,8 @@ public class CalDavClient {
      *     </li>
      * </ul>
      */
-    public void updateCalendarAcl(OpenPaasUser user, CalendarURL calendarURL, String publicRight) {
-        String uri = calendarURL.asUri() + ".json";
+    public void updateCalendarAcl(OpenPaasUser user, URI calendarURL, String publicRight) {
+        String uri = calendarURL.toString();
         String payload = """
             {
               "public_right":"%s"
@@ -594,8 +598,7 @@ public class CalDavClient {
             });
     }
 
-
-    public void createNewCalendar(OpenPaasUser user, String id, String name) {
+    public void createNewCalendar(OpenPaasUser user, String id, String name, int order) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
 
         String payload = """
@@ -603,9 +606,10 @@ public class CalDavClient {
               "id": "%s",
               "dav:name": "%s",
               "apple:color": "#FF0000",
-              "caldav:description": "Calendar for %s"
+              "caldav:description": "Calendar for %s",
+              "apple:order": %d
             }
-            """.formatted(id, name, name);
+            """.formatted(id, name, name, order);
 
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_JSON)
@@ -722,4 +726,23 @@ public class CalDavClient {
             }).block();
     }
 
+    public Mono<Void> sendITIPRequest(OpenPaasUser requester, URI recipientCalendarUri, String jsonBody) {
+        return httpClient.headers(headers -> requester.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/json")
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.valueOf("ITIP"))
+            .uri(recipientCalendarUri.toString())
+            .send(Mono.just(Unpooled.wrappedBuffer(jsonBody.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(body -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when sending ITIP to '%s'
+                        %s
+                        """.formatted(response.status().code(), recipientCalendarUri, body))));
+            });
+    }
 }
