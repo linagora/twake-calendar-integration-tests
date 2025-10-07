@@ -1477,4 +1477,89 @@ public abstract class CalDavDelegationContract {
                 .replace("{userEmail}", alice.email())
                 .replace("{userEmail3}", cedric.email()));
     }
+
+    @Test
+    void delegatedUserCanUpdateSettingOfCopiedCalendar() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
+
+        String response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + alice.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(response)
+            .containsOnlyOnce("\"dav:name\":\"new name\"")
+            .containsOnlyOnce("\"apple:color\":\"#009688\"");
+    }
+
+    @Test
+    void updateNameAndColorOfCopiedCalendarShouldNotAffectOriginalCalendar() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + bob.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(response)
+            .doesNotContain("\"dav:name\":\"new name\"")
+            .doesNotContain("\"apple:color\":\"#009688\"");
+    }
+
+    @Test
+    void updateNameAndColorOfOriginalCalendarShouldNotAffectCopiedCalendar() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+
+        calDavClient.updateCalendarSetting(bob, CalendarURL.from(bob.id()), "new name", "#009688");
+
+        String response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + alice.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(response)
+            .doesNotContain("\"dav:name\":\"new name\"")
+            .doesNotContain("\"apple:color\":\"#009688\"");
+    }
 }
