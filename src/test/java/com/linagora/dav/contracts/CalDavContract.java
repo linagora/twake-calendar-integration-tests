@@ -1657,7 +1657,7 @@ public abstract class CalDavContract {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()));
 
-        assertThat(response.status()).isEqualTo(500);
+        assertThat(response.status()).isEqualTo(401);
     }
 
     @Test
@@ -1670,7 +1670,7 @@ public abstract class CalDavContract {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/calendars/" + testUser.id()));
 
-        assertThat(response.status()).isEqualTo(500);
+        assertThat(response.status()).isEqualTo(401);
     }
 
     public static String basicAuth(String email, String password) {
