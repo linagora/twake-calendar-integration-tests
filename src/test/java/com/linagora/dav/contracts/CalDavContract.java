@@ -132,6 +132,81 @@ public abstract class CalDavContract {
         "END:VEVENT\r\n" +
         "END:VCALENDAR\r\n";
 
+    public static final String ICS_3_A = "BEGIN:VCALENDAR\r\n" +
+        "VERSION:2.0\r\n" +
+        "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
+        "CALSCALE:GREGORIAN\r\n" +
+        "BEGIN:VTIMEZONE\r\n" +
+        "TZID:Europe/Paris\r\n" +
+        "BEGIN:DAYLIGHT\r\n" +
+        "TZOFFSETFROM:+0100\r\n" +
+        "TZOFFSETTO:+0200\r\n" +
+        "TZNAME:CEST\r\n" +
+        "DTSTART:19700329T020000\r\n" +
+        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
+        "END:DAYLIGHT\r\n" +
+        "BEGIN:STANDARD\r\n" +
+        "TZOFFSETFROM:+0200\r\n" +
+        "TZOFFSETTO:+0100\r\n" +
+        "TZNAME:CET\r\n" +
+        "DTSTART:19701025T030000\r\n" +
+        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
+        "END:STANDARD\r\n" +
+        "END:VTIMEZONE\r\n" +
+        "BEGIN:VEVENT\r\n" +
+        "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
+        "TRANSP:OPAQUE\r\n" +
+        "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
+        "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
+        "CLASS:PUBLIC\r\n" +
+        "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
+        "SUMMARY:OW2con'25\r\n" +
+        "DESCRIPTION:Avoir un draft de prêt\r\n" +
+        "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
+        "DTSTAMP:20250205T170516Z\r\n" +
+        "SEQUENCE:0\r\n" +
+        "END:VEVENT\r\n" +
+        "END:VCALENDAR\r\n";
+
+    public static final String ICS_3_B = "BEGIN:VCALENDAR\r\n" +
+        "VERSION:2.0\r\n" +
+        "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
+        "CALSCALE:GREGORIAN\r\n" +
+        "BEGIN:VTIMEZONE\r\n" +
+        "TZID:Europe/Paris\r\n" +
+        "BEGIN:DAYLIGHT\r\n" +
+        "TZOFFSETFROM:+0100\r\n" +
+        "TZOFFSETTO:+0200\r\n" +
+        "TZNAME:CEST\r\n" +
+        "DTSTART:19700329T020000\r\n" +
+        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
+        "END:DAYLIGHT\r\n" +
+        "BEGIN:STANDARD\r\n" +
+        "TZOFFSETFROM:+0200\r\n" +
+        "TZOFFSETTO:+0100\r\n" +
+        "TZNAME:CET\r\n" +
+        "DTSTART:19701025T030000\r\n" +
+        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
+        "END:STANDARD\r\n" +
+        "END:VTIMEZONE\r\n" +
+        "BEGIN:VEVENT\r\n" +
+        "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
+        "TRANSP:OPAQUE\r\n" +
+        "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
+        "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
+        "CLASS:PUBLIC\r\n" +
+        "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
+        "SUMMARY:OW2con'25\r\n" +
+        "DESCRIPTION:Avoir un draft de prêt\r\n" +
+        "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
+        "ORGANIZER;CN=Julie VERRIER:mailto:[REPLACE]\r\n" +
+        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
+        " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com\r\n" +
+        "DTSTAMP:20250205T170516Z\r\n" +
+        "SEQUENCE:0\r\n" +
+        "END:VEVENT\r\n" +
+        "END:VCALENDAR\r\n";
+
     public static final String ICS_2 = "BEGIN:VCALENDAR\r\n" +
         "VERSION:2.0\r\n" +
         "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
@@ -492,6 +567,34 @@ public abstract class CalDavContract {
         assertThat(status2).isEqualTo(204);
         assertThat(response.status()).isEqualTo(200);
         assertThat(response.body()).isEqualTo(ICS_2);
+    }
+
+    @Test
+    void putShouldUpdateAttendeeWhenNone() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int status1 = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_3_A)));
+
+        String payload = ICS_3_B.replace("[REPLACE]", testUser.email());
+        int status2 = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
+            .send(body(payload)));
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/xml"))
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
+
+        assertThat(status1).isEqualTo(201);
+        assertThat(status2).isEqualTo(204);
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body()).contains("apujol@linagora.com");
     }
 
     @Test
