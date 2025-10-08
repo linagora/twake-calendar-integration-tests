@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -28,6 +29,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
@@ -44,18 +46,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
+import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.rabbitmq.client.Channel;
 
+import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Property;
 
 public abstract class CalendarSharingContract {
 
@@ -138,6 +146,185 @@ public abstract class CalendarSharingContract {
                 assertThat(node.path("calendarserver:source").path("_links").path("self").path("href").asText())
                     .contains(bob.id());
             });
+    }
+
+    @Test
+    void publicSubscriptionsAreListedInDAVWhenPubliclyReadable() throws Exception {
+        // See https://github.com/linagora/esn-sabre/issues/61
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // THEN: Alice see the subscription in her calendars
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id()));
+
+        assertThat(response.status()).isEqualTo(207);
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+
+        assertThat(actual).containsExactlyInAnyOrder("/calendars/" + alice.id() + "/",
+            "/calendars/" + alice.id() + "/" + alice.id() + "/",
+            "/calendars/" + alice.id() + "/inbox/",
+            "/calendars/" + alice.id() + "/outbox/",
+            sharedCalendarPath + "/");
+    }
+
+    @Disabled("Public subscription do not contain events CF https://github.com/linagora/esn-sabre/issues/61")
+    @Test
+    void publicSubscriptionsCanContainVEvent() {
+        // See https://github.com/linagora/esn-sabre/issues/61
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // THEN: the subscription do not contain event
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(sharedCalendarPath));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body()).contains("<cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set>");
+    }
+
+    @Test
+    void publicSubscriptionsAreListedInDAVWhenPubliclyWritable() throws Exception {
+        // See https://github.com/linagora/esn-sabre/issues/61
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // THEN: the subscription is listed
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id()));
+
+        assertThat(response.status()).isEqualTo(207);
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+        assertThat(actual).containsExactlyInAnyOrder("/calendars/" + alice.id() + "/",
+            "/calendars/" + alice.id() + "/" + alice.id() + "/",
+            "/calendars/" + alice.id() + "/inbox/",
+            "/calendars/" + alice.id() + "/outbox/",
+            sharedCalendarPath + "/");
+    }
+
+    @Disabled("Public subscription do not contain events CF https://github.com/linagora/esn-sabre/issues/61")
+    @Test
+    void publicSubscriptionsAreReadableInDav() throws Exception {
+        // See https://github.com/linagora/esn-sabre/issues/61
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // THEN: Alice can report the event in her subscription
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(sharedCalendarPath)
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+
+        AssertionsForClassTypes.assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     @Test
