@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -27,13 +28,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForClassTypes;
+import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -41,6 +47,7 @@ import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
+import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
@@ -48,11 +55,16 @@ import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 
+import com.linagora.dav.XMLUtil;
+import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Property;
 
 public abstract class CalDavDelegationContract {
 
@@ -191,6 +203,106 @@ public abstract class CalDavDelegationContract {
                 """.replace("{userId}", alice.id()))
                 .replace("{userId2}", bob.id())
                 .replace("{userEmail}", alice.email()));
+    }
+
+    @ParameterizedTest
+    @EnumSource(DelegationRight.class)
+    void listCalendarsShouldShowDelegatedCalendarInDav(DelegationRight right) throws Exception {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // WHEN Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+
+        // THEN a copy of bob calendar is created in Alice calendar list
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        // AND: Alice see the subscription in her calendars
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id()));
+        assertThat(response.status()).isEqualTo(207);
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+        AssertionsForInterfaceTypes.assertThat(actual).contains(calendarURL.asUri() + "/");
+        // AND: the subscription do not contain event
+        DavResponse response2 = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(calendarURL.asUri().toString()));
+        assertThat(response2.status()).isEqualTo(207);
+        assertThat(response2.body()).contains("<cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set>");
+    }
+
+    @ParameterizedTest
+    @EnumSource(DelegationRight.class)
+    void listCalendarsShouldShowDelegatedCalendarEventsInDav(DelegationRight right) throws Exception {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // WHEN Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // THEN a copy of bob calendar is created in Alice calendar list
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        // THEN: Alice can report the event in her subscription
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(calendarURL.asUri().toString())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        String actual = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
+        actualCalendar.removeAll(Property.PRODID);
+        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        expectedCalendar.removeAll(Property.PRODID);
+        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     @Test
@@ -839,42 +951,45 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
     }
 
-    @Test
-    void putCalendarEventShouldCreateNewEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
-        OpenPaasUser bob = dockerExtension().newTestUser();
+    @ParameterizedTest
+    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
+    void aliceCanCreateEventsInReadOnlyDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
         OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
-        // AND Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        // WHEN Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
 
+        // THEN a copy of bob calendar is created in Alice calendar list
         CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
             .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        // And: Alice cannot place an event in it
+        String eventUid2 = "event-" + UUID.randomUUID();
+        String calendarData2 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251030T090000Z
+            DTEND:20251030T100000Z
+            SUMMARY:Alice created event
+            DESCRIPTION:Whatever
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid2);
+        calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid2, calendarData2);
 
-        String eventUid = UUID.randomUUID().toString();
-        String calendarData = TwakeCalendarEvent.builder()
-            .uid(eventUid)
-            .organizer(alice.email())
-            .summary("Sprint planning #01")
-            .location("Twake Meeting Room")
-            .description("This is a meeting to discuss the sprint planning for the next week.")
-            .dtstart("20300411T100000")
-            .dtend("20300411T110000")
-            .build()
-            .toString();
-
-        // WHEN Alice creates an event in Bob calendar copy
-        calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, calendarData);
-
+        // AND the event is created in Bob original calendar
         DavResponse response = calDavClient.findEventsByTime(bob,
-            "20300310T000000",
-            "20300510T000000");
+            "20251029T090000",
+            "20251031T100000");
         List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
-
-        // THEN the event is created in Bob original calendar
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).uid()).isEqualTo(eventUid);
-        assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning #01");
+        assertThat(result.get(0).uid()).isEqualTo(eventUid2);
+        assertThat(result.get(0).summary().get()).isEqualTo("Alice created event");
     }
 
     @Test
