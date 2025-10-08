@@ -16,15 +16,23 @@
  *  more details.                                                   *
  ********************************************************************/
 
-
 package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpStatus;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.google.common.collect.Streams;
 
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpMethod;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.ByteBufMono;
 import reactor.netty.http.client.HttpClient;
@@ -32,9 +40,26 @@ import reactor.netty.http.client.HttpClientResponse;
 
 public class CardDavClient {
 
+    public enum DelegationRight {
+        READ(2),
+        READ_WRITE(3),
+        ADMIN(5);
+
+        private final int value;
+
+        DelegationRight(int value) {
+            this.value = value;
+        }
+
+        public int getValue() {
+            return value;
+        }
+    }
+
     private static final String CONTENT_TYPE_VCARD = "application/vcard";
     private static final String ACCEPT_VCARD_JSON = "text/plain";
     private static final String ADDRESS_BOOK_PATH = "/addressbooks/%s/%s/%s.vcf";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final HttpClient client;
 
@@ -72,6 +97,114 @@ public class CardDavClient {
             }).block();
     }
 
+    public String getContacts(OpenPaasUser openPaasUser, String baseId, String addressBookId) {
+        String uri = String.format("/addressbooks/%s/%s.json?limit=100&offset=0&sort=fn",
+            baseId, addressBookId);
+        return client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .get()
+            .uri(uri)
+            .responseSingle((response, buf) -> {
+                if (response.status().code() == 200) {
+                    return buf.asString(StandardCharsets.UTF_8);
+                }
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException(
+                        "Unexpected status code: %d when fetching contacts in address book %s for user %s\n%s"
+                            .formatted(response.status().code(), addressBookId, openPaasUser.id(), errorBody))));
+            }).block();
+    }
+
+    public Flux<AddressBookURL> findUserAddressBooks(OpenPaasUser openPaaSUser) {
+        String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
+            + "?personal=true&contactsCount=true&inviteStatus=2&shared=true&&subscribed=true";
+        return client.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
+            .request(HttpMethod.GET)
+            .uri(uri)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == HttpStatus.SC_OK) {
+                    return responseContent.asString(StandardCharsets.UTF_8).map(this::extractURLsFromResponse);
+                } else {
+                    return responseContent.asString(StandardCharsets.UTF_8)
+                        .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                        .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                            Unexpected status code: %d when finding user address books for user '%s'
+                            %s
+                            """.formatted(response.status().code(), openPaaSUser.id(), errorBody))));
+                }
+            }).flatMapMany(Flux::fromIterable);
+    }
+
+    public void deleteAddressBook(OpenPaasUser openPaasUser, String addressBookId) {
+        String uri = String.format("/addressbooks/%s/%s.json", openPaasUser.id(), addressBookId);
+        client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
+            .delete()
+            .uri(uri)
+            .responseSingle((response, buf) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException(
+                        "Unexpected status code: %d when deleting address book %s for user %s\n%s"
+                            .formatted(response.status().code(), addressBookId, openPaasUser.id(), errorBody))));
+            }).block();
+    }
+
+    public void grantDelegation(OpenPaasUser user, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
+        String uri = "/addressbooks/" + user.id() + "/" + addressBookId + ".json";
+
+        String payload = """
+            {
+                "dav:share-resource": {
+                    "dav:sharee": [
+                        {
+                            "dav:href": "mailto:{email}",
+                            "dav:share-access": {right}
+                        },
+                        {
+                            "dav:href": "principals/users/{userId}",
+                            "dav:share-access": 1
+                        }
+                    ]
+                }
+            }
+            """.replace("{userId}", user.id())
+            .replace("{email}", delegatedUser.email())
+            .replace("{right}", String.valueOf(right.getValue()));
+
+        sendDelegationRequest(user, uri, payload);
+    }
+
+    public void revokeDelegation(OpenPaasUser user, String addressBookId, OpenPaasUser delegatedUser) {
+        String uri = "/addressbooks/" + user.id() + "/" + addressBookId + ".json";
+
+        String payload = """
+            {
+                "dav:share-resource": {
+                    "dav:sharee": [
+                        {
+                            "dav:href": "mailto:{email}",
+                            "dav:share-access": 4
+                        },
+                        {
+                            "dav:href": "principals/users/{userId}",
+                            "dav:share-access": 1
+                        }
+                    ]
+                }
+            }
+            """.replace("{userId}", user.id())
+            .replace("{email}", delegatedUser.email());
+
+        sendDelegationRequest(user, uri, payload);
+    }
+
     private Mono<Void> handleContactUpsertResponse(HttpClientResponse response, ByteBufMono responseContent, OpenPaasUser openPaasUser, String addressBook, String vcardUid) {
         return switch (response.status().code()) {
             case 201, 204 -> Mono.empty();
@@ -87,5 +220,50 @@ public class CardDavClient {
     private Mono<String> responseBodyAsString(ByteBufMono byteBufMono) {
         return byteBufMono.asString(StandardCharsets.UTF_8)
             .switchIfEmpty(Mono.just(StringUtils.EMPTY));
+    }
+
+    private void sendDelegationRequest(OpenPaasUser user, String uri, String payload) {
+        client.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when delegating address book '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
+    private List<AddressBookURL> extractURLsFromResponse(String json) {
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(json);
+            ArrayNode calendars = (ArrayNode) node.path("_embedded").path("dav:addressbook");
+            return Streams.stream(calendars.elements())
+                .map(calendarNode -> calendarNode.path("_links").path("self").path("href").asText())
+                .filter(href -> !href.isEmpty())
+                .map(this::parseHref)
+                .toList();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse calendar list JSON", e);
+        }
+    }
+
+    private AddressBookURL parseHref(String href) {
+        String[] parts = href.split("/");
+        if (parts.length != 4) {
+            throw new RuntimeException("Found an invalid calendar href in JSON response: " + href);
+        }
+        String userId = parts[2];
+        String bookIdWithExt = parts[3];
+        String bookId = bookIdWithExt.replace(".json", "");
+        return new AddressBookURL(userId, bookId);
     }
 }
