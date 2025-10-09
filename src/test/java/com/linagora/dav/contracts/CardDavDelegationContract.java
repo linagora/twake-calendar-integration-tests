@@ -266,6 +266,48 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    void putContactsCanNotCreateNewContactInCopiedAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload))
+            .hasMessageContaining("Unexpected status code: 500");
+    }
+
+    @Test
+    void copiedAddressBookShouldNotReflectChangeInOriginalAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).doesNotContain("John Doe");
+    }
+
+    @Test
     void userCannotSeeAddressBookOfAnotherUser() {
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -309,5 +351,74 @@ public abstract class CardDavDelegationContract {
 
         assertThatThrownBy(() -> cardDavClient.getContacts(alice, bob.id(), addressBook))
             .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void putContactsShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void putContactsCanCreateNewContactWhenDelegatedUserHasReadWriteRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Test
+    void putContactsCanUpdateContactWhenDelegatedUserHasReadWriteRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload2);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
+        assertThat(response).contains("John Cole");
+    }
+
+    @Test
+    void canDeleteContactWhenDelegatedUserHasReadWriteRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        cardDavClient.deleteContact(alice, bob.id(), addressBook, vcardUid);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
     }
 }
