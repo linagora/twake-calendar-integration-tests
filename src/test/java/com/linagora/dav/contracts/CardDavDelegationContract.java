@@ -379,7 +379,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).doesNotContain("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 500 upon contact creation: " +
+        "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
     void canCreateNewContactDirectlyInCopiedAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -402,7 +403,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 500 upon contact creation: " +
+        "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
     void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -425,7 +427,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 upsertContact fails with a 500 error" +
+        "[error] 13#13: *23 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
     void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -451,7 +454,7 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Cole");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 403 upon delete")
     @Test
     void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -475,7 +478,7 @@ public abstract class CardDavDelegationContract {
         assertThat(response).doesNotContain("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
     @Test
     void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -498,7 +501,7 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
     @Test
     void createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -521,7 +524,7 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 PUT is accepted but not applied")
     @Test
     void updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -547,7 +550,7 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Cole");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 contact is not copied in the first place so it cannot be deleted and test succeeds")
     @Test
     void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
