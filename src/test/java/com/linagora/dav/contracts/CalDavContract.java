@@ -21,29 +21,37 @@ package com.linagora.dav.contracts;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
+import static com.linagora.dav.contracts.CalendarSharingContract.MAPPER;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
 import org.xmlunit.diff.DifferenceEvaluator;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarUtil;
@@ -262,7 +270,7 @@ public abstract class CalDavContract {
         .with()
         .pollDelay(Duration.ofMillis(500))
         .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
 
@@ -1009,6 +1017,288 @@ public abstract class CalDavContract {
         assertThat(actual).hasSize(2);
         assertThat(actual.get(0)).isEqualTo("/calendars/" + testUser2.id() + "/inbox/");
         assertThat(actual.get(1)).startsWith("/calendars/" + testUser2.id() + "/inbox/sabredav-").endsWith(".ics");
+    }
+
+    @Test
+    void attendeeInboxShouldReceiveItipRequestWhenInvitedByOrganizer() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: An organizer and an attendee
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Meeting invitation
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        // WHEN: The organizer creates an event including the attendee
+        String calendarUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(calendarUri), ics);
+
+        // THEN: The attendee should receive an ITIP REQUEST message in their inbox
+        Function<String, List<JsonNode>> findEvents = (uri) ->
+            calDavClient.reportCalendarEvents(attendee, uri,
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
+        awaitAtMost.untilAsserted(() -> assertThat(findEvents.apply(attendeeInboxUri))
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("mailto:" + attendee.email());
+                assertThat(json).contains("Meeting invitation");
+                assertThatJson(item)
+                    .inPath("data[1]")
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                            ["method", {}, "text", "REQUEST"]"""));
+            }));
+    }
+
+    @Test
+    void attendeeInboxShouldReceiveItipRequestWhenOrganizerUpdatesEvent() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: An organizer created an event with an attendee
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Initial meeting
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        String calendarUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(calendarUri), initialIcs);
+
+        // WHEN: The organizer updates the event (e.g. change summary)
+        String updatedIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T090000Z
+            DTSTART:20251009T100000Z
+            DTEND:20251009T110000Z
+            SUMMARY:Updated meeting
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        calDavClient.upsertCalendarEvent(organizer, URI.create(calendarUri), updatedIcs);
+
+        // THEN: The attendee should receive a new ITIP REQUEST (update) in their inbox
+        String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
+        awaitAtMost.untilAsserted(() -> {
+            var events = calDavClient.reportCalendarEvents(attendee, attendeeInboxUri,
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
+                .collectList().block();
+
+            assertThat(events)
+                .as("Attendee should have received an ITIP update (REQUEST)")
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("Updated meeting");
+                    assertThatJson(item)
+                        .inPath("data[1]")
+                        .isArray()
+                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                            .isEqualTo("""
+                                ["method", {}, "text", "REQUEST"]"""));
+                });
+        });
+    }
+
+    @Test
+    void attendeeInboxShouldReceiveItipCancelWhenOrganizerDeletesEvent() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: An organizer created an event with an attendee
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Meeting to be cancelled
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        String calendarUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(calendarUri), ics);
+
+        // WHEN: The organizer deletes the event
+        calDavClient.deleteCalendarEvent(organizer, URI.create(calendarUri));
+
+        // THEN: The attendee should receive an ITIP CANCEL message in their inbox
+        String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
+        awaitAtMost.untilAsserted(() -> {
+            var events = calDavClient.reportCalendarEvents(attendee, attendeeInboxUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList().block();
+
+            assertThat(events)
+                .as("Attendee should have received an ITIP CANCEL message after organizer deletion")
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("Meeting to be cancelled");
+                    assertThatJson(item)
+                        .inPath("data[1]")
+                        .isArray()
+                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                            .isEqualTo("""
+                                ["method", {}, "text", "CANCEL"]"""));
+                });
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ACCEPTED", "TENTATIVE", "DECLINED"})
+    void organizerInboxShouldReceiveItipReplyWhenAttendeeReply(String partstat) {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: The organizer created an event with the attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Reply Scenario Meeting
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        String organizerEventUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(organizerEventUri), initialIcs);
+
+        String attendeeDefaultCalendarUri = "/calendars/" + attendee.id() + "/" + attendee.id();
+        String organizerInboxUri = "/calendars/" + organizer.id() + "/inbox/";
+
+        // Locate the attendee's resource href to upsert replies on their own copy
+        List<JsonNode> attendeeInitialEvents = calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        String attendeeEventHref = attendeeInitialEvents.stream()
+            .filter(node -> node.toString().contains(eventUid))
+            .map(node -> node.at("/_links/self/href").asText())
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Attendee's copy of the event not found"));
+
+        // Build attendee's REPLY ICS (only PARTSTAT changes; keep SUMMARY as-is)
+        String attendeeReplyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Reply Scenario Meeting
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=%s:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), partstat, attendee.email());
+
+        // WHEN: The attendee sends a REPLY with the given PARTSTAT
+        calDavClient.upsertCalendarEvent(attendee, URI.create(attendeeEventHref), attendeeReplyIcs);
+
+        // THEN: The organizer's inbox should contain a REPLY for this UID
+        Function<String, List<JsonNode>> organizerEventsForUri = (uri) ->
+            calDavClient.reportCalendarEvents(organizer, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> organizerInbox = organizerEventsForUri.apply(organizerInboxUri);
+            assertThat(organizerInbox).anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("mailto:" + attendee.email());
+                assertThatJson(item)
+                    .inPath("data[1]")
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                            ["method", {}, "text", "REPLY"]"""));
+
+                assertThatJson(item)
+                    .inPath("data[2][0][1]")
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                              [
+                              "attendee",
+                              {
+                                "cn": "Attendee",
+                                "partstat": "%s"
+                              },
+                              "cal-address",
+                              "mailto:%s"
+                            ]""".formatted(partstat, attendee.email())));
+            });
+        });
     }
 
     @Test
