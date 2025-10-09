@@ -1073,6 +1073,63 @@ public abstract class CalDavContract {
     }
 
     @Test
+    void attendeeInboxShouldBeAbleToDeleteInboxItems() throws Exception {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: An organizer and an attendee
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Meeting invitation
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+        // And: The organizer creates an event including the attendee
+        String calendarUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(calendarUri), ics);
+
+        // When: The attendee deletes the INBOX item
+        Function<String, List<JsonNode>> findEvents = (uri) ->
+            calDavClient.reportCalendarEvents(attendee, uri,
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+        String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
+        awaitAtMost.untilAsserted(() -> assertThat(findEvents.apply(attendeeInboxUri))
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("mailto:" + attendee.email());
+                assertThat(json).contains("Meeting invitation");
+                assertThatJson(item)
+                    .inPath("data[1]")
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                            ["method", {}, "text", "REQUEST"]"""));
+            }));
+
+        calDavClient.deleteCalendarEvent(attendee, new URI(findEvents.apply(attendeeInboxUri).get(0)
+            .get("_links").get("self").get("href").asText()));
+
+        // THEN the item is deleted
+        assertThat(findEvents.apply(attendeeInboxUri).size()).isZero();
+    }
+
+    @Test
     void attendeeInboxShouldReceiveItipRequestWhenOrganizerUpdatesEvent() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
