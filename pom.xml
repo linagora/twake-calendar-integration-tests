@@ -15,7 +15,7 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <james.groupId>org.apache.james</james.groupId>
-        <james.baseVersion>3.9.0-SNAPSHOT</james.baseVersion>
+        <james.baseVersion>3.10.0-SNAPSHOT</james.baseVersion>
     </properties>
 
     <dependencies>
