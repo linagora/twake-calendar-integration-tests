@@ -111,7 +111,7 @@ public class CalDavClient {
     }
 
     public void upsertCalendarEvent(OpenPaasUser userRequest, URI calendarURI, String initialCalendarData) {
-        httpClient.headers(headers -> userRequest.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+        httpClient.headers(headers -> userRequest.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar; charset=utf-8"))
             .put()
             .uri(calendarURI.toString())
             .send(TestUtil.body(initialCalendarData))
