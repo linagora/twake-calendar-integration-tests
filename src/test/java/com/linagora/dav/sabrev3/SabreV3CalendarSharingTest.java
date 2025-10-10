@@ -18,20 +18,18 @@
 
 package com.linagora.dav.sabrev3;
 
-import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V3;
-
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import com.linagora.dav.DockerTwakeCalendarExtensionV3;
 import com.linagora.dav.contracts.CalendarSharingContract;
-import com.linagora.dav.DockerTwakeCalendarExtension;
 
 public class SabreV3CalendarSharingTest extends CalendarSharingContract {
 
     @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V3);
+    static DockerTwakeCalendarExtensionV3 dockerExtension = new DockerTwakeCalendarExtensionV3();
 
     @Override
-    public DockerTwakeCalendarExtension extension() {
+    public DockerTwakeCalendarExtensionV3 extension() {
         return dockerExtension;
     }
 }

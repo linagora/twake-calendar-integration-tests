@@ -16,19 +16,26 @@
  *  more details.                                                   *
  ********************************************************************/
 
-package com.linagora.dav.sabrev4;
+package com.linagora.dav;
 
-import org.junit.jupiter.api.extension.RegisterExtension;
+import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
 
-import com.linagora.dav.DockerTwakeCalendarExtensionV4;
-import com.linagora.dav.contracts.EmailAMQPMessageContract;
+public class DockerTwakeCalendarExtensionV4 extends DockerTwakeCalendarExtension {
 
-public class SabreV4EmailAMQPMessageTest extends EmailAMQPMessageContract {
-    @RegisterExtension
-    static DockerTwakeCalendarExtensionV4 dockerExtension = new DockerTwakeCalendarExtensionV4();
+    public static final String QUEUE_NAME = "tcalendar:event:test";
+
+    private static final DockerTwakeCalendarSetup dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4);
+
+    static {
+        dockerTwakeCalendarSetup.start();
+    }
+
+    public DockerTwakeCalendarExtensionV4() {
+
+    }
 
     @Override
-    public DockerTwakeCalendarExtensionV4 dockerExtension() {
-        return dockerExtension;
+    DockerTwakeCalendarSetup setup() {
+        return dockerTwakeCalendarSetup;
     }
 }
