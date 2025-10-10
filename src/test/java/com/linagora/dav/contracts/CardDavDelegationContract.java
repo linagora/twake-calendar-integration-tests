@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableSet;
@@ -47,7 +48,6 @@ public abstract class CardDavDelegationContract {
     private CardDavClient cardDavClient;
     private OpenPaasUser alice;
     private OpenPaasUser bob;
-    private OpenPaasUser cedric;
 
     @BeforeEach
     void setUp() {
@@ -55,7 +55,6 @@ public abstract class CardDavDelegationContract {
 
         alice = dockerExtension().newTestUser();
         bob = dockerExtension().newTestUser();
-        cedric = dockerExtension().newTestUser();
 
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
@@ -266,7 +265,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void userCannotSeeAddressBookOfAnotherUser() {
+    void nonDelegatedUserCannotSeeAddressBookOfAnotherUser() {
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
@@ -279,7 +278,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void delegatedUserCanSeeDelegatedAddressBook() {
+    void delegatedUserCanSeeOriginalAddressBook() {
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
@@ -295,7 +294,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void userCannotSeeAddressBookOfAnotherUserWhenDelegationHasBeenRevoked() {
+    void userCannotSeeOriginalAddressBookOfAnotherUserWhenDelegationHasBeenRevoked() {
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
@@ -309,5 +308,269 @@ public abstract class CardDavDelegationContract {
 
         assertThatThrownBy(() -> cardDavClient.getContacts(alice, bob.id(), addressBook))
             .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void createContactDirectlyOnOriginalAddressBookShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void createContactDirectlyOnOriginalAddressBookShouldSucceedWhenDelegatedUserHasReadWriteRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Test
+    void updateContactDirectlyOnOriginalAddressBookShouldSucceedWhenDelegatedUserHasReadWriteRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload2);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
+        assertThat(response).contains("John Cole");
+    }
+
+    @Test
+    void deleteContactDirectlyOnOriginalAddressBookShouldSucceedWhenDelegatedUserHasReadWriteRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        cardDavClient.deleteContact(alice, bob.id(), addressBook, vcardUid);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 500 upon contact creation: " +
+        "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
+    @Test
+    void canCreateNewContactDirectlyInCopiedAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 500 upon contact creation: " +
+        "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
+    @Test
+    void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 upsertContact fails with a 500 error" +
+        "[error] 13#13: *23 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
+    @Test
+    void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload2);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
+        assertThat(response).contains("John Cole");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 403 upon delete")
+    @Test
+    void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
+    @Test
+    void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
+    @Test
+    void createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 PUT is accepted but not applied")
+    @Test
+    void updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload2);
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).doesNotContain("John Doe");
+        assertThat(response).contains("John Cole");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60 contact is not copied in the first place so it cannot be deleted and test succeeds")
+    @Test
+    void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        cardDavClient.deleteContact(bob, addressBook, vcardUid);
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).doesNotContain("John Doe");
     }
 }
