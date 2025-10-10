@@ -18,19 +18,17 @@
 
 package com.linagora.dav.sabrev3;
 
-import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V3;
-
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarExtensionV3;
 import com.linagora.dav.contracts.CalDavContract;
 
 public class SabreV3CalDavTest extends CalDavContract {
     @RegisterExtension
-    static DockerTwakeCalendarExtension dockerExtension = new DockerTwakeCalendarExtension(SABRE_V3);
+    static DockerTwakeCalendarExtensionV3 dockerExtension = new DockerTwakeCalendarExtensionV3();
 
     @Override
-    public DockerTwakeCalendarExtension dockerExtension() {
+    public DockerTwakeCalendarExtensionV3 dockerExtension() {
         return dockerExtension;
     }
 }

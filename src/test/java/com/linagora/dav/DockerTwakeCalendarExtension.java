@@ -18,12 +18,8 @@
 
 package com.linagora.dav;
 
-import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4;
-
 import org.bson.types.ObjectId;
-import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.AfterEachCallback;
-import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
@@ -33,25 +29,16 @@ import org.junit.jupiter.api.extension.ParameterResolver;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
-
 import reactor.netty.http.client.HttpClient;
 
-public class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEachCallback, BeforeAllCallback, AfterAllCallback,ParameterResolver {
+public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEachCallback, ParameterResolver {
 
     public static final String QUEUE_NAME = "tcalendar:event:test";
-    public static final boolean DEBUG = true;
 
-    private final DockerTwakeCalendarSetup dockerTwakeCalendarSetup;
     private Channel channel;
     private Connection connection;
 
-    public DockerTwakeCalendarExtension() {
-        this(SABRE_V4);
-    }
-
-    public DockerTwakeCalendarExtension(String sabreVersion) {
-        dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(sabreVersion);
-    }
+    abstract DockerTwakeCalendarSetup setup();
 
     @Override
     public void beforeEach(ExtensionContext extensionContext) throws Exception {
@@ -77,49 +64,39 @@ public class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEa
     }
 
     @Override
-    public void beforeAll(ExtensionContext extensionContext) {
-        dockerTwakeCalendarSetup.start();
-    }
-
-    @Override
-    public void afterAll(ExtensionContext extensionContext) {
-        dockerTwakeCalendarSetup.stop();
-    }
-
-    @Override
     public boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext) throws ParameterResolutionException {
         return (parameterContext.getParameter().getType() == DockerTwakeCalendarSetup.class);
     }
 
     @Override
     public Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext) throws ParameterResolutionException {
-        return dockerTwakeCalendarSetup;
+        return setup();
     }
 
     public DockerTwakeCalendarSetup getDockerTwakeCalendarSetupSingleton() {
-        return dockerTwakeCalendarSetup;
+        return setup();
     }
 
     public OpenPaasUser newTestUser() {
-        return dockerTwakeCalendarSetup
+        return setup()
             .getTwakeCalendarProvisioningService()
             .createUser()
             .block();
     }
 
     public OpenPaasUser newTestUser(String localPart) {
-        return dockerTwakeCalendarSetup
+        return setup()
             .getTwakeCalendarProvisioningService()
             .createUser(localPart)
             .block();
     }
 
     public TwakeCalendarProvisioningService twakeCalendarProvisioningService() {
-        return dockerTwakeCalendarSetup.getTwakeCalendarProvisioningService();
+        return setup().getTwakeCalendarProvisioningService();
     }
 
     public String domainId() {
-        return ((ObjectId) dockerTwakeCalendarSetup
+        return ((ObjectId) setup()
             .getTwakeCalendarProvisioningService()
             .openPaasDomain()
             .get("_id")).toString();
