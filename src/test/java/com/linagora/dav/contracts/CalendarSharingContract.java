@@ -795,7 +795,6 @@ public abstract class CalendarSharingContract {
 
         String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
 
-        // Supplier để tránh duplicate code
         Supplier<List<JsonNode>> aliceEvents = () -> calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
