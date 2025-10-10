@@ -56,6 +56,21 @@ public class CardDavClient {
         }
     }
 
+    public enum PublicRight {
+        READ("{DAV:}read"),
+        READ_WRITE("{DAV:}write");
+
+        private final String value;
+
+        PublicRight(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
+    }
+
     private static final String CONTENT_TYPE_VCARD = "application/vcard";
     private static final String ACCEPT_VCARD_JSON = "text/plain";
     private static final String ADDRESS_BOOK_PATH = "/addressbooks/%s/%s/%s.vcf";
@@ -165,7 +180,11 @@ public class CardDavClient {
     }
 
     public void grantDelegation(OpenPaasUser user, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
-        String uri = "/addressbooks/" + user.id() + "/" + addressBookId + ".json";
+        grantDelegation(user, user.id(), addressBookId, delegatedUser, right);
+    }
+
+    public void grantDelegation(OpenPaasUser user, String baseId, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
 
         String payload = """
             {
@@ -213,6 +232,32 @@ public class CardDavClient {
         sendDelegationRequest(user, uri, payload);
     }
 
+    public void setPublicRight(OpenPaasUser user, String baseId, String addressBookId, PublicRight right) {
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+
+        String payload = """
+            {
+                "dav:publish-addressbook": {
+                    "privilege": "{publicRight}"
+                }
+            }
+            """.replace("{publicRight}", right.getValue());
+
+        sendPublicRightRequest(user, uri, payload);
+    }
+
+    public void setHiddenPublicRight(OpenPaasUser user, String baseId, String addressBookId) {
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+
+        String payload = """
+            {
+                "dav:unpublish-addressbook": true
+            }
+            """;
+
+        sendPublicRightRequest(user, uri, payload);
+    }
+
     private Mono<Void> handleContactUpsertResponse(HttpClientResponse response, ByteBufMono responseContent, OpenPaasUser openPaasUser, String addressBook, String vcardUid) {
         return switch (response.status().code()) {
             case 201, 204 -> Mono.empty();
@@ -245,6 +290,26 @@ public class CardDavClient {
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
                     .flatMap(errorBody -> Mono.error(new RuntimeException("""
                         Unexpected status code: %d when delegating address book '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
+    private void sendPublicRightRequest(OpenPaasUser user, String uri, String payload) {
+        client.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when set public right for address book '%s'
                         %s
                         """.formatted(response.status().code(), uri, errorBody))));
             }).block();

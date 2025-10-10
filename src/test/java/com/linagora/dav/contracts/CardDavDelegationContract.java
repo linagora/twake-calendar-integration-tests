@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CardDavClient.*;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +29,8 @@ import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.google.common.collect.ImmutableSet;
 import com.linagora.dav.AddressBookURL;
@@ -48,6 +51,7 @@ public abstract class CardDavDelegationContract {
     private CardDavClient cardDavClient;
     private OpenPaasUser alice;
     private OpenPaasUser bob;
+    private OpenPaasUser cedric;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +59,7 @@ public abstract class CardDavDelegationContract {
 
         alice = dockerExtension().newTestUser();
         bob = dockerExtension().newTestUser();
+        cedric = dockerExtension().newTestUser();
 
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
@@ -68,7 +73,7 @@ public abstract class CardDavDelegationContract {
     void listAddressBooksShouldShowDelegatedAddressBook() {
         // GIVEN Bob has a address book named "collected"
         // WHEN Bob delegates that address book to Alice
-        cardDavClient.grantDelegation(bob, "collected", alice, CardDavClient.DelegationRight.ADMIN);
+        cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.ADMIN);
 
         String response = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -127,7 +132,7 @@ public abstract class CardDavDelegationContract {
     @Test
     void listAddressBooksShouldNotShowDelegatedAddressBookWhenDelegationHasBeenRevoked() {
         // GIVEN Alice has a copy of Bob's address book
-        cardDavClient.grantDelegation(bob, "collected", alice, CardDavClient.DelegationRight.READ);
+        cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.READ);
 
         // WHEN Bob revokes rights for Alice
         cardDavClient.revokeDelegation(bob, "collected", alice);
@@ -154,7 +159,7 @@ public abstract class CardDavDelegationContract {
     void listAddressBooksShouldShowSharingRightOfDelegation() {
         // GIVEN Bob has an address book
         // WHEN Bob delegates that address book to Alice
-        cardDavClient.grantDelegation(bob, "collected", alice, CardDavClient.DelegationRight.ADMIN);
+        cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.ADMIN);
 
         String response = given()
             .headers("Authorization", bob.impersonatedBasicAuth())
@@ -231,12 +236,9 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void listAddressBooksShouldNotShowSharingRightOfDelegationWhenCopiedAddressBookHasBeenDeleted() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
-
         // GIVEN Bob has an address book
         // AND Bob delegates that address book to Alice
-        cardDavClient.grantDelegation(bob, "collected", alice, CardDavClient.DelegationRight.ADMIN);
+        cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.ADMIN);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -266,8 +268,6 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void nonDelegatedUserCannotSeeAddressBookOfAnotherUser() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
@@ -279,14 +279,12 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void delegatedUserCanSeeOriginalAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
 
         String response = cardDavClient.getContacts(alice, bob.id(), addressBook);
 
@@ -295,14 +293,12 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void userCannotSeeOriginalAddressBookOfAnotherUserWhenDelegationHasBeenRevoked() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
 
         cardDavClient.revokeDelegation(bob, addressBook, alice);
 
@@ -312,11 +308,9 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void createContactDirectlyOnOriginalAddressBookShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
 
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
@@ -326,11 +320,9 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void createContactDirectlyOnOriginalAddressBookShouldSucceedWhenDelegatedUserHasReadWriteRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
@@ -343,14 +335,12 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void updateContactDirectlyOnOriginalAddressBookShouldSucceedWhenDelegatedUserHasReadWriteRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(alice, bob.id(), addressBook, vcardUid, vcardPayload2);
@@ -363,14 +353,12 @@ public abstract class CardDavDelegationContract {
 
     @Test
     void deleteContactDirectlyOnOriginalAddressBookShouldSucceedWhenDelegatedUserHasReadWriteRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         cardDavClient.deleteContact(alice, bob.id(), addressBook, vcardUid);
 
@@ -383,11 +371,9 @@ public abstract class CardDavDelegationContract {
         "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
     void canCreateNewContactDirectlyInCopiedAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -407,11 +393,9 @@ public abstract class CardDavDelegationContract {
         "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
     void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -431,14 +415,12 @@ public abstract class CardDavDelegationContract {
         "[error] 13#13: *23 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
     void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -457,14 +439,12 @@ public abstract class CardDavDelegationContract {
     @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 403 upon delete")
     @Test
     void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -481,15 +461,13 @@ public abstract class CardDavDelegationContract {
     @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
     @Test
     void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
 
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -504,11 +482,9 @@ public abstract class CardDavDelegationContract {
     @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
     @Test
     void createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -527,14 +503,12 @@ public abstract class CardDavDelegationContract {
     @Disabled("https://github.com/linagora/esn-sabre/issues/60 PUT is accepted but not applied")
     @Test
     void updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -553,14 +527,12 @@ public abstract class CardDavDelegationContract {
     @Disabled("https://github.com/linagora/esn-sabre/issues/60 contact is not copied in the first place so it cannot be deleted and test succeeds")
     @Test
     void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.grantDelegation(bob, addressBook, alice, CardDavClient.DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
 
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
@@ -572,5 +544,193 @@ public abstract class CardDavDelegationContract {
         String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
 
         assertThat(response).doesNotContain("John Doe");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
+    void setPublicRightDirectlyInOriginalAddressBookShouldThrowErrorWhenDelegatedUserOnlyHasReadRight(DelegationRight right) {
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, right);
+
+        assertThatThrownBy(() -> cardDavClient.setPublicRight(alice, bob.id(), addressBook, PublicRight.READ))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void setPublicRightDirectlyInOriginalAddressBookShouldSucceedWhenDelegatedUserHasAdminRight() {
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
+
+        cardDavClient.setPublicRight(alice, bob.id(), addressBook, PublicRight.READ);
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("contactsCount", true)
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+            .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(response)
+            .inPath("_embedded.dav:addressbook[0]")
+            .isEqualTo(String.format("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "/addressbooks/{bobId}/collected.json"
+                        }
+                    },
+                    "dav:name": "",
+                    "carddav:description": "",
+                    "dav:acl": [
+                        "dav:read",
+                        "dav:write"
+                    ],
+                    "dav:share-access": 1,
+                    "openpaas:subscription-type": null,
+                    "type": "",
+                    "state": "",
+                    "numberOfContacts": 0,
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}all",
+                            "principal": "principals/users/{bobId}",
+                            "protected": true
+                        },
+                        {
+                                "privilege": "{DAV:}read",
+                                "principal": "{DAV:}authenticated"
+                        },
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-content",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}bind",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}unbind",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        }
+                    ],
+                    "dav:group": null
+                }
+                """.replace("{aliceId}", alice.id()))
+                .replace("{bobId}", bob.id()));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
+    void grantDelegationDirectlyInOriginalAddressBookShouldThrowErrorWhenDelegatedUserOnlyHasReadRight(DelegationRight right) {
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, right);
+
+        assertThatThrownBy(() -> cardDavClient.grantDelegation(alice, bob.id(), addressBook, cedric, DelegationRight.READ))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void grantDelegationDirectlyInOriginalAddressBookShouldSucceedWhenDelegatedUserHasAdminRight() {
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
+
+        cardDavClient.grantDelegation(alice, bob.id(), addressBook, cedric, DelegationRight.READ);
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("contactsCount", true)
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+            .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(response)
+            .inPath("_embedded.dav:addressbook[0]")
+            .isEqualTo(String.format("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "/addressbooks/{bobId}/collected.json"
+                        }
+                    },
+                    "dav:name": "",
+                    "carddav:description": "",
+                    "dav:acl": [
+                        "dav:read",
+                        "dav:write"
+                    ],
+                    "dav:share-access": 1,
+                    "openpaas:subscription-type": null,
+                    "type": "",
+                    "state": "",
+                    "numberOfContacts": 0,
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}all",
+                            "principal": "principals/users/{bobId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-content",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}bind",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}unbind",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                                "privilege": "{DAV:}read",
+                                "principal": "principals/users/{cedricId}",
+                                "protected": true
+                        }
+                    ],
+                    "dav:group": null
+                }
+                """.replace("{aliceId}", alice.id()))
+                .replace("{bobId}", bob.id())
+                .replace("{cedricId}", cedric.id()));
     }
 }
