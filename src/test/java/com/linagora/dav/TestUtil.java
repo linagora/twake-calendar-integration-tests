@@ -26,6 +26,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
 public class TestUtil {
+    public static final boolean DEBUG = true;
     public static Mono<ByteBuf> body(String body) {
         return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
     }
@@ -35,7 +36,7 @@ public class TestUtil {
                 .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
             .block();
 
-        if (DockerOpenPaasExtension.DEBUG) {
+        if (DEBUG) {
             System.out.println("============");
             System.out.println("Code: " + block.status());
             System.out.println(block.body());
