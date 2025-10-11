@@ -93,5 +93,7 @@ services:
       - LDAP_SERVER=ldap://esn_ldap:389
       - LDAP_USERNAME_MODE=username
       - LOG_TRACE=true
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
     networks:
       - emaily
