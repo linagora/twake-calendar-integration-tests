@@ -209,8 +209,7 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -683,8 +682,7 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -876,8 +874,7 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -1356,8 +1353,7 @@ public abstract class AlarmAMQPMessageContract {
                       [
                         "organizer",
                         {
-                          "cn": "Van Tung TRAN",
-                          "schedule-status": "1.1"
+                          "cn": "Van Tung TRAN"
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
@@ -1790,8 +1786,7 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
