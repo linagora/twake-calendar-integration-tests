@@ -874,7 +874,8 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER"
+                          "cn": "Benoît TELLIER",
+                          "schedule-status": "${json-unit.ignore}"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -1786,7 +1787,8 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER"
+                          "cn": "Benoît TELLIER",
+                          "schedule-status": "${json-unit.ignore}"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"

@@ -391,8 +391,7 @@ public abstract class SearchAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "${json-unit.ignore}"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -530,8 +529,7 @@ public abstract class SearchAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "${json-unit.ignore}"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -711,8 +709,7 @@ public abstract class SearchAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "${json-unit.ignore}"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -888,8 +885,7 @@ public abstract class SearchAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "${json-unit.ignore}"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -1082,8 +1078,7 @@ public abstract class SearchAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "${json-unit.ignore}"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
