@@ -1,3 +1,5 @@
-FROM linagora/esn-sabre:v4-dev7
+ARG SABRE_4_IMAGE="linagora/esn-sabre:v4-dev7"
+
+FROM ${SABRE_4_IMAGE}
 
 COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /var/www/config/esn.key.pub
