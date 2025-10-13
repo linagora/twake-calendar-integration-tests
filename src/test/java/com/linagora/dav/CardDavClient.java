@@ -20,6 +20,7 @@ package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpStatus;
@@ -256,6 +257,48 @@ public class CardDavClient {
             """;
 
         sendPublicRightRequest(user, uri, payload);
+    }
+
+    public void subscribe(OpenPaasUser user, String baseId, String originalAddressBook, String copiedAddressBook) {
+        String payload = """
+            {
+                "id": "{id}",
+                "dav:name": "{copiedAddressBook}",
+                "carddav:description": "",
+                "dav:acl": [
+                    "dav:read",
+                    "dav:write"
+                ],
+                "type": "subscription",
+                "openpaas:source": {
+                    "_links": {
+                        "self": {
+                            "href": "{uri}"
+                        }
+                    }
+                }
+            }
+            """.replace("{id}", UUID.randomUUID().toString())
+            .replace("{copiedAddressBook}", copiedAddressBook)
+            .replace("{uri}", "/addressbooks/" + baseId + "/" + originalAddressBook + ".json");
+
+        client.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri("/addressbooks/" + user.id() + ".json")
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when sending sharing request for address book '%s'
+                        %s
+                        """.formatted(response.status().code(), originalAddressBook, errorBody))));
+            }).block();
     }
 
     private Mono<Void> handleContactUpsertResponse(HttpClientResponse response, ByteBufMono responseContent, OpenPaasUser openPaasUser, String addressBook, String vcardUid) {
