@@ -38,6 +38,7 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import net.javacrumbs.jsonunit.core.Option;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
@@ -206,8 +207,7 @@ public abstract class SearchAMQPMessageContract {
                          "attendee",
                          {
                            "partstat": "NEEDS-ACTION",
-                           "cn": "Benoît TELLIER",
-                           "schedule-status": "1.1"
+                           "cn": "Benoît TELLIER"
                          },
                          "cal-address",
                          "mailto:{attendeeEmail}"
@@ -231,7 +231,9 @@ public abstract class SearchAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -392,8 +394,7 @@ public abstract class SearchAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -532,7 +533,7 @@ public abstract class SearchAMQPMessageContract {
                         {
                           "partstat": "NEEDS-ACTION",
                           "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "schedule-status": "${json-unit.ignore}"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -561,6 +562,7 @@ public abstract class SearchAMQPMessageContract {
         expectedJson.remove("etag");
 
         assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "old_event[1][1][3]", "old_event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
@@ -713,7 +715,7 @@ public abstract class SearchAMQPMessageContract {
                         {
                           "partstat": "NEEDS-ACTION",
                           "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "schedule-status": "${json-unit.ignore}"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -736,7 +738,9 @@ public abstract class SearchAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -925,7 +929,9 @@ public abstract class SearchAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][8][3]", "etag")  // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][8][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -1106,7 +1112,9 @@ public abstract class SearchAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 

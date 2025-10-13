@@ -38,6 +38,8 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import net.javacrumbs.jsonunit.core.Option;
+
 public abstract class AlarmAMQPMessageContract {
 
     private final ConditionFactory calmlyAwait = Awaitility.with()
@@ -209,8 +211,7 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -282,7 +283,8 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -513,7 +515,9 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -683,8 +687,7 @@ public abstract class AlarmAMQPMessageContract {
                         "attendee",
                         {
                           "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "cn": "Benoît TELLIER"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -877,7 +880,7 @@ public abstract class AlarmAMQPMessageContract {
                         {
                           "partstat": "NEEDS-ACTION",
                           "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "schedule-status": "${json-unit.ignore}"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -951,6 +954,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId);
 
         assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
@@ -1194,7 +1198,9 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -1356,8 +1362,7 @@ public abstract class AlarmAMQPMessageContract {
                       [
                         "organizer",
                         {
-                          "cn": "Van Tung TRAN",
-                          "schedule-status": "1.1"
+                          "cn": "Van Tung TRAN"
                         },
                         "cal-address",
                         "mailto:{organizerEmail}"
@@ -1632,6 +1637,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId);
 
         assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
@@ -1791,7 +1797,7 @@ public abstract class AlarmAMQPMessageContract {
                         {
                           "partstat": "NEEDS-ACTION",
                           "cn": "Benoît TELLIER",
-                          "schedule-status": "1.1"
+                          "schedule-status": "${json-unit.ignore}"
                         },
                         "cal-address",
                         "mailto:{attendeeEmail}"
@@ -1862,7 +1868,8 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -2101,7 +2108,9 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
