@@ -58,8 +58,6 @@ public abstract class OpenPaaSAPIContract {
 
     public abstract URI backendURI();
 
-    public abstract URI elasticSearchURI();
-
     @BeforeEach
     void setUp() {
         RestAssured.requestSpecification = new RequestSpecBuilder()
@@ -560,12 +558,6 @@ public abstract class OpenPaaSAPIContract {
             .code();
         assertThat(status).isEqualTo(201);
 
-        Thread.sleep(1000);
-        with()
-            .baseUri(elasticSearchURI().toString())
-            .post("_flush");
-        Thread.sleep(1000);
-
         String response = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .body("{\"calendars\":[{\"userId\":\"" + adminId + "\",\"calendarId\":\"" + adminId + "\"}],\"query\":\"irrelevant\"}")
@@ -619,12 +611,6 @@ public abstract class OpenPaaSAPIContract {
             .status()
             .code();
         assertThat(status).isEqualTo(201);
-
-        Thread.sleep(1000);
-        with()
-            .baseUri(elasticSearchURI().toString())
-            .post("_flush");
-        Thread.sleep(1000);
 
         String body = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")

@@ -60,12 +60,6 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
     public URI backendURI() {
         return extension.getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE, "http");
     }
-
-    @Override
-    public URI elasticSearchURI() {
-        return extension.getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.OPENSEARCH, "http");
-    }
-
     @Test
     void retrieveUserDetailTheOpenPaaSWay() {
         OpenPaasUser user = createUser();
