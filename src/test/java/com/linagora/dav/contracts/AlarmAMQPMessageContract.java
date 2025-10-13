@@ -37,6 +37,7 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
+import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class AlarmAMQPMessageContract {
 
@@ -281,7 +282,8 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -512,7 +514,9 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -949,6 +953,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId);
 
         assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
@@ -1192,7 +1197,9 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -1629,6 +1636,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId);
 
         assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
@@ -1859,7 +1867,8 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
@@ -2098,7 +2107,9 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
+        assertThatJson(actual)
+            .when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
