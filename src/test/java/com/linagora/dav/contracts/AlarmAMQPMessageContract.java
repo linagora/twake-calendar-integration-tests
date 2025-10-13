@@ -229,7 +229,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -459,7 +459,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -702,7 +702,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -895,7 +895,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -1139,7 +1139,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -1383,7 +1383,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -1575,7 +1575,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -1808,7 +1808,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ]
                     ],
                     [
@@ -2033,7 +2033,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "3025-04-11T02:20:32"
                       ],
                       [
                         "status",

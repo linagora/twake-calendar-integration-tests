@@ -425,8 +425,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
-            Instant.parse("2025-09-01T00:00:00Z"),
-            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+            Instant.parse("2025-09-01T00:00:00"),
+            Instant.parse("2025-11-01T00:00:00")).collectList().block();
 
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
@@ -478,8 +478,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
-            Instant.parse("2025-09-01T00:00:00Z"),
-            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+            Instant.parse("2025-09-01T00:00:00"),
+            Instant.parse("2025-11-01T00:00:00")).collectList().block();
 
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
@@ -532,8 +532,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
-            Instant.parse("2025-09-01T00:00:00Z"),
-            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+            Instant.parse("2025-09-01T00:00:00"),
+            Instant.parse("2025-11-01T00:00:00")).collectList().block();
 
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
@@ -675,8 +675,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
-            Instant.parse("2025-09-01T00:00:00Z"),
-            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+            Instant.parse("2025-09-01T00:00:00"),
+            Instant.parse("2025-11-01T00:00:00")).collectList().block();
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
@@ -746,8 +746,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
-            Instant.parse("2025-09-01T00:00:00Z"),
-            Instant.parse("2025-11-01T00:00:00Z")).collectList().block();
+            Instant.parse("2025-09-01T00:00:00"),
+            Instant.parse("2025-11-01T00:00:00")).collectList().block();
 
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
@@ -798,8 +798,8 @@ public abstract class CalendarSharingContract {
         Supplier<List<JsonNode>> aliceEvents = () -> calDavClient.reportCalendarEvents(
             alice,
             subscribedCalendarURI,
-            Instant.parse("2025-09-01T00:00:00Z"),
-            Instant.parse("2025-11-01T00:00:00Z")
+            Instant.parse("2025-09-01T00:00:00"),
+            Instant.parse("2025-11-01T00:00:00")
         ).collectList().block();
 
         // CONFIRM: Before deletion, Alice sees the event
@@ -1108,7 +1108,7 @@ public abstract class CalendarSharingContract {
         // WHEN: Alice tries to update Bob's event in her subscribed copy
         String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"), Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"), Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(aliceEvents).hasSize(1);
@@ -1167,8 +1167,8 @@ public abstract class CalendarSharingContract {
         Supplier<List<JsonNode>> aliceEventsSupplier = () -> calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         List<JsonNode> aliceEvents = aliceEventsSupplier.get();
@@ -1186,8 +1186,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(bobEvents)
@@ -1250,8 +1250,8 @@ public abstract class CalendarSharingContract {
 
         Supplier<List<JsonNode>> aliceEventsSupplier = () -> calDavClient.reportCalendarEvents(
                 alice, aliceCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         // AND: Alice sees the event in her subscribed copy
@@ -1266,8 +1266,8 @@ public abstract class CalendarSharingContract {
         String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob, bobCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(bobEvents)
@@ -1328,8 +1328,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(aliceEvents).hasSize(1);
@@ -1344,8 +1344,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(bobEvents)
@@ -1357,8 +1357,8 @@ public abstract class CalendarSharingContract {
 
         // AND: Cedric should have an iTIP request in his inbox
         String cedricInboxUri = "/calendars/" + cedric.id() + "/inbox/";
-        List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(cedric, cedricInboxUri, Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+        List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(cedric, cedricInboxUri, Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(cedricInboxItems)
@@ -1416,8 +1416,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(aliceEvents).hasSize(1);
@@ -1433,8 +1433,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(bobEvents)
@@ -1452,8 +1452,8 @@ public abstract class CalendarSharingContract {
             List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
                     attendee,
                     inboxUri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
+                    Instant.parse("2025-09-01T00:00:00"),
+                    Instant.parse("2025-11-01T00:00:00"))
                 .collectList().block();
 
             assertThat(inboxItems)
@@ -1517,8 +1517,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEventsBefore = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
         assertThat(aliceEventsBefore).hasSize(1);
 
@@ -1532,8 +1532,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> bobEventsAfter = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
         assertThat(bobEventsAfter).isEmpty();
 
@@ -1545,8 +1545,8 @@ public abstract class CalendarSharingContract {
             List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
                     attendee,
                     inboxUri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
+                    Instant.parse("2025-09-01T00:00:00"),
+                    Instant.parse("2025-11-01T00:00:00"))
                 .collectList().block();
 
             assertThat(inboxItems)
@@ -1610,8 +1610,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(aliceEvents).hasSize(1);
@@ -1627,8 +1627,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(bobEvents)
@@ -1643,8 +1643,8 @@ public abstract class CalendarSharingContract {
         List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(
                 cedric,
                 cedricInboxUri,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("2025-09-01T00:00:00"),
+                Instant.parse("2025-11-01T00:00:00"))
             .collectList().block();
 
         assertThat(cedricInboxItems)
