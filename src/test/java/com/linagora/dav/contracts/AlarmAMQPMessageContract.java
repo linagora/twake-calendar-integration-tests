@@ -37,6 +37,7 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
+
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class AlarmAMQPMessageContract {
