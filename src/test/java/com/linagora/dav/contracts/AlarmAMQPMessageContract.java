@@ -512,7 +512,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "event[2][1][2][0][1][2][3]", "etag")   // ignore prodid, dtstamp, attendee email UUID and etag
             .isEqualTo(expected);
     }
 
@@ -1192,7 +1192,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "event[2][1][2][0][1][2][3]", "etag")   // ignore prodid, dtstamp, attendee email UUID and etag
             .isEqualTo(expected);
     }
 
@@ -1629,7 +1629,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId);
 
         assertThatJson(actual)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "event[2][1][2][0][1][2][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "old_event[2][1][2][0][1][2][3]", "etag")  // ignore prodid, dtstamp, attendee email UUID and etag
             .isEqualTo(expected);
     }
 
@@ -2098,7 +2098,7 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
+        assertThatJson(actual).whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "event[2][1][2][0][1][2][3]", "etag")    // ignore prodid, dtstamp, attendee email UUID and etag
             .isEqualTo(expected);
     }
 
