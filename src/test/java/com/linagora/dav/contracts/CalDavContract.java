@@ -808,12 +808,8 @@ public abstract class CalDavContract {
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 " <d:response>\n" +
-                "  <d:status>HTTP/1.1 404 Not Found</d:status>\n" +
                 "  <d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics</d:href>\n" +
-                "  <d:propstat>\n" +
-                "   <d:prop/>\n" +
-                "   <d:status>HTTP/1.1 418 I'm a teapot</d:status>\n" +
-                "  </d:propstat>\n" +
+                "  <d:status>HTTP/1.1 404 Not Found</d:status>\n" +
                 " </d:response>\n" +
                 " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
                 "</d:multistatus>")
