@@ -215,7 +215,7 @@ public abstract class SearchAMQPMessageContract {
                          "dtstamp",
                          {},
                          "date-time",
-                         "3025-04-11T02:20:32"
+                         "3025-04-11T02:20:32Z"
                        ]
                      ],
                      []
@@ -400,7 +400,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32"
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -539,7 +539,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32"
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -720,7 +720,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32"
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []
@@ -896,7 +896,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32"
+                        "3025-04-11T02:20:32Z"
                       ],
                       [
                         "status",
@@ -1089,7 +1089,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32"
+                        "3025-04-11T02:20:32Z"
                       ]
                     ],
                     []

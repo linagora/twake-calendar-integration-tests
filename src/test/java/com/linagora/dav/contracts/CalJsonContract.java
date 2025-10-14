@@ -442,13 +442,13 @@ public abstract class CalJsonContract {
                                                     "dtstart",
                                                     {},
                                                     "date-time",
-                                                    "2025-02-14T10:00:00"
+                                                    "2025-02-14T10:00:00Z"
                                                 ],
                                                 [
                                                     "dtend",
                                                     {},
                                                     "date-time",
-                                                    "2025-02-14T10:45:00"
+                                                    "2025-02-14T10:45:00Z"
                                                 ],
                                                 [
                                                     "class",
@@ -551,7 +551,7 @@ public abstract class CalJsonContract {
                                                     "dtstamp",
                                                     {},
                                                     "date-time",
-                                                    "2025-02-05T17:05:16"
+                                                    "2025-02-05T17:05:16Z"
                                                 ],
                                                 [
                                                     "sequence",
@@ -609,18 +609,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00")
-                .dtend("2030-04-15T04:00:00")
-                .recurrenceId("2030-04-15T03:00:00")
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-16T03:00:00")
-                .dtend("2030-04-16T04:00:00")
-                .recurrenceId("2030-04-16T03:00:00")
+                .dtstart("2030-04-16T03:00:00Z")
+                .dtend("2030-04-16T04:00:00Z")
+                .recurrenceId("2030-04-16T03:00:00Z")
                 .build()
         );
     }
@@ -660,18 +660,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-12T03:00:00")
-                .dtend("3025-04-12T04:00:00")
-                .recurrenceId("3025-04-12T03:00:00")
+                .dtstart("3025-04-12T03:00:00Z")
+                .dtend("3025-04-12T04:00:00Z")
+                .recurrenceId("3025-04-12T03:00:00Z")
                 .build()
         );
     }
@@ -691,7 +691,7 @@ public abstract class CalJsonContract {
             .description("This is a meeting to discuss the sprint planning for the next week.")
             .dtstart("30250411T100000")
             .dtend("30250411T110000")
-            .rrule("FREQ=DAILY;UNTIL=30250413T000000")
+            .rrule("FREQ=DAILY;UNTIL=30250413T000000Z")
             .build()
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
@@ -711,18 +711,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-12T03:00:00")
-                .dtend("3025-04-12T04:00:00")
-                .recurrenceId("3025-04-12T03:00:00")
+                .dtstart("3025-04-12T03:00:00Z")
+                .dtend("3025-04-12T04:00:00Z")
+                .recurrenceId("3025-04-12T03:00:00Z")
                 .build()
         );
     }
@@ -762,18 +762,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-13T03:00:00")
-                .dtend("3025-04-13T04:00:00")
-                .recurrenceId("3025-04-13T03:00:00")
+                .dtstart("3025-04-13T03:00:00Z")
+                .dtend("3025-04-13T04:00:00Z")
+                .recurrenceId("3025-04-13T03:00:00Z")
                 .build()
         );
     }
@@ -813,18 +813,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-18T03:00:00")
-                .dtend("3025-04-18T04:00:00")
-                .recurrenceId("3025-04-18T03:00:00")
+                .dtstart("3025-04-18T03:00:00Z")
+                .dtend("3025-04-18T04:00:00Z")
+                .recurrenceId("3025-04-18T03:00:00Z")
                 .build()
         );
     }
@@ -844,7 +844,7 @@ public abstract class CalJsonContract {
             .description("This is a meeting to discuss the sprint planning for the next week.")
             .dtstart("30250411T100000")
             .dtend("30250411T110000")
-            .rrule("FREQ=WEEKLY;UNTIL=30250420T000000")
+            .rrule("FREQ=WEEKLY;UNTIL=30250420T000000Z")
             .build()
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
@@ -864,18 +864,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-18T03:00:00")
-                .dtend("3025-04-18T04:00:00")
-                .recurrenceId("3025-04-18T03:00:00")
+                .dtstart("3025-04-18T03:00:00Z")
+                .dtend("3025-04-18T04:00:00Z")
+                .recurrenceId("3025-04-18T03:00:00Z")
                 .build()
         );
     }
@@ -915,18 +915,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-25T03:00:00")
-                .dtend("3025-04-25T04:00:00")
-                .recurrenceId("3025-04-25T03:00:00")
+                .dtstart("3025-04-25T03:00:00Z")
+                .dtend("3025-04-25T04:00:00Z")
+                .recurrenceId("3025-04-25T03:00:00Z")
                 .build()
         );
     }
@@ -966,26 +966,26 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-15T03:00:00")
-                .dtend("3025-04-15T04:00:00")
-                .recurrenceId("3025-04-15T03:00:00")
+                .dtstart("3025-04-15T03:00:00Z")
+                .dtend("3025-04-15T04:00:00Z")
+                .recurrenceId("3025-04-15T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(2)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-22T03:00:00")
-                .dtend("3025-04-22T04:00:00")
-                .recurrenceId("3025-04-22T03:00:00")
+                .dtstart("3025-04-22T03:00:00Z")
+                .dtend("3025-04-22T04:00:00Z")
+                .recurrenceId("3025-04-22T03:00:00Z")
                 .build()
         );
     }
@@ -1025,18 +1025,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00")
-                .dtend("2030-04-15T04:00:00")
-                .recurrenceId("2030-04-15T03:00:00")
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-05-15T03:00:00")
-                .dtend("2030-05-15T04:00:00")
-                .recurrenceId("2030-05-15T03:00:00")
+                .dtstart("2030-05-15T03:00:00Z")
+                .dtend("2030-05-15T04:00:00Z")
+                .recurrenceId("2030-05-15T03:00:00Z")
                 .build()
         );
     }
@@ -1076,27 +1076,27 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-15T03:00:00")
-                .dtend("3025-04-15T04:00:00")
-                .recurrenceId("3025-04-15T03:00:00")
+                .dtstart("3025-04-15T03:00:00Z")
+                .dtend("3025-04-15T04:00:00Z")
+                .recurrenceId("3025-04-15T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(2)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-05-15T03:00:00")
-                .dtend("3025-05-15T04:00:00")
-                .recurrenceId("3025-05-15T03:00:00")
+                .dtstart("3025-05-15T03:00:00Z")
+                .dtend("3025-05-15T04:00:00Z")
+                .recurrenceId("3025-05-15T03:00:00Z")
                 .build()
         );
     }
@@ -1116,7 +1116,7 @@ public abstract class CalJsonContract {
             .description("This is a meeting to discuss the sprint planning for the next week.")
             .dtstart("30250411T100000")
             .dtend("30250411T110000")
-            .rrule("FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=30250520T000000")
+            .rrule("FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=30250520T000000Z")
             .build()
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
@@ -1136,27 +1136,27 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00")
-                .dtend("3025-04-11T04:00:00")
-                .recurrenceId("3025-04-11T03:00:00")
+                .dtstart("3025-04-11T03:00:00Z")
+                .dtend("3025-04-11T04:00:00Z")
+                .recurrenceId("3025-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-04-15T03:00:00")
-                .dtend("3025-04-15T04:00:00")
-                .recurrenceId("3025-04-15T03:00:00")
+                .dtstart("3025-04-15T03:00:00Z")
+                .dtend("3025-04-15T04:00:00Z")
+                .recurrenceId("3025-04-15T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(2)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("3025-05-15T03:00:00")
-                .dtend("3025-05-15T04:00:00")
-                .recurrenceId("3025-05-15T03:00:00")
+                .dtstart("3025-05-15T03:00:00Z")
+                .dtend("3025-05-15T04:00:00Z")
+                .recurrenceId("3025-05-15T03:00:00Z")
                 .build()
         );
     }
@@ -1197,18 +1197,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-11T03:00:00")
-                .dtend("2030-04-11T04:00:00")
-                .recurrenceId("2030-04-11T03:00:00")
+                .dtstart("2030-04-11T03:00:00Z")
+                .dtend("2030-04-11T04:00:00Z")
+                .recurrenceId("2030-04-11T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-05-15T03:00:00")
-                .dtend("2030-05-15T04:00:00")
-                .recurrenceId("2030-05-15T03:00:00")
+                .dtstart("2030-05-15T03:00:00Z")
+                .dtend("2030-05-15T04:00:00Z")
+                .recurrenceId("2030-05-15T03:00:00Z")
                 .build()
         );
     }
@@ -1248,18 +1248,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-05-06T03:00:00")
-                .dtend("2030-05-06T04:00:00")
-                .recurrenceId("2030-05-06T03:00:00")
+                .dtstart("2030-05-06T03:00:00Z")
+                .dtend("2030-05-06T04:00:00Z")
+                .recurrenceId("2030-05-06T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-06-03T03:00:00")
-                .dtend("2030-06-03T04:00:00")
-                .recurrenceId("2030-06-03T03:00:00")
+                .dtstart("2030-06-03T03:00:00Z")
+                .dtend("2030-06-03T04:00:00Z")
+                .recurrenceId("2030-06-03T03:00:00Z")
                 .build()
         );
     }
@@ -1300,9 +1300,9 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00")
-                .dtend("2030-04-15T04:00:00")
-                .recurrenceId("2030-04-15T03:00:00")
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
                 .build()
         );
     }
@@ -1343,18 +1343,18 @@ public abstract class CalJsonContract {
         assertThat(result.get(0)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00")
-                .dtend("2030-04-15T04:00:00")
-                .recurrenceId("2030-04-15T03:00:00")
+                .dtstart("2030-04-15T03:00:00Z")
+                .dtend("2030-04-15T04:00:00Z")
+                .recurrenceId("2030-04-15T03:00:00Z")
                 .build()
         );
 
         assertThat(result.get(1)).isEqualTo(
             EventData.builder()
                 .uid(eventUid)
-                .dtstart("2030-04-16T08:00:00")
-                .dtend("2030-04-16T09:00:00")
-                .recurrenceId("2030-04-16T03:00:00")
+                .dtstart("2030-04-16T08:00:00Z")
+                .dtend("2030-04-16T09:00:00Z")
+                .recurrenceId("2030-04-16T03:00:00Z")
                 .build()
         );
     }
@@ -1979,27 +1979,27 @@ public abstract class CalJsonContract {
                         "dtstart",
                         {},
                         "date-time",
-                        "2030-04-11T02:00:00"
+                        "2030-04-11T02:00:00Z"
                       ],
                       [
                         "dtend",
                         {},
                         "date-time",
-                        "2030-04-11T05:00:00"
+                        "2030-04-11T05:00:00Z"
                       ],
                       [
                         "dtstamp",
                         {},
                         "date-time",
-                        "2025-09-29T10:09:00"
+                        "2025-09-29T10:09:00Z"
                       ],
                       [
                         "freebusy",
                         {},
                         "period",
                         [
-                          "2030-04-11T03:00:00",
-                          "2030-04-11T04:00:00"
+                          "2030-04-11T03:00:00Z",
+                          "2030-04-11T04:00:00Z"
                         ]
                       ]
                     ],
@@ -2051,19 +2051,19 @@ public abstract class CalJsonContract {
                         "dtstart",
                         {},
                         "date-time",
-                        "2030-04-11T02:00:00"
+                        "2030-04-11T02:00:00Z"
                       ],
                       [
                         "dtend",
                         {},
                         "date-time",
-                        "2030-04-11T05:00:00"
+                        "2030-04-11T05:00:00Z"
                       ],
                       [
                         "dtstamp",
                         {},
                         "date-time",
-                        "2025-09-29T10:09:00"
+                        "2025-09-29T10:09:00Z"
                       ]
                     ],
                     []
@@ -2114,27 +2114,27 @@ public abstract class CalJsonContract {
                         "dtstart",
                         {},
                         "date-time",
-                        "2030-04-12T02:00:00"
+                        "2030-04-12T02:00:00Z"
                       ],
                       [
                         "dtend",
                         {},
                         "date-time",
-                        "2030-04-12T05:00:00"
+                        "2030-04-12T05:00:00Z"
                       ],
                       [
                         "dtstamp",
                         {},
                         "date-time",
-                        "2025-09-29T10:09:00"
+                        "2025-09-29T10:09:00Z"
                       ],
                       [
                         "freebusy",
                         {},
                         "period",
                         [
-                          "2030-04-12T03:00:00",
-                          "2030-04-12T04:00:00"
+                          "2030-04-12T03:00:00Z",
+                          "2030-04-12T04:00:00Z"
                         ]
                       ]
                     ],
@@ -2187,19 +2187,19 @@ public abstract class CalJsonContract {
                         "dtstart",
                         {},
                         "date-time",
-                        "2030-04-12T02:00:00"
+                        "2030-04-12T02:00:00Z"
                       ],
                       [
                         "dtend",
                         {},
                         "date-time",
-                        "2030-04-12T05:00:00"
+                        "2030-04-12T05:00:00Z"
                       ],
                       [
                         "dtstamp",
                         {},
                         "date-time",
-                        "2025-09-29T10:09:00"
+                        "2025-09-29T10:09:00Z"
                       ]
                     ],
                     []
