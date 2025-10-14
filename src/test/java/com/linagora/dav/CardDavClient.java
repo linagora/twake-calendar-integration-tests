@@ -162,6 +162,39 @@ public class CardDavClient {
             }).flatMapMany(Flux::fromIterable);
     }
 
+    public void createAddressBook(OpenPaasUser user, String addressBook) {
+        String payload = """
+            {
+                "id": "{id}",
+                "dav:name": "{addressBook}",
+                "dav:acl": [
+                    "dav:read",
+                    "dav:write"
+                ],
+                "type": "user"
+            }
+            """.replace("{id}", UUID.randomUUID().toString())
+            .replace("{addressBook}", addressBook);
+
+        client.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri("/addressbooks/" + user.id() + ".json")
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when creating address book '%s'
+                        %s
+                        """.formatted(response.status().code(), addressBook, errorBody))));
+            }).block();
+    }
+
     public void deleteAddressBook(OpenPaasUser openPaasUser, String addressBookId) {
         String uri = String.format("/addressbooks/%s/%s.json", openPaasUser.id(), addressBookId);
         client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
@@ -259,7 +292,7 @@ public class CardDavClient {
         sendPublicRightRequest(user, uri, payload);
     }
 
-    public void subscribe(OpenPaasUser user, String baseId, String originalAddressBook, String copiedAddressBook) {
+    public void subscribe(OpenPaasUser user, String baseId, String originalAddressBook, String copiedAddressBookName) {
         String payload = """
             {
                 "id": "{id}",
@@ -279,7 +312,7 @@ public class CardDavClient {
                 }
             }
             """.replace("{id}", UUID.randomUUID().toString())
-            .replace("{copiedAddressBook}", copiedAddressBook)
+            .replace("{copiedAddressBook}", copiedAddressBookName)
             .replace("{uri}", "/addressbooks/" + baseId + "/" + originalAddressBook + ".json");
 
         client.headers(headers -> user.impersonatedBasicAuth(headers)

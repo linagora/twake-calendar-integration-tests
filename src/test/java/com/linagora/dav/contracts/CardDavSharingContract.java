@@ -272,6 +272,38 @@ public abstract class CardDavSharingContract {
         assertThat(response).doesNotContain("\"openpaas:source\":\"\\/addressbooks\\/" + bob.id() + "\\/collected.json\"");
     }
 
+    @Test
+    void copiedAddressBookShouldNoLongerExistWhenOriginalAddressBookIsDeleted() {
+        cardDavClient.createAddressBook(bob, "encyclopedia");
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(bob)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBookURL.addressBookId(), PublicRight.READ);
+
+        cardDavClient.subscribe(alice, bob.id(), addressBookURL.addressBookId(), "new book");
+
+        cardDavClient.deleteAddressBook(bob, addressBookURL.addressBookId());
+
+        String response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("contactsCount", true)
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+            .when()
+            .get("/addressbooks/" + alice.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(response).doesNotContain("\"openpaas:source\":\"\\/addressbooks\\/" + bob.id() + "\\/" + addressBookURL.addressBookId() + ".json\"");
+    }
+
     @Disabled("https://github.com/linagora/esn-sabre/issues/112 getContacts returns irrelevant data")
     @Test
     void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
@@ -293,5 +325,101 @@ public abstract class CardDavSharingContract {
         String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
 
         assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/112 Fails with 403 upon contact creation")
+    @Test
+    void canCreateNewContactInCopiedAddressBook() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/112 Fails with 403 upon contact creation")
+    @Test
+    void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).contains("John Doe");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/112 Fails with 403 upon contact update")
+    @Test
+    void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload2);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
+        assertThat(response).contains("John Cole");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/112 Fails with 404 not found upon contact deletion")
+    @Test
+    void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        assertThat(response).doesNotContain("John Doe");
     }
 }
