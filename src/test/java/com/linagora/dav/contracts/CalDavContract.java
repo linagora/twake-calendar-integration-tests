@@ -1051,8 +1051,8 @@ public abstract class CalDavContract {
         // THEN: The attendee should receive an ITIP REQUEST message in their inbox
         Function<String, List<JsonNode>> findEvents = (uri) ->
             calDavClient.reportCalendarEvents(attendee, uri,
-                    Instant.parse("2024-09-01T00:00:00"),
-                    Instant.parse("2026-11-01T00:00:00"))
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -1103,8 +1103,8 @@ public abstract class CalDavContract {
         // When: The attendee deletes the INBOX item
         Function<String, List<JsonNode>> findEvents = (uri) ->
             calDavClient.reportCalendarEvents(attendee, uri,
-                    Instant.parse("2024-09-01T00:00:00"),
-                    Instant.parse("2026-11-01T00:00:00"))
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
                 .collectList()
                 .block();
         String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
@@ -1181,8 +1181,8 @@ public abstract class CalDavContract {
         String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
         awaitAtMost.untilAsserted(() -> {
             var events = calDavClient.reportCalendarEvents(attendee, attendeeInboxUri,
-                    Instant.parse("2024-09-01T00:00:00"),
-                    Instant.parse("2026-11-01T00:00:00"))
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
                 .collectList().block();
 
             assertThat(events)
@@ -1236,8 +1236,8 @@ public abstract class CalDavContract {
         String attendeeInboxUri = "/calendars/" + attendee.id() + "/inbox/";
         awaitAtMost.untilAsserted(() -> {
             var events = calDavClient.reportCalendarEvents(attendee, attendeeInboxUri,
-                    Instant.parse("2025-09-01T00:00:00"),
-                    Instant.parse("2025-11-01T00:00:00"))
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
                 .collectList().block();
 
             assertThat(events)
@@ -1288,8 +1288,8 @@ public abstract class CalDavContract {
 
         // Locate the attendee's resource href to upsert replies on their own copy
         List<JsonNode> attendeeInitialEvents = calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
-                Instant.parse("2025-09-01T00:00:00"),
-                Instant.parse("2025-11-01T00:00:00"))
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
             .collectList()
             .block();
 
@@ -1322,8 +1322,8 @@ public abstract class CalDavContract {
         // THEN: The organizer's inbox should contain a REPLY for this UID
         Function<String, List<JsonNode>> organizerEventsForUri = (uri) ->
             calDavClient.reportCalendarEvents(organizer, uri,
-                    Instant.parse("2025-09-01T00:00:00"),
-                    Instant.parse("2025-11-01T00:00:00"))
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 

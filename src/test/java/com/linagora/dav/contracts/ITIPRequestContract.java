@@ -111,8 +111,8 @@ public abstract class ITIPRequestContract {
 
         Function<String, List<JsonNode>> bobEventsForUri = (uri) ->
             calDavClient.reportCalendarEvents(bob, uri,
-                    Instant.parse("2025-09-01T00:00:00"),
-                    Instant.parse("2025-11-01T00:00:00"))
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -157,8 +157,8 @@ public abstract class ITIPRequestContract {
 
         Function<String, List<JsonNode>> bobEventsForUri = uri -> calDavClient.reportCalendarEvents(
                 bob, uri,
-                Instant.parse("2025-09-01T00:00:00"),
-                Instant.parse("2025-11-01T00:00:00"))
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
             .collectList()
             .block();
 
@@ -237,8 +237,8 @@ public abstract class ITIPRequestContract {
 
         Function<String, List<JsonNode>> bobEventsForUri = (uri) ->
             calDavClient.reportCalendarEvents(bob, uri,
-                    Instant.parse("2025-09-01T00:00:00"),
-                    Instant.parse("2025-11-01T00:00:00"))
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -317,8 +317,8 @@ public abstract class ITIPRequestContract {
 
         Function<String, List<JsonNode>> cedricEventsForUri = uri ->
             calDavClient.reportCalendarEvents(cedric, uri,
-                    Instant.parse("2025-09-01T00:00:00"),
-                    Instant.parse("2025-11-01T00:00:00"))
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -437,8 +437,8 @@ public abstract class ITIPRequestContract {
         // BUT current Sabre behavior: it still creates the event
         // So we just assert this unexpected behavior to document it
         List<JsonNode> events = calDavClient.reportCalendarEvents(bob, bobCalendarUri + "/" + bob.id(),
-                Instant.parse("2025-09-01T00:00:00"),
-                Instant.parse("2025-11-01T00:00:00"))
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
             .collectList()
             .block();
 
@@ -488,8 +488,8 @@ public abstract class ITIPRequestContract {
         // THEN the event should appear in the specific target calendar (calendarB)
         Function<String, List<JsonNode>> eventsForUri = uri ->
             calDavClient.reportCalendarEvents(bob, uri,
-                    Instant.parse("2025-09-01T00:00:00"),
-                    Instant.parse("2025-11-01T00:00:00"))
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
