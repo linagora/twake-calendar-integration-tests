@@ -19,6 +19,7 @@
 package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +39,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.ByteBufMono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.client.HttpClientResponse;
+import reactor.util.retry.Retry;
 
 public class CardDavClient {
 
@@ -415,4 +417,111 @@ public class CardDavClient {
         String bookId = bookIdWithExt.replace(".json", "");
         return new AddressBookURL(userId, bookId);
     }
+
+    public void createDomainMembersAddressBook(String domainId, String technicalToken) {
+        String uri = "/addressbooks/" + domainId + ".json";
+        byte[] payload = """
+            {
+                "id": "domain-members",
+                "dav:name": "Domain Members",
+                "carddav:description": "Address book contains all domain members",
+                "dav:acl": [ "{DAV:}read" ],
+                "type": "group"
+            }
+            """.getBytes(StandardCharsets.UTF_8);
+
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json"))
+            .post()
+            .uri(uri)
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(payload)))
+            .responseSingle((response, buf) -> {
+                int status = response.status().code();
+                if (status == 201) {
+                    return Mono.empty();
+                }
+                if (status == 404) {
+                    return Mono.error(new RuntimeException("__RETRY__"));
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(body -> {
+                        if (body.contains("already exists")) {
+                            return Mono.empty();
+                        }
+                        return Mono.error(new RuntimeException("""
+                            Failed to create `domain-members` address book for domain %s
+                            HTTP %d
+                            %s
+                            """.formatted(domainId, status, body)));
+                    });
+            })
+            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
+                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
+            .then()
+            .block();
+    }
+
+    public void upsertDomainMemberContact(String domainId,
+                                          String vcardUid,
+                                          byte[] vcardPayload,
+                                          String technicalToken) {
+        String uri = String.format("/addressbooks/%s/domain-members/%s.vcf", domainId, vcardUid);
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
+                .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
+            .put()
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(vcardPayload)))
+            .responseSingle((response, buf) -> {
+                int status = response.status().code();
+
+                if (status == 201 || status == 204) {
+                    return Mono.empty();
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(body -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when upserting domain-member contact
+                        Domain: %s
+                        UID: %s
+                        Response: %s
+                        """.formatted(status, domainId, vcardUid, body))));
+            })
+            .block();
+    }
+
+    public void deleteContactDomainMembers(String domainId, String vcardUid, String technicalToken) {
+        String uri = String.format(ADDRESS_BOOK_PATH, domainId, "domain-members", vcardUid);
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
+            .delete()
+            .uri(uri)
+            .responseSingle((response, buf) -> {
+                int statusCode = response.status().code();
+                if (statusCode == 204) {
+                    return Mono.empty();
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(body -> {
+                        if (statusCode == 404 && body.contains("Card not found")) {
+                            return Mono.empty();
+                        }
+                        return Mono.error(new RuntimeException(String.format(
+                            "Unexpected status code: %d when deleting domain-member contact\nDomain: %s\nUID: %s\nResponse: %s",
+                            statusCode, domainId, vcardUid, body)));
+                    });
+            })
+            .block();
+    }
+
+
 }
