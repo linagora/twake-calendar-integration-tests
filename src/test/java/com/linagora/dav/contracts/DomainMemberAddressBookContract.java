@@ -147,4 +147,55 @@ public abstract class DomainMemberAddressBookContract {
         assertThat(response)
             .doesNotContain("New Contact1");
     }
+
+    @Test
+    void technicalTokenCanManageDomainMemberContacts() {
+        // GIVEN an empty domain addressbook created by the Twake Calendar service
+        cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
+
+        String vcardUid = "member-" + UUID.randomUUID();
+        byte[] vcardPayload = """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:Technical Contact
+            EMAIL:tech.contact@%s
+            END:VCARD
+            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
+
+        // WHEN using the technical token to create a new domain member contact
+        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, vcardPayload, technicalToken);
+
+        // THEN the contact is visible in the addressbook
+        String responseAfterCreate = cardDavClient.getContacts(openPaasUser, domainId, "domain-members");
+        assertThat(responseAfterCreate)
+            .contains("Technical Contact")
+            .contains("tech.contact@" + domainId);
+
+        // WHEN updating the same contact using the technical token
+        byte[] updatedVcardPayload = """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:Updated Contact
+            EMAIL:tech.updated@%s
+            END:VCARD
+            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, updatedVcardPayload, technicalToken);
+
+        // THEN the updated value is visible
+        String responseAfterUpdate = cardDavClient.getContacts(openPaasUser, domainId, "domain-members");
+        assertThat(responseAfterUpdate)
+            .contains("Updated Contact")
+            .contains("tech.updated@" + domainId)
+            .doesNotContain("Technical Contact");
+
+        // WHEN deleting the contact
+        cardDavClient.deleteContactDomainMembers(domainId, vcardUid, technicalToken);
+
+        // THEN it should be gone
+        String responseAfterDelete = cardDavClient.getContacts(openPaasUser, domainId, "domain-members");
+        assertThat(responseAfterDelete)
+            .doesNotContain("Updated Contact")
+            .doesNotContain("tech.updated@" + domainId);
+    }
+
 }

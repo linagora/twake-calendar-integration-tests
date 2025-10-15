@@ -496,4 +496,32 @@ public class CardDavClient {
             .block();
     }
 
+    public void deleteContactDomainMembers(String domainId, String vcardUid, String technicalToken) {
+        String uri = String.format(ADDRESS_BOOK_PATH, domainId, "domain-members", vcardUid);
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
+            .delete()
+            .uri(uri)
+            .responseSingle((response, buf) -> {
+                int statusCode = response.status().code();
+                if (statusCode == 204) {
+                    return Mono.empty();
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(body -> {
+                        if (statusCode == 404 && body.contains("Card not found")) {
+                            return Mono.empty();
+                        }
+                        return Mono.error(new RuntimeException(String.format(
+                            "Unexpected status code: %d when deleting domain-member contact\nDomain: %s\nUID: %s\nResponse: %s",
+                            statusCode, domainId, vcardUid, body)));
+                    });
+            })
+            .block();
+    }
+
+
 }
