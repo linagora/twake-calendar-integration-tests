@@ -1359,6 +1359,48 @@ public abstract class CalDavContract {
     }
 
     @Test
+    void organizerOutboxShouldStayEmptyAfterSendingInvitations() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: The organizer creates an event inviting the attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Meeting invitation
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        String organizerCalendarUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(organizerCalendarUri), ics);
+
+        // WHEN: The organizer sends an invitation (which internally uses the outbox)
+        // THEN: The outbox should remain empty as per CalDAV Scheduling spec
+        String organizerOutboxUri = "/calendars/" + organizer.id() + "/outbox/";
+
+        List<JsonNode> outboxItems = calDavClient.reportCalendarEvents(organizer, organizerOutboxUri,
+                Instant.parse("2024-09-01T00:00:00Z"),
+                Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(outboxItems)
+            .as("Outbox must remain empty regardless of sent invitations")
+            .isEmpty();
+    }
+
+    @Test
     void lookupByDate() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
