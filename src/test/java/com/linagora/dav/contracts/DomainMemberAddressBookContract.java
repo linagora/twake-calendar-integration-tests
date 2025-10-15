@@ -107,7 +107,7 @@ public abstract class DomainMemberAddressBookContract {
             .contains("second.contact@" + domainId);
     }
 
-    @Disabled("Admins should not be allowed to add domain-member contacts")
+    @Disabled("https://github.com/linagora/esn-sabre/issues/127 Admins should not be allowed to add domain-member contacts")
     @Test
     void adminUserCannotAddContactIntoDomainMemberAddressBook() {
         OpenPaasUser adminUser = extension().newTestUser();
