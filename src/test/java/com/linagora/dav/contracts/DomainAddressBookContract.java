@@ -205,7 +205,7 @@ public abstract class DomainAddressBookContract {
         OpenPaasUser alice = extension().newTestUser();
         OpenPaasUser bob = extension().newTestUser();
 
-        cardDavClient.createDomainAddressBook(domainId, extension().twakeCalendarProvisioningService().generateToken());
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
         String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
             .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
@@ -232,16 +232,98 @@ public abstract class DomainAddressBookContract {
     }
 
     @Test
+    void domainAdministratorCanUpdateContactInDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser alice = extension().newTestUser();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertDomainContact(domainId, vcardUid, vcardPayload, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(bob.email(), "@");
+
+        // Given bob is admin of the domain
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + bob.email())
+            .then()
+            .statusCode(204);
+
+        // When bob update contact in the domain address book
+        byte[] updatedVcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, updatedVcardPayload);
+
+        String response = cardDavClient.getContacts(alice, domainId, "dab");
+
+        // Then alice can see the updated contact
+        assertThat(response).contains("John Cole");
+    }
+
+    @Test
+    void domainAdministratorCanDeleteContactInDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser alice = extension().newTestUser();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertDomainContact(domainId, vcardUid, vcardPayload, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(bob.email(), "@");
+
+        // Given bob is admin of the domain
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + bob.email())
+            .then()
+            .statusCode(204);
+
+        // When bob delete contact in the domain address book
+        cardDavClient.deleteContact(bob, domainId, "dab", vcardUid);
+
+        String response = cardDavClient.getContacts(alice, domainId, "dab");
+
+        // Then alice does not see the deleted contact
+        assertThat(response).doesNotContain("John Doe");
+    }
+
+    @Test
     void normalUserCannotAddContactToDomainAddressBook() {
         String domainId = extension().domainId();
         OpenPaasUser bob = extension().newTestUser();
 
-        cardDavClient.createDomainAddressBook(domainId, extension().twakeCalendarProvisioningService().generateToken());
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
 
         Assertions.assertThatThrownBy(() -> cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, vcardPayload))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void normalUserCannotDeleteContactToDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String vcardUid = "test-contact-uid";
+
+        Assertions.assertThatThrownBy(() -> cardDavClient.deleteContact(bob, domainId, "dab", vcardUid))
             .hasMessageContaining("Unexpected status code: 403");
     }
 }
