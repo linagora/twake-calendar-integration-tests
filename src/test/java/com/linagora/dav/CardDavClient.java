@@ -523,5 +523,82 @@ public class CardDavClient {
             .block();
     }
 
+    public void createDomainAddressBook(String domainId, String technicalToken) {
+        String uri = "/addressbooks/" + domainId + ".json";
+        byte[] payload = """
+            {
+                "id": "{id}",
+                "dav:name": "{addressBookName}",
+                "carddav:description": "Domain address book",
+                "dav:acl": [ "{DAV:}read" ],
+                "type": "group"
+            }
+            """.replace("{id}", "dab")
+            .replace("addressBookName", "Domain address book")
+            .getBytes(StandardCharsets.UTF_8);
 
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json"))
+            .post()
+            .uri(uri)
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(payload)))
+            .responseSingle((response, buf) -> {
+                int status = response.status().code();
+                if (status == 201) {
+                    return Mono.empty();
+                }
+                if (status == 404) {
+                    return Mono.error(new RuntimeException("__RETRY__"));
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(body -> {
+                        if (body.contains("already exists")) {
+                            return Mono.empty();
+                        }
+                        return Mono.error(new RuntimeException("""
+                            Failed to create address book for domain %s
+                            HTTP %d
+                            %s
+                            """.formatted(domainId, status, body)));
+                    });
+            })
+            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
+                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
+            .then()
+            .block();
+    }
+
+    public void upsertDomainContact(String domainId,
+                                    String vcardUid,
+                                    byte[] vcardPayload,
+                                    String technicalToken) {
+        String uri = String.format("/addressbooks/%s/dab/%s.vcf", domainId, vcardUid);
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
+                .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
+            .put()
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(vcardPayload)))
+            .responseSingle((response, buf) -> {
+                int status = response.status().code();
+
+                if (status == 201 || status == 204) {
+                    return Mono.empty();
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(body -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when upserting domain-member contact
+                        Domain: %s
+                        UID: %s
+                        Response: %s
+                        """.formatted(status, domainId, vcardUid, body))));
+            }).block();
+    }
 }
