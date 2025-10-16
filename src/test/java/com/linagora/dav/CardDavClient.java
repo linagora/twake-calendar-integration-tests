@@ -571,4 +571,34 @@ public class CardDavClient {
             .then()
             .block();
     }
+
+    public void upsertDomainContact(String domainId,
+                                    String vcardUid,
+                                    byte[] vcardPayload,
+                                    String technicalToken) {
+        String uri = String.format("/addressbooks/%s/dab/%s.vcf", domainId, vcardUid);
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
+                .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
+            .put()
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(vcardPayload)))
+            .responseSingle((response, buf) -> {
+                int status = response.status().code();
+
+                if (status == 201 || status == 204) {
+                    return Mono.empty();
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(body -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when upserting domain-member contact
+                        Domain: %s
+                        UID: %s
+                        Response: %s
+                        """.formatted(status, domainId, vcardUid, body))));
+            }).block();
+    }
 }
