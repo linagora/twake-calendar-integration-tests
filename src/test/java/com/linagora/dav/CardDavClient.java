@@ -523,5 +523,52 @@ public class CardDavClient {
             .block();
     }
 
+    public void createDomainAddressBook(String domainId, String technicalToken) {
+        String uri = "/addressbooks/" + domainId + ".json";
+        byte[] payload = """
+            {
+                "id": "{id}",
+                "dav:name": "{addressBookName}",
+                "carddav:description": "Domain address book",
+                "dav:acl": [ "{DAV:}read" ],
+                "type": "group"
+            }
+            """.replace("{id}", "dab")
+            .replace("addressBookName", "Domain address book")
+            .getBytes(StandardCharsets.UTF_8);
 
+        client.headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json"))
+            .post()
+            .uri(uri)
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(payload)))
+            .responseSingle((response, buf) -> {
+                int status = response.status().code();
+                if (status == 201) {
+                    return Mono.empty();
+                }
+                if (status == 404) {
+                    return Mono.error(new RuntimeException("__RETRY__"));
+                }
+
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(""))
+                    .flatMap(body -> {
+                        if (body.contains("already exists")) {
+                            return Mono.empty();
+                        }
+                        return Mono.error(new RuntimeException("""
+                            Failed to create address book for domain %s
+                            HTTP %d
+                            %s
+                            """.formatted(domainId, status, body)));
+                    });
+            })
+            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
+                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
+            .then()
+            .block();
+    }
 }

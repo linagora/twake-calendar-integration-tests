@@ -21,9 +21,9 @@ package com.linagora.dav.sabrev3;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV3;
-import com.linagora.dav.contracts.DomainMemberAddressBookContract;
+import com.linagora.dav.contracts.DomainAddressBookContract;
 
-public class SabreV3DomainMemberAddressBookTest extends DomainMemberAddressBookContract {
+public class SabreV3DomainAddressBookTest extends DomainAddressBookContract {
 
     @RegisterExtension
     static DockerTwakeCalendarExtensionV3 dockerExtension = new DockerTwakeCalendarExtensionV3();
