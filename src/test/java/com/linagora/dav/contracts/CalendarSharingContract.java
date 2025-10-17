@@ -20,6 +20,7 @@ package com.linagora.dav.contracts;
 
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.contracts.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -30,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.function.Supplier;
@@ -50,7 +52,9 @@ import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
+import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TwakeCalendarProvisioningService;
 import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.rabbitmq.client.Channel;
@@ -545,7 +549,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    void cannExportWhenPubliclyReadable() {
+    void canExportWhenPubliclyReadable() {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
@@ -590,7 +594,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    void cannExportWhenPubliclyWritable() {
+    void canExportWhenPubliclyWritable() {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
 
@@ -1752,4 +1756,227 @@ public abstract class CalendarSharingContract {
             .doesNotContain("\"dav:name\":\"new name\"")
             .doesNotContain("\"apple:color\":\"#009688\"");
     }
+
+    @Test
+    void shouldCreateSucceedSubscribedOfResourceCalendar() {
+        // GIVEN: Alice and a resource "whiteboard" in the same domain
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared meeting whiteboard", bob)
+            .block();
+
+        // AND: Alice prepares a subscription to the resource calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id()) // subscribing to the resource principal
+            .name("Whiteboard resource calendar")
+            .color("#FFA500")
+            .readOnly(true)
+            .build();
+
+        // WHEN: Alice subscribes to the resource calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Alice should have a copy of the resource calendar in her namespace
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+
+        assertThat(subscribedList)
+            .anySatisfy(node -> {
+                assertThat(node.path("dav:name").asText()).isEqualTo("Whiteboard resource calendar");
+                assertThat(node.path("apple:color").asText()).isEqualTo("#FFA500");
+                assertThat(node.path("calendarserver:source").path("_links").path("self").path("href").asText())
+                    .contains(resource.id());
+            });
+
+        // AND: Alice can read events from it (if any)
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                subscribedCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(aliceEvents).isNotNull(); // calendar exists
+    }
+
+    @Test
+    void shouldSeeResourceEventsInSubscribedCalendar() {
+        // GIVEN: a resource "projector" in the same domain as Alice and Bob
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "Meeting room projector", bob)
+            .block();
+
+        // AND: Bob (organizer) creates an event with the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String summary = "Sprint planning #01";
+
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:{summary}
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Meeting to discuss sprint planning for next week.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{uid}", eventUid)
+            .replace("{summary}", summary)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{resourceId}", resource.id());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // CONFIRM: The resource actually received the event (its copy exists)
+        String resourceEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent)
+            .get();
+
+        assertThat(resourceEventId).isNotEmpty();
+
+        // WHEN: Alice subscribes to the resource calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("Projector resource calendar")
+            .color("#FFA500")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Alice can see the event from the resource calendar in her subscribed copy
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                subscribedCalendarURI,
+                Instant.parse("2024-10-01T00:00:00Z"),
+                Instant.parse("2026-10-31T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(aliceEvents)
+            .isNotEmpty()
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains(summary);
+                assertThat(json).contains("mailto:" + resource.id() + "@open-paas.org");
+            });
+    }
+
+    @Test
+    void subscribedUserShouldNotBeAbleToModifyResourceEvents() {
+        // GIVEN: a resource and an event created by Bob (organizer)
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("tv-room", "Shared TV Room", bob)
+            .block();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String summary = "Daily TV Room Booking";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:%s
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Auto-generated test event involving resource.
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=resource:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary, bob.email(), bob.email(), resource.id());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent);
+
+        // AND: Alice subscribes to the resource calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("TV Room Calendar")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice tries to modify the event in the resource calendar
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/";
+        String modifiedICS = calendarData.replace(summary, "Hacked by Alice!");
+
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
+                Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), modifiedICS))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403")
+            .hasMessageContaining("User did not have the required privileges");
+
+        // THEN
+        assertThatThrownBy(() -> calDavClient.deleteCalendarEvent(alice, URI.create(eventHref)))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403")
+            .hasMessageContaining("User did not have the required privileges");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/51")
+    @Test
+    void cannotSubscribeToResourceFromAnotherDomain() {
+        TwakeCalendarProvisioningService provisioningService = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService();
+
+        // GIVEN: a resource in Bob's domain
+        OpenPaaSResource resource = provisioningService
+            .createResource("meeting-room", "Cross-domain meeting room", bob)
+            .block();
+
+        // AND: Alice belongs to another domain
+        OpenPaasUser crossDomainUser = provisioningService
+            .createUser(UUID.randomUUID().toString(), "other-domain.ltd")
+            .block();
+
+        // WHEN / THEN: subscription should fail (forbidden)
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("Unauthorized resource subscription")
+            .color("#FF0000")
+            .readOnly(true)
+            .build();
+
+        assertThatThrownBy(() ->
+            calDavClient.subscribeToSharedCalendar(crossDomainUser, subscribedCalendarRequest))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("403");
+    }
+
 }

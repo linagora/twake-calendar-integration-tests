@@ -43,12 +43,12 @@ import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 
 public abstract class ITIPRequestContract {
-    private final ConditionFactory calmlyAwait = Awaitility.with()
+    private static final ConditionFactory calmlyAwait = Awaitility.with()
         .pollDelay(Duration.ofSeconds(2))
         .pollInterval(Duration.ofSeconds(1))
         .await();
 
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
+    public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public abstract DockerTwakeCalendarExtension extension();
 
