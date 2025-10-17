@@ -41,6 +41,7 @@ import com.linagora.dav.JsonUtil;
 import com.linagora.dav.OpenPaasUser;
 
 import net.fortuna.ical4j.model.Calendar;
+import net.javacrumbs.jsonunit.assertj.JsonAssertions;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
@@ -223,6 +224,135 @@ public abstract class EmailAMQPMessageContract {
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void shouldReceiveNotificationEmailMessageOnLocationUpdate() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String initialCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room 2",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        getMessageFromQueue();
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        JsonAssertions.assertThatJson(actual)
+            .inPath("changes")
+            .isEqualTo("""
+                {
+                  "location": {
+                    "previous": "Twake Meeting Room",
+                    "current": "Twake Meeting Room 2"
+                  }
+                }
+                """);
+    }
+
+    @Test
+    void shouldReceiveNotificationEmailMessageOnDescriptionUpdate() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String initialCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next two weeks.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        getMessageFromQueue();
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        JsonAssertions.assertThatJson(actual)
+            .inPath("changes")
+            .isEqualTo("""
+                {
+                  "description": {
+                    "previous": "This is a meeting to discuss the sprint planning for the next week.",
+                    "current": "This is a meeting to discuss the sprint planning for the next two weeks."
+                  }
+                }
+                """);
+    }
+
+    @Test
+    void shouldReceiveNotificationEmailMessageOnSummaryUpdate() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String initialCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #02",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        getMessageFromQueue();
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        JsonAssertions.assertThatJson(actual)
+            .inPath("changes")
+            .isEqualTo("""
+                {
+                  "summary": {
+                    "previous": "Sprint planning #01",
+                    "current": "Sprint planning #02"
+                  }
+                }
+                """);
     }
 
     @Test
