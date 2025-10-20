@@ -20,6 +20,7 @@ package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,6 +32,7 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoClients;
+import com.mongodb.reactivestreams.client.MongoCollection;
 import com.mongodb.reactivestreams.client.MongoDatabase;
 
 import io.netty.buffer.Unpooled;
@@ -39,6 +41,7 @@ import reactor.netty.http.client.HttpClient;
 
 public class TwakeCalendarProvisioningService {
     public static final String PASSWORD = "secret";
+    public static final String DEFAULT_DOMAIN = "open-paas.org";
 
     private static final TechnicalTokenService technicalTokenService = new TechnicalTokenService.Impl("technicalTokenSecret", Duration.ofSeconds(3600));
 
@@ -54,19 +57,42 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Document openPaasDomain() {
-        return Mono.from(database.getCollection("domains").find()
-            .filter(new Document("name", "open-paas.org"))
-            .first()).block();
+        return createDomainIfNotExists(DEFAULT_DOMAIN);
+    }
+
+    public Document createDomainIfNotExists(String domainName) {
+        MongoCollection<Document> domains = database.getCollection("domains");
+
+        Document filter = new Document("name", domainName);
+
+        return Mono.from(domains.find(filter).first())
+            .switchIfEmpty(Mono.defer(() -> {
+                Document newDomain = new Document()
+                    .append("timestamp", new Document()
+                        .append("creation", new Date()))
+                    .append("hostnames", List.of())
+                    .append("name", domainName)
+                    .append("company_name", domainName)
+                    .append("administrators", List.of());
+
+                return Mono.from(domains.insertOne(newDomain))
+                    .then(Mono.from(domains.find(filter).first()));
+            }))
+            .block();
     }
 
     public Mono<OpenPaasUser> createUser() {
-        UUID randomUUID = UUID.randomUUID();
-        return createUserInUsersRepository(randomUUID)
-            .then(createUserInMongo(randomUUID));
+        String usernameLocalPart = "user_" + UUID.randomUUID();
+        return createUserInUsersRepository(usernameLocalPart + "@" + DEFAULT_DOMAIN)
+            .then(createUserInMongo(usernameLocalPart, DEFAULT_DOMAIN));
     }
 
     public Mono<OpenPaasUser> createUser(String localPart) {
-        return createUserInMongo(localPart);
+        return createUserInMongo(localPart, DEFAULT_DOMAIN);
+    }
+
+    public Mono<OpenPaasUser> createUser(String localPart, String domainName) {
+        return createUserInMongo(localPart, domainName);
     }
 
     public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin) {
@@ -101,11 +127,6 @@ public class TwakeCalendarProvisioningService {
             .block();
     }
 
-    private Mono<Void> createUserInUsersRepository(UUID randomUUID) {
-        String username = "user_" + randomUUID + "@open-paas.org";
-        return createUserInUsersRepository(username);
-    }
-
     public Mono<Void> createUserInUsersRepository(String username) {
         String requestBody = String.format("{\"password\":\"%s\"}", PASSWORD);
         return httpClient.put()
@@ -121,38 +142,24 @@ public class TwakeCalendarProvisioningService {
             });
     }
 
-    private Mono<OpenPaasUser> createUserInMongo(UUID randomUUID) {
+    private Mono<OpenPaasUser> createUserInMongo(String localPart, String domainName) {
+        Document domainDoc = createDomainIfNotExists(domainName);
+        ObjectId domainId = domainDoc.getObjectId("_id");
+        String email = localPart + "@" + domainName;
+
         Document userToSave = new Document()
-            .append("firstname", "User_" + randomUUID)
-            .append("lastname", "User_" + randomUUID)
+            .append("firstname", "User_" + localPart)
+            .append("lastname", "User_" + localPart)
             .append("password", PASSWORD)
-            .append("domains",  List.of(new Document("domain_id", openPaasDomain().get("_id"))))
+            .append("domains", List.of(new Document("domain_id", domainId)))
             .append("accounts", List.of(new Document()
                 .append("type", "email")
-                .append("emails", List.of("user_" + randomUUID + "@open-paas.org"))));
+                .append("emails", List.of(email))));
 
         return Mono.from(database.getCollection("users").insertOne(userToSave))
             .flatMap(success ->
-                Mono.from(
-                    database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
+                Mono.from(database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
             .map(OpenPaasUser::fromDocument);
-    }
-
-    private Mono<OpenPaasUser> createUserInMongo(String localPart) {
-        Document userToSave = new Document()
-                .append("firstname", "User_" + localPart)
-                .append("lastname", "User_" + localPart)
-                .append("password", PASSWORD)
-                .append("domains",  List.of(new Document("domain_id", openPaasDomain().get("_id"))))
-                .append("accounts", List.of(new Document()
-                        .append("type", "email")
-                        .append("emails", List.of(localPart + "@open-paas.org"))));
-
-        return Mono.from(database.getCollection("users").insertOne(userToSave))
-                .flatMap(success ->
-                        Mono.from(
-                                database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
-                .map(OpenPaasUser::fromDocument);
     }
 
     public Mono<Void> enableSharedCalendarModule() {
