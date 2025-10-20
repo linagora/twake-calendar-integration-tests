@@ -82,9 +82,9 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Mono<OpenPaasUser> createUser() {
-        UUID randomUUID = UUID.randomUUID();
-        return createUserInUsersRepository(randomUUID)
-            .then(createUserInMongo(randomUUID.toString(), DEFAULT_DOMAIN));
+        String usernameLocalPart = "user_" + UUID.randomUUID();
+        return createUserInUsersRepository(usernameLocalPart + "@" + DEFAULT_DOMAIN)
+            .then(createUserInMongo(usernameLocalPart, DEFAULT_DOMAIN));
     }
 
     public Mono<OpenPaasUser> createUser(String localPart) {
@@ -125,11 +125,6 @@ public class TwakeCalendarProvisioningService {
         return technicalTokenService.generate(openPaasDomain().get("_id").toString())
             .map(TechnicalTokenService.JwtToken::value)
             .block();
-    }
-
-    private Mono<Void> createUserInUsersRepository(UUID randomUUID) {
-        String username = "user_" + randomUUID + "@open-paas.org";
-        return createUserInUsersRepository(username);
     }
 
     public Mono<Void> createUserInUsersRepository(String username) {
