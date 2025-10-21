@@ -30,16 +30,21 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalendarURL;
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
+import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
 
 public abstract class ITIPRequestContract {
@@ -505,5 +510,232 @@ public abstract class ITIPRequestContract {
         assertThat(eventsInDefault)
             .as("Default calendar should not receive this event once issue #49 is fixed")
             .noneSatisfy(item -> assertThat(item.toString()).contains(eventUid));
+    }
+
+    @Test
+    void itipCancelShouldRemoveOnlyExceptionFromRecurringEvent() throws JsonProcessingException {
+        // GIVEN Bob has an event with organizer Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RRULE:FREQ=DAILY;COUNT=3
+            DTSTAMP:20251002T100000Z
+            DTSTART:20251003T090000Z
+            DTEND:20251003T100000Z
+            SUMMARY:Sprint planning
+            ORGANIZER;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID:20251004T090000Z
+            DTSTAMP:20251002T100000Z
+            DTSTART:20251004T100000Z
+            DTEND:20251004T110000Z
+            SUMMARY:Exception
+            ORGANIZER;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email());
+
+        calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, initialIcs);
+
+        // Ensure event is present initially
+        DavResponse response = calDavClient.findEventsByTime(bob,
+            CalendarURL.from(bob.id()),
+            "20250110T000000",
+            "20251210T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning");
+        assertThat(result.get(0).recurrenceId().get()).isEqualTo("2025-10-03T09:00:00Z");
+
+        assertThat(result.get(1).uid()).isEqualTo(eventUid);
+        assertThat(result.get(1).summary().get()).isEqualTo("Exception");
+        assertThat(result.get(1).recurrenceId().get()).isEqualTo("2025-10-04T09:00:00Z");
+
+        assertThat(result.get(2).uid()).isEqualTo(eventUid);
+        assertThat(result.get(2).summary().get()).isEqualTo("Sprint planning");
+        assertThat(result.get(2).recurrenceId().get()).isEqualTo("2025-10-05T09:00:00Z");
+
+        // WHEN Cedric sends an ITIP CANCEL for the exception only
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            RECURRENCE-ID:20251004T090000Z
+            DTSTAMP:20251003T120000Z
+            DTSTART:20251004T100000Z
+            DTEND:20251004T110000Z
+            SUMMARY:Exception
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        // THEN Bob’s default calendar should reflect cancellation of the specific instance and keep the others
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response2 = calDavClient.findEventsByTime(bob,
+                CalendarURL.from(bob.id()),
+                "20250110T000000",
+                "20251210T000000");
+            List<JsonCalendarEventData> result2 = JsonCalendarEventData.from(response2.body());
+
+            assertThat(result2).hasSize(2);
+            assertThat(result2.get(0).uid()).isEqualTo(eventUid);
+            assertThat(result2.get(0).summary().get()).isEqualTo("Sprint planning");
+            assertThat(result2.get(0).recurrenceId().get()).isEqualTo("2025-10-03T09:00:00Z");
+
+            assertThat(result2.get(1).uid()).isEqualTo(eventUid);
+            assertThat(result2.get(1).summary().get()).isEqualTo("Sprint planning");
+            assertThat(result2.get(1).recurrenceId().get()).isEqualTo("2025-10-05T09:00:00Z");
+        });
+    }
+
+    @Test
+    void itipCancelShouldRemoveInstancesFromRecurringEvent() throws JsonProcessingException {
+        // GIVEN Bob has an event with organizer Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RRULE:FREQ=DAILY;COUNT=4
+            DTSTAMP;TZID=Asia/Ho_Chi_Minh:20251002T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251003T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251003T100000
+            SUMMARY:Sprint planning
+            ORGANIZER;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:20251004T090000
+            DTSTAMP;TZID=Asia/Ho_Chi_Minh:20251002T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251004T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251004T110000
+            SUMMARY:Exception
+            ORGANIZER;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email());
+
+        calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, initialIcs);
+
+        // Ensure event is present initially
+        DavResponse response = calDavClient.findEventsByTime(bob,
+            CalendarURL.from(bob.id()),
+            "20250110T000000",
+            "20251210T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+
+        assertThat(result).hasSize(4);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning");
+        assertThat(result.get(0).recurrenceId().get()).isEqualTo("2025-10-03T02:00:00Z");
+
+        assertThat(result.get(1).uid()).isEqualTo(eventUid);
+        assertThat(result.get(1).summary().get()).isEqualTo("Exception");
+        assertThat(result.get(1).recurrenceId().get()).isEqualTo("2025-10-04T02:00:00Z");
+
+        assertThat(result.get(2).uid()).isEqualTo(eventUid);
+        assertThat(result.get(2).summary().get()).isEqualTo("Sprint planning");
+        assertThat(result.get(2).recurrenceId().get()).isEqualTo("2025-10-05T02:00:00Z");
+
+        assertThat(result.get(3).uid()).isEqualTo(eventUid);
+        assertThat(result.get(3).summary().get()).isEqualTo("Sprint planning");
+        assertThat(result.get(3).recurrenceId().get()).isEqualTo("2025-10-06T02:00:00Z");
+
+        // WHEN Cedric sends an ITIP CANCEL for two instances (one in base event and one is exception)
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:20251003T090000
+            DTSTAMP;TZID=Asia/Ho_Chi_Minh:20251003T120000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251003T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251003T100000
+            SUMMARY:Sprint planning
+            ORGANIZER;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            STATUS:CANCELLED
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:20251004T090000
+            DTSTAMP;TZID=Asia/Ho_Chi_Minh:20251003T120000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251004T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251004T110000
+            SUMMARY:Exception
+            ORGANIZER;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        // THEN Bob’s default calendar should reflect cancellation of the specific instances and keep the others
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response2 = calDavClient.findEventsByTime(bob,
+                CalendarURL.from(bob.id()),
+                "20250110T000000",
+                "20251210T000000");
+            List<JsonCalendarEventData> result2 = JsonCalendarEventData.from(response2.body());
+
+            assertThat(result2).hasSize(2);
+            assertThat(result2.get(0).uid()).isEqualTo(eventUid);
+            assertThat(result2.get(0).summary().get()).isEqualTo("Sprint planning");
+            assertThat(result2.get(0).recurrenceId().get()).isEqualTo("2025-10-05T02:00:00Z");
+
+            assertThat(result2.get(1).uid()).isEqualTo(eventUid);
+            assertThat(result2.get(1).summary().get()).isEqualTo("Sprint planning");
+            assertThat(result2.get(1).recurrenceId().get()).isEqualTo("2025-10-06T02:00:00Z");
+        });
     }
 }
