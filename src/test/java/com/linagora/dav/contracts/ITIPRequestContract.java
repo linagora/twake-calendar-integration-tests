@@ -35,7 +35,6 @@ import java.util.function.Supplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -908,6 +907,94 @@ public abstract class ITIPRequestContract {
         Calendar actualBobCalendar = CalendarUtil.parseIcsAndSanitize(bobCalendarEventIcs);
         assertThat(actualBobCalendar.toString())
             .contains("ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED");
+    }
+
+    @Test
+    void shouldBundleMultipleInvitedOccurrencesIntoSingleRecurringEventInAttendeeCalendar() {
+        // GIVEN Bob creates a recurring daily event
+        String eventUid = "event-" + UUID.randomUUID();
+        String bobEventUri = createRecurringEvent(bob, eventUid);
+
+        // WHEN Bob invites Cedric to occurrence #2
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
+        awaitCalendarEntries(cedric, cedricInbox, 1);
+
+        // AND Bob later invites Cedric to occurrence #3 (add Cedric only to occurrence #3, do not modify summary/location/description)
+        String inviteForThirdOccurrence = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260324T090000
+            DTEND;TZID=Europe/Paris:20260324T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260324T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), inviteForThirdOccurrence);
+
+        // Cedric receives another REQUEST (for occurrence #3)
+        List<String> hrefs = awaitCalendarEntries(cedric, cedricInbox, 2);
+
+        String finalIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefs.getLast()));
+
+        // Assert: finalIcs contains the UID, both invited RECURRENCE-ID (#2, #3), and no duplicate events or VCALENDAR
+        assertThat(finalIcs)
+            .as("Cedric’s calendar should merge both invited occurrences (#2 and #3) into a single recurring event")
+            .contains("UID:" + eventUid)
+            .contains("METHOD:REQUEST")
+            .contains("RECURRENCE-ID;TZID=Europe/Paris:20260323T090000")
+            .contains("RECURRENCE-ID;TZID=Europe/Paris:20260324T090000");
+
+        // Additional asserts: verify Cedric's default calendar content
+        List<String> defaultCalendarHrefs = awaitCalendarEntries(cedric, "/calendars/" + cedric.id() + "/" + cedric.id(), 1);
+        String cedricDefaultCalendarIcs = calDavClient.getCalendarEvent(cedric, URI.create(defaultCalendarHrefs.getFirst()));
+        assertThat(cedricDefaultCalendarIcs)
+            .as("Cedric's default calendar should have a merged event with both invited occurrences, no RRULE, and no duplication")
+            .contains("UID:" + eventUid)
+            .contains("RECURRENCE-ID;TZID=Europe/Paris:20260323T090000")
+            .contains("RECURRENCE-ID;TZID=Europe/Paris:20260324T090000")
+            .doesNotContain("RRULE");
     }
 
     @Disabled("SabreDav currently sends unwanted iTIP REQUEST even when organizer modifies a different occurrence that the attendee was not invited to." +
