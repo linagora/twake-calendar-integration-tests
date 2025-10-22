@@ -163,6 +163,23 @@ public class CalDavClient {
             }).block();
     }
 
+    public String getCalendarEvent(OpenPaasUser userRequest, URI calendarURI) {
+        return httpClient.headers(headers -> userRequest.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .get()
+            .uri(calendarURI.toASCIIString())
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return responseContent.asByteArray().map(bytes -> new String(bytes, StandardCharsets.UTF_8));
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when create/update calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
     public void deleteCalendarEvent(OpenPaasUser user, String eventUid) {
         URI calendarURI = URI.create("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics");
         deleteCalendarEvent(user, calendarURI);

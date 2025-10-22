@@ -39,6 +39,8 @@ import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.google.common.collect.ImmutableList;
 
 public class XMLUtil {
@@ -64,6 +66,7 @@ public class XMLUtil {
     }
 
     private static final DocumentBuilderFactory DOCUMENT_BUILDER_FACTORY;
+    private static final XmlMapper xmlMapper = new XmlMapper();
 
     static {
         try {
@@ -141,5 +144,36 @@ public class XMLUtil {
             results.add(nodes.item(i).getTextContent());
         }
         return results;
+    }
+
+    public static List<String> extractCalendarHrefsFromPropfind(String xml) {
+        List<String> hrefs = new ArrayList<>();
+        try {
+            JsonNode root = xmlMapper.readTree(xml);
+            JsonNode responses = root.get("response");
+            if (responses == null) return hrefs;
+
+            if (!responses.isArray()) responses = xmlMapper.createArrayNode().add(responses);
+
+            for (JsonNode resp : responses) {
+                String href = resp.path("href").asText(null);
+                if (href == null) continue;
+
+                JsonNode propstats = resp.get("propstat");
+                if (propstats == null) continue;
+                if (!propstats.isArray()) propstats = xmlMapper.createArrayNode().add(propstats);
+
+                for (JsonNode ps : propstats) {
+                    String contentType = ps.path("prop").path("getcontenttype").asText("");
+                    if (contentType.contains("text/calendar")) {
+                        hrefs.add(href);
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse calendar hrefs", e);
+        }
+        return hrefs;
     }
 }

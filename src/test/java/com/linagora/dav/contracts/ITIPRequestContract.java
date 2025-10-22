@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.contracts.CalendarSharingContract.MAPPER;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
@@ -25,14 +26,16 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -41,11 +44,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
+import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.XMLUtil;
+
+import io.netty.handler.codec.http.HttpMethod;
+import net.fortuna.ical4j.model.Calendar;
 
 public abstract class ITIPRequestContract {
     private static final ConditionFactory calmlyAwait = Awaitility.with()
@@ -738,4 +746,715 @@ public abstract class ITIPRequestContract {
             assertThat(result2.get(1).recurrenceId().get()).isEqualTo("2025-10-06T02:00:00Z");
         });
     }
+
+    @Test
+    void shouldReceiveSingleItipRequestWhenInvitedToSpecificOccurrence() {
+        // GIVEN Bob (organizer) creates a recurring event and invites Cedric to the second occurrence
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        // WHEN the iTIP messages to Cedric’s inbox
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // THEN Cedric’s inbox should contain exactly one iTIP REQUEST for occurrence #2
+        String cedricInboxCollection = "/calendars/" + cedric.id() + "/inbox";
+        List<String> hrefsFromPropfind = awaitCalendarEntries(cedric, cedricInboxCollection, 1);
+        String calendarInboxEventIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefsFromPropfind.getFirst()));
+
+        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(calendarInboxEventIcs);
+
+        String expectedInboxIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            SEQUENCE:0
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email())
+            .trim();
+
+        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedInboxIcs);
+        assertThat(actualCalendar)
+            .isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void shouldStoreSingleOccurrenceInDefaultCalendarWhenInvitedToSpecificOccurrence() {
+        // GIVEN Bob invites Cedric only for the second occurrence
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // WHEN Cedric checks his default calendar
+        String cedricDefaultCalendar = "/calendars/" + cedric.id() + "/" + cedric.id();
+        List<String> hrefsFromPropfind = awaitCalendarEntries(cedric, cedricDefaultCalendar, 1);
+
+        String actualEventIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefsFromPropfind.getFirst()));
+        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualEventIcs);
+
+        // THEN Cedric’s calendar should contain only the invited occurrence, without recurrence rules
+        String expectedCalendarIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            SEQUENCE:0
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email())
+            .trim();
+
+        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedCalendarIcs);
+
+        // Assert equality (logical content, ignoring order or minor formatting)
+        assertThat(actualCalendar)
+            .as("Cedric's calendar should contain only the invited occurrence (#2), no recurrence rule")
+            .isEqualTo(expectedCalendar);
+    }
+
+    @Test
+    void shouldNotDuplicateEventInOrganizerCalendarAfterSingleOccurrenceReplyOfRecurrenceEvent() {
+        // GIVEN Bob invites Cedric to the second occurrence
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // WHEN Cedric accepts the invitation (sends REPLY)
+        String cedricDefaultCalendar = "/calendars/" + cedric.id() + "/" + cedric.id();
+        List<String> hrefs = awaitCalendarEntries(cedric, cedricDefaultCalendar, 1);
+        String eventHref = hrefs.getFirst();
+        String calendarEvent = calDavClient.getCalendarEvent(cedric, URI.create(eventHref));
+
+        calDavClient.upsertCalendarEvent(cedric, URI.create(eventHref),
+            calendarEvent.replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED"));
+
+        // THEN Bob receives one REPLY and his calendar reflects Cedric’s acceptance without duplication
+        String bobInbox = "/calendars/" + bob.id() + "/inbox";
+        List<String> hrefsFromPropfind = awaitCalendarEntries(bob, bobInbox, 1);
+        String actualInboxIcs = calDavClient.getCalendarEvent(bob, URI.create(hrefsFromPropfind.getFirst()));
+        Calendar actualReplyCalendar = CalendarUtil.parseIcsAndSanitize(actualInboxIcs);
+
+        String expectedReplyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:{UID}
+            SEQUENCE:0
+            DTSTAMP:20260320T081000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            SUMMARY:Daily meeting
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=Cedric:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email())
+            .trim();
+
+        Calendar expectedReplyCalendar = CalendarUtil.parseIcsAndSanitize(expectedReplyIcs);
+        assertThat(actualReplyCalendar)
+            .as("Bob's inbox should contain a single REPLY iTIP for the invited occurrence")
+            .isEqualTo(expectedReplyCalendar);
+
+        // Bob's default calendar should not duplicate events
+        String bobDefaultCalendar = "/calendars/" + bob.id() + "/" + bob.id();
+        List<String> bobCalendarHrefs = awaitCalendarEntries(bob, bobDefaultCalendar, 1);
+        assertThat(bobCalendarHrefs)
+            .as("Bob's calendar should not have duplicate or extra copies of the event")
+            .hasSize(1);
+
+        // Verify Bob’s event instance updated correctly (Cedric ACCEPTED)
+        String bobCalendarHref = bobCalendarHrefs.getFirst();
+        String bobCalendarEventIcs = calDavClient.getCalendarEvent(bob, URI.create(bobCalendarHref));
+
+        Calendar actualBobCalendar = CalendarUtil.parseIcsAndSanitize(bobCalendarEventIcs);
+        assertThat(actualBobCalendar.toString())
+            .contains("ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED");
+    }
+
+    @Disabled("SabreDav currently sends unwanted iTIP REQUEST even when organizer modifies a different occurrence that the attendee was not invited to." +
+        "See https://github.com/linagora/esn-sabre/issues/152")
+    @Test
+    void shouldNotSendUpdateToUninvitedAttendeesWhenOrganizerModifiesOtherInstances() throws Exception {
+        // GIVEN Bob invites Cedric only for occurrence #2
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // Ensure Cedric received the invite for occurrence #2
+        String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
+        awaitCalendarEntries(cedric, cedricInbox, 1);
+
+        // WHEN Bob modifies occurrence #3 (unrelated to Cedric)
+        String updateThirdOccurrence = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting (updated third occurrence)
+            LOCATION:Paris office
+            DESCRIPTION:Updated recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260324T090000
+            DTEND;TZID=Europe/Paris:20260324T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260324T090000
+            SUMMARY:Updated instance (Day 3)
+            LOCATION:Paris HQ
+            DESCRIPTION:Bob modified only day 3
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email());
+
+        String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), updateThirdOccurrence);
+
+        // WHEN: Cedric checks inbox again after Bob’s modification
+        // THEN Cedric should not receive any new iTIP messages
+        Thread.sleep(1000);
+        Supplier<DavResponse> cedricInboxPropfind = () -> execute(extension().davHttpClient()
+            .headers(cedric::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(cedricInbox));
+        List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(cedricInboxPropfind.get().body());
+        assertThat(hrefs)
+            .as("No new ITIP should be received by uninvited attendee when organizer edits unrelated instance")
+            .hasSize(1);
+    }
+
+    @Test
+    void shouldSendItipRequestWhenOrganizerUpdatesInvitedOccurrence() {
+        // GIVEN Bob invites Cedric for occurrence #2
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // Cedric should initially receive one ITIP REQUEST for occurrence #2
+        String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
+        awaitCalendarEntries(cedric, cedricInbox, 1);
+
+        // WHEN Bob updates the time and summary for that occurrence
+        String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        String updatedOccurrenceIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260323T100000
+            DTEND;TZID=Europe/Paris:20260323T110000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Updated meeting with Cedric
+            LOCATION:Paris office
+            DESCRIPTION:Updated time and summary
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), updatedOccurrenceIcs);
+
+        // THEN Cedric receives an updated iTIP REQUEST for the modified occurrence
+        List<String> inboxAfterUpdate = awaitCalendarEntries(cedric, cedricInbox, 2);
+        assertThat(inboxAfterUpdate)
+            .as("Cedric should receive an ITIP update for the modified occurrence")
+            .hasSize(2);
+
+        URI latestInboxUri = URI.create(inboxAfterUpdate.getLast());
+        String actualInboxIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
+        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualInboxIcs);
+        String expectedInboxIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260323T100000
+            DTEND;TZID=Europe/Paris:20260323T110000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Updated meeting with Cedric
+            LOCATION:Paris office
+            DESCRIPTION:Updated time and summary
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email())
+            .trim();
+
+        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedInboxIcs);
+        assertThat(actualCalendar)
+            .as("Cedric should receive a proper REQUEST for the modified invited occurrence")
+            .isEqualTo(expectedCalendar);
+
+        // AND Cedric's calendar should reflect the updated time & summary
+        String cedricDefaultCalendar = "/calendars/" + cedric.id() + "/" + cedric.id();
+        List<String> defaultCalendarHrefs = awaitCalendarEntries(cedric, cedricDefaultCalendar, 1);
+        assertThat(defaultCalendarHrefs)
+            .as("Cedric’s calendar should have exactly one updated event instance")
+            .hasSize(1);
+
+        String cedricCalendarIcs = calDavClient.getCalendarEvent(cedric, URI.create(defaultCalendarHrefs.getFirst()));
+
+        assertThat(cedricCalendarIcs)
+            .contains("SUMMARY:Updated meeting with Cedric")
+            .contains("DTSTART;TZID=Europe/Paris:20260323T100000")
+            .contains("DTEND;TZID=Europe/Paris:20260323T110000");
+    }
+
+    @Test
+    void shouldSendItipRequestWhenOrganizerUpdatesOnlyLocationOfInvitedOccurrence() {
+        // GIVEN Bob invites Cedric for occurrence #2
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // Ensure Cedric received the initial REQUEST for occurrence #2
+        String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
+        awaitCalendarEntries(cedric, cedricInbox, 1);
+
+        // WHEN Bob updates only the location for that occurrence
+        String updateLocationIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:New Paris Office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email());
+
+        String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), updateLocationIcs);
+
+        // THEN Cedric receives an iTIP REQUEST reflecting the new location
+        List<String> hrefsFromPropfind = awaitCalendarEntries(cedric, cedricInbox, 2);
+        URI latestInboxUri = URI.create(hrefsFromPropfind.getLast());
+        String updatedIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
+
+        assertThat(updatedIcs)
+            .as("Cedric should receive REQUEST iTIP for the updated location")
+            .contains("METHOD:REQUEST")
+            .contains("LOCATION:New Paris Office")
+            .contains("RECURRENCE-ID;TZID=Europe/Paris:20260323T090000")
+            .doesNotContain("METHOD:CANCEL");
+    }
+
+    @Test
+    void shouldSendCancelItipToAllAttendeesWhenOrganizerDeletesRecurringEvent() {
+        // GIVEN Bob invites Cedric to an occurrence in a recurring event
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+
+        // Cedric should receive the initial REQUEST for the recurrence
+        String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
+        awaitCalendarEntries(cedric, cedricInbox, 1);
+
+        // WHEN Bob deletes the entire recurring event
+        String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.deleteCalendarEvent(bob, URI.create(bobEventUri));
+
+        // THEN Cedric receives an iTIP CANCEL (without RECURRENCE-ID)
+        List<String> inboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 2); // initial REQUEST + CANCEL
+        URI latestInboxUri = URI.create(inboxHrefs.getLast());
+        String cancelIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
+
+        assertThat(cancelIcs)
+            .as("Cedric should receive a CANCEL iTIP for the entire recurrence (no RECURRENCE-ID)")
+            .contains("METHOD:CANCEL")
+            .contains("UID:" + eventUid)
+            .doesNotContain("RECURRENCE-ID");
+
+        // AND Cedric’s calendar marks related events as STATUS:CANCELLED
+        List<String> cancelledHrefs = awaitCalendarEntries(cedric, "/calendars/" + cedric.id() + "/" + cedric.id(), 1);
+        String ics = calDavClient.getCalendarEvent(cedric, URI.create(cancelledHrefs.getFirst()));
+        assertThat(ics)
+            .as("Recurrence instances should be marked as STATUS:CANCELLED after organizer cancellation")
+            .contains("STATUS:CANCELLED");
+    }
+
+    @Test
+    void shouldSendCancelItipToInvitedAttendeeWhenOrganizerDeletesSingleOccurrence() {
+        // GIVEN Bob invites Cedric to occurrence #2
+        String eventUid = "event-" + UUID.randomUUID();
+        createRecurringEvent(bob, eventUid);
+        inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
+        awaitCalendarEntries(cedric, "/calendars/" + cedric.id() + "/inbox", 1);
+
+        // WHEN Bob deletes that occurrence from his calendar
+        String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        String updateWithoutCedricOccurrence = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            EXDATE;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event (Cedric removed)
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), updateWithoutCedricOccurrence);
+
+        // THEN Cedric receives a CANCEL iTIP specifically for the deleted occurrence
+        List<String> hrefs = awaitCalendarEntries(cedric, "/calendars/" + cedric.id() + "/inbox", 2);
+        assertThat(hrefs)
+            .as("Cedric should receive an ITIP CANCEL for the deleted occurrence")
+            .hasSize(2);
+
+        URI cancelUri = URI.create(hrefs.getLast());
+        String cancelIcs = calDavClient.getCalendarEvent(cedric, cancelUri);
+
+        assertThat(cancelIcs)
+            .as("Cedric should receive a CANCEL iTIP only for the deleted instance (#2)")
+            .contains("METHOD:CANCEL")
+            .contains("UID:" + eventUid);
+    }
+
+    @Test
+    void shouldSendRequestItipToAttendeesWhenOrganizerDeletesOneOfMultipleInvitedOccurrencesInRecurrenceEvent() {
+        // GIVEN Bob invites Cedric for occurrence #2 and #3
+        String eventUid = "event-" + UUID.randomUUID();
+        String bobEventUri = createRecurringEvent(bob, eventUid);
+        String inviteCedricForTwoOccurrencesIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting with Cedric (Day 2)
+            LOCATION:Paris office
+            DESCRIPTION:Occurrence #2
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:20260324T090000
+            DTEND;TZID=Europe/Paris:20260324T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260324T090000
+            SUMMARY:Daily meeting with Cedric (Day 3)
+            LOCATION:Paris office
+            DESCRIPTION:Occurrence #3
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), inviteCedricForTwoOccurrencesIcs);
+
+        String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
+        awaitCalendarEntries(cedric, cedricInbox, 1);
+
+        // WHEN Bob deletes only occurrence #2
+        String updateIcsWithExdate = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            SEQUENCE:2
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            EXDATE;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Removed occurrence #2
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            SEQUENCE:1
+            DTSTART;TZID=Europe/Paris:20260324T090000
+            DTEND;TZID=Europe/Paris:20260324T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260324T090000
+            SUMMARY:Daily meeting with Cedric (Day 3)
+            LOCATION:Paris office
+            DESCRIPTION:Occurrence #3
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{CEDRIC_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{CEDRIC_EMAIL}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), updateIcsWithExdate);
+
+        // THEN Cedric receives a REQUEST update reflecting only the remaining occurrence (#3)
+        List<String> hrefs = awaitCalendarEntries(cedric, cedricInbox, 2); // 1 initial REQUEST + 1 update after deletion
+        String cancelIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefs.getLast()));
+
+        assertThat(cancelIcs)
+            .as("Cedric should receive a REQUEST iTIP update (remaining occurrence only, no CANCEL)")
+            .contains("METHOD:REQUEST")
+            .contains("RECURRENCE-ID;TZID=Europe/Paris:20260324T090000")
+            .doesNotContain("RECURRENCE-ID;TZID=Europe/Paris:20260323T090000")
+            .doesNotContain("RRULE");
+    }
+
+    private String createRecurringEvent(OpenPaasUser organizer, String eventUid) {
+        String masterIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{ORG_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{ORG_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{ORG_EMAIL}", organizer.email());
+
+        String eventUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(eventUri), masterIcs);
+        return eventUri;
+    }
+
+    private void inviteAttendeeForSecondOccurrence(OpenPaasUser organizer, OpenPaasUser attendee, String eventUid) {
+        String eventUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        String inviteIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{ORG_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{ORG_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting
+            LOCATION:Paris office
+            DESCRIPTION:Recurring test event
+            ORGANIZER;CN=Bob:mailto:{ORG_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{ORG_EMAIL}
+            ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{ATTENDEE_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{ORG_EMAIL}", organizer.email())
+            .replace("{ATTENDEE_EMAIL}", attendee.email());
+
+        calDavClient.upsertCalendarEvent(organizer, URI.create(eventUri), inviteIcs);
+    }
+
+    private List<String> awaitCalendarEntries(OpenPaasUser attendee, String collectionPath, int expectedCount) {
+        List<String> hrefsFromPropfind = new ArrayList<>();
+        awaitAtMost.untilAsserted(() -> {
+            List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(
+                execute(extension().davHttpClient()
+                    .headers(attendee::impersonatedBasicAuth)
+                    .request(HttpMethod.valueOf("PROPFIND"))
+                    .uri(collectionPath))
+                    .body());
+            assertThat(hrefs)
+                .as("Expected number of iTIP messages in " + collectionPath + " for " + attendee.email())
+                .hasSize(expectedCount);
+            hrefsFromPropfind.addAll(hrefs);
+        });
+        return hrefsFromPropfind;
+    }
+
 }
