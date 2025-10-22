@@ -78,6 +78,12 @@ public class CalendarUtil {
         return parseIcs(icsContent.getBytes(StandardCharsets.UTF_8));
     }
 
+    public static Calendar parseIcsAndSanitize(String icsContent) {
+        Calendar calendar = parseIcs(icsContent);
+        sanitize(calendar);
+        return calendar;
+    }
+
     public static Calendar parseIcs(byte[] icsContent) {
         CalendarBuilder builder = new CalendarBuilder(
             CalendarParserFactory.getInstance().get(),
