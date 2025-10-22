@@ -22,6 +22,7 @@ import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
@@ -30,12 +31,14 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 
 import net.javacrumbs.jsonunit.core.Option;
@@ -2111,6 +2114,213 @@ public abstract class AlarmAMQPMessageContract {
         assertThatJson(actual)
             .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/155")
+    @Test
+    void shouldReceiveMessageFromEventAlarmCreatedExchangeWhenSendingITIPRequest() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        String itipRequest = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
+
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {},
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {},
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "3025-04-11T02:20:32Z"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{organizerEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "import": false,
+              "etag": "\\"ec763b1a6b9366b6e1b77b6c96ee5ad4\\""
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{eventUid}", eventUid);
+
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
     }
 
