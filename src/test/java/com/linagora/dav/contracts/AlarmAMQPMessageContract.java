@@ -37,6 +37,7 @@ import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
@@ -51,7 +52,7 @@ public abstract class AlarmAMQPMessageContract {
         .with()
         .pollDelay(Duration.ofMillis(500))
         .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(20, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
     
@@ -2117,14 +2118,14 @@ public abstract class AlarmAMQPMessageContract {
             .isEqualTo(expected);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/155")
     @Test
-    void shouldReceiveMessageFromEventAlarmCreatedExchangeWhenSendingITIPRequest() throws IOException {
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeInCaseOfITIPRequest() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
 
+        // Given Bob sends REQUEST ics to Alice (Alice use ITIP to save the event)
         String eventUid = UUID.randomUUID().toString();
         String ics = """
             BEGIN:VCALENDAR
@@ -2137,7 +2138,7 @@ public abstract class AlarmAMQPMessageContract {
             DTSTAMP:20251003T080000Z
             DTSTART:20251005T090000Z
             DTEND:20251005T100000Z
-            SUMMARY:Meeting from Cedric
+            SUMMARY:Meeting
             ORGANIZER;CN=Bob:mailto:{bobEmail}
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
             BEGIN:VALARM
@@ -2145,14 +2146,13 @@ public abstract class AlarmAMQPMessageContract {
             ACTION:EMAIL
             ATTENDEE:mailto:{aliceEmail}
             SUMMARY:test alarm
-            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            DESCRIPTION:This is an automatic alarm
             END:VALARM
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{aliceEmail}", alice.email());
-
         String itipRequest = ITIPJsonBodyRequest.builder()
             .ical(ics)
             .sender(bob.email())
@@ -2162,161 +2162,616 @@ public abstract class AlarmAMQPMessageContract {
             .buildJson();
         calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
 
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // When Alice accepts the event
+        String acceptIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
+
+        // Then a message should be present in the event alarm updated exchange
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
-              "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
-              "event": [
-                "vcalendar",
-                [
-                  [
-                    "version",
-                    {},
-                    "text",
-                    "2.0"
-                  ],
-                  [
-                    "prodid",
-                    {},
-                    "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
-                  ],
-                  [
-                    "calscale",
-                    {},
-                    "text",
-                    "GREGORIAN"
-                  ]
-                ],
-                [
-                  [
-                    "vevent",
+                "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+                "event": [
+                    "vcalendar",
                     [
-                      [
-                        "uid",
-                        {},
-                        "text",
-                        "{eventUid}"
-                      ],
-                      [
-                        "sequence",
-                        {},
-                        "integer",
-                        1
-                      ],
-                      [
-                        "dtstart",
-                        {},
-                        "date-time",
-                        "3025-04-11T10:00:00"
-                      ],
-                      [
-                        "dtend",
-                        {},
-                        "date-time",
-                        "3025-04-11T11:00:00"
-                      ],
-                      [
-                        "summary",
-                        {},
-                        "text",
-                        "Sprint planning #01"
-                      ],
-                      [
-                        "location",
-                        {},
-                        "text",
-                        "Twake Meeting Room"
-                      ],
-                      [
-                        "description",
-                        {},
-                        "text",
-                        "This is a meeting to discuss the sprint planning for the next week."
-                      ],
-                      [
-                        "organizer",
-                        {
-                          "cn": "Van Tung TRAN"
-                        },
-                        "cal-address",
-                        "mailto:{organizerEmail}"
-                      ],
-                      [
-                        "attendee",
-                        {
-                          "partstat": "NEEDS-ACTION",
-                          "cn": "Benoît TELLIER"
-                        },
-                        "cal-address",
-                        "mailto:{attendeeEmail}"
-                      ],
-                      [
-                        "attendee",
-                        {
-                          "partstat": "ACCEPTED",
-                          "rsvp": "FALSE",
-                          "role": "CHAIR",
-                          "cutype": "INDIVIDUAL"
-                        },
-                        "cal-address",
-                        "mailto:{organizerEmail}"
-                      ],
-                      [
-                        "dtstamp",
-                        {},
-                        "date-time",
-                        "3025-04-11T02:20:32Z"
-                      ]
+                        [
+                            "version",
+                            {},
+                            "text",
+                            "2.0"
+                        ],
+                        [
+                            "prodid",
+                            {},
+                            "text",
+                            "-//Example Corp.//CalDAV Client//EN"
+                        ],
+                        [
+                            "calscale",
+                            {},
+                            "text",
+                            "GREGORIAN"
+                        ]
                     ],
                     [
-                      [
-                        "valarm",
                         [
-                          [
-                            "trigger",
-                            {},
-                            "duration",
-                            "-PT10M"
-                          ],
-                          [
-                            "action",
-                            {},
-                            "text",
-                            "EMAIL"
-                          ],
-                          [
-                            "attendee",
-                            {},
-                            "cal-address",
-                            "mailto:{organizerEmail}"
-                          ],
-                          [
-                            "summary",
-                            {},
-                            "text",
-                            "test alarm"
-                          ],
-                          [
-                            "description",
-                            {},
-                            "text",
-                            "This is an automatic alarm sent by OpenPaas"
-                          ]
-                        ],
-                        []
-                      ]
+                            "vevent",
+                            [
+                                [
+                                    "uid",
+                                    {},
+                                    "text",
+                                    "{eventUid}"
+                                ],
+                                [
+                                    "dtstamp",
+                                    {},
+                                    "date-time",
+                                    "2025-10-03T08:00:00Z"
+                                ],
+                                [
+                                    "dtstart",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T09:00:00Z"
+                                ],
+                                [
+                                    "dtend",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T10:00:00Z"
+                                ],
+                                [
+                                    "summary",
+                                    {},
+                                    "text",
+                                    "Meeting"
+                                ],
+                                [
+                                    "organizer",
+                                    {
+                                        "cn": "Bob"
+                                    },
+                                    "cal-address",
+                                    "mailto:{organizerEmail}"
+                                ],
+                                [
+                                    "attendee",
+                                    {
+                                        "cn": "Alice",
+                                        "partstat": "ACCEPTED"
+                                    },
+                                    "cal-address",
+                                    "mailto:{attendeeEmail}"
+                                ]
+                            ],
+                            [
+                                [
+                                    "valarm",
+                                    [
+                                        [
+                                            "trigger",
+                                            {},
+                                            "duration",
+                                            "-PT10M"
+                                        ],
+                                        [
+                                            "action",
+                                            {},
+                                            "text",
+                                            "EMAIL"
+                                        ],
+                                        [
+                                            "attendee",
+                                            {},
+                                            "cal-address",
+                                            "mailto:{attendeeEmail}"
+                                        ],
+                                        [
+                                            "summary",
+                                            {},
+                                            "text",
+                                            "test alarm"
+                                        ],
+                                        [
+                                            "description",
+                                            {},
+                                            "text",
+                                            "This is an automatic alarm"
+                                        ]
+                                    ],
+                                    []
+                                ]
+                            ]
+                        ]
                     ]
-                  ]
-                ]
-              ],
-              "import": false,
-              "etag": "\\"ec763b1a6b9366b6e1b77b6c96ee5ad4\\""
+                ],
+                "import": false,
+                "etag": "\\"cadff6938d7c81385c2711de090ff822\\""
             }
             """.replace("{organizerEmail}", bob.email())
             .replace("{attendeeEmail}", alice.email())
             .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId)
+            .replace("{eventUid}", eventUid);
+
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
+    @Test
+    void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // Given Bob sends REQUEST ics to Alice (Alice use ITIP to save the event)
+        String eventUid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // When Alice accepts the event
+        String acceptIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
+
+        // AND Bob sends CANCEL ics to Alice (Alice use ITIP to remove the event)
+        String ics2 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest2 = ITIPJsonBodyRequest.builder()
+            .ical(ics2)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
+
+        // Then a message should be present in the event alarm cancel exchange
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        String expected = """
+            {
+                "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+                "event": [
+                    "vcalendar",
+                    [
+                        [
+                            "version",
+                            {},
+                            "text",
+                            "2.0"
+                        ],
+                        [
+                            "prodid",
+                            {},
+                            "text",
+                            "-//Example Corp.//CalDAV Client//EN"
+                        ],
+                        [
+                            "calscale",
+                            {},
+                            "text",
+                            "GREGORIAN"
+                        ]
+                    ],
+                    [
+                        [
+                            "vevent",
+                            [
+                                [
+                                    "uid",
+                                    {},
+                                    "text",
+                                    "{eventUid}"
+                                ],
+                                [
+                                    "dtstamp",
+                                    {},
+                                    "date-time",
+                                    "2025-10-03T08:00:00Z"
+                                ],
+                                [
+                                    "dtstart",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T09:00:00Z"
+                                ],
+                                [
+                                    "dtend",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T10:00:00Z"
+                                ],
+                                [
+                                    "summary",
+                                    {},
+                                    "text",
+                                    "Meeting"
+                                ],
+                                [
+                                    "organizer",
+                                    {
+                                        "cn": "Bob"
+                                    },
+                                    "cal-address",
+                                    "mailto:{organizerEmail}"
+                                ],
+                                [
+                                    "attendee",
+                                    {
+                                        "cn": "Alice",
+                                        "partstat": "ACCEPTED"
+                                    },
+                                    "cal-address",
+                                    "mailto:{attendeeEmail}"
+                                ]
+                            ],
+                            [
+                                [
+                                    "valarm",
+                                    [
+                                        [
+                                            "trigger",
+                                            {},
+                                            "duration",
+                                            "-PT10M"
+                                        ],
+                                        [
+                                            "action",
+                                            {},
+                                            "text",
+                                            "EMAIL"
+                                        ],
+                                        [
+                                            "attendee",
+                                            {},
+                                            "cal-address",
+                                            "mailto:{attendeeEmail}"
+                                        ],
+                                        [
+                                            "summary",
+                                            {},
+                                            "text",
+                                            "test alarm"
+                                        ],
+                                        [
+                                            "description",
+                                            {},
+                                            "text",
+                                            "This is an automatic alarm"
+                                        ]
+                                    ],
+                                    []
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "import": false,
+                "etag": "\\"cadff6938d7c81385c2711de090ff822\\""
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId)
+            .replace("{eventUid}", eventUid);
+
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
+            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
+            .isEqualTo(expected);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
+    @Test
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // Given Bob sends REQUEST ics to Alice (Alice use ITIP to save the event)
+        String eventUid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // When Alice accepts the event
+        String acceptIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
+
+        // AND Bob sends REQUEST ics to Alice to remove the alarm from the event (Alice use ITIP to update the event)
+        String ics2 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest2 = ITIPJsonBodyRequest.builder()
+            .ical(ics2)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
+
+        getMessageFromQueue();   // consume first message related to the acceptance of the event
+
+        // Then a message should be present in the event alarm updated exchange
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        String expected = """
+            {
+                "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+                "event": [
+                    "vcalendar",
+                    [
+                        [
+                            "version",
+                            {},
+                            "text",
+                            "2.0"
+                        ],
+                        [
+                            "prodid",
+                            {},
+                            "text",
+                            "-//Example Corp.//CalDAV Client//EN"
+                        ],
+                        [
+                            "calscale",
+                            {},
+                            "text",
+                            "GREGORIAN"
+                        ]
+                    ],
+                    [
+                        [
+                            "vevent",
+                            [
+                                [
+                                    "uid",
+                                    {},
+                                    "text",
+                                    "{eventUid}"
+                                ],
+                                [
+                                    "dtstamp",
+                                    {},
+                                    "date-time",
+                                    "2025-10-03T08:00:00Z"
+                                ],
+                                [
+                                    "dtstart",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T09:00:00Z"
+                                ],
+                                [
+                                    "dtend",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T10:00:00Z"
+                                ],
+                                [
+                                    "summary",
+                                    {},
+                                    "text",
+                                    "Meeting"
+                                ],
+                                [
+                                    "organizer",
+                                    {
+                                        "cn": "Bob"
+                                    },
+                                    "cal-address",
+                                    "mailto:{organizerEmail}"
+                                ],
+                                [
+                                    "attendee",
+                                    {
+                                        "cn": "Alice",
+                                        "partstat": "ACCEPTED"
+                                    },
+                                    "cal-address",
+                                    "mailto:{attendeeEmail}"
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "import": false,
+                "etag": "\\"cadff6938d7c81385c2711de090ff822\\""
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId)
             .replace("{eventUid}", eventUid);
 
         assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
