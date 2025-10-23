@@ -66,6 +66,7 @@ public abstract class ITIPRequestContract {
 
     private CalDavClient calDavClient;
 
+    private OpenPaasUser alice;
     private OpenPaasUser bob;
     private OpenPaasUser cedric;
 
@@ -79,6 +80,7 @@ public abstract class ITIPRequestContract {
             .enableSharedCalendarModule()
             .block();
 
+        alice = extension().newTestUser();
         bob = extension().newTestUser();
         cedric = extension().newTestUser();
 
@@ -402,6 +404,119 @@ public abstract class ITIPRequestContract {
                             "cn": "Bob",
                             "partstat": "ACCEPTED",
                             "schedule-status": "${json-unit.ignore}"
+                          },
+                          "cal-address",
+                          "mailto:%s"
+                        ]""".formatted(bob.email())));
+        }));
+    }
+    @Test
+    void itipShouldPropagateAttendanceUpdatesToOtherAttendants() {
+        // GIVEN Cedric created an event with Bob
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting with Bob
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email(), alice.email());
+
+        String organizerEventUri = "/calendars/" + cedric.id() + "/" + cedric.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(cedric, URI.create(organizerEventUri), ics);
+
+        Function<String, List<JsonNode>> cedricEventsForUri = uri ->
+            calDavClient.reportCalendarEvents(cedric, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        // Ensure Cedric has the event
+        String cedricDefaultCalendarUri = "/calendars/" + cedric.id() + "/" + cedric.id();
+        List<JsonNode> beforeReply = cedricEventsForUri.apply(cedricDefaultCalendarUri);
+        assertThat(beforeReply).anySatisfy(item -> {
+            String json = item.toString();
+            assertThat(json).contains(eventUid);
+            assertThatJson(item)
+                .inPath("data[2][0][1]")
+                .isArray()
+                .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                    .isEqualTo("""
+                          [
+                          "attendee",
+                          {
+                            "cn": "Bob",
+                            "partstat": "NEEDS-ACTION",
+                            "schedule-status": "${json-unit.ignore}"
+                          },
+                          "cal-address",
+                          "mailto:%s"
+                        ]""".formatted(bob.email())));
+        });
+
+        // WHEN sends a REPLY (ACCEPTED)
+        String replyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080500Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting with Bob
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email(), alice.email());
+
+        String replyBody = ITIPJsonBodyRequest.builder()
+            .ical(replyIcs)
+            .sender(bob.email())
+            .recipient(cedric.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        String cedricCalendarUri = "/calendars/" + cedric.id();
+        calDavClient.sendITIPRequest(cedric, URI.create(cedricCalendarUri), replyBody).block();
+
+        // THEN Alice’s calendar should reflect Bob’s partstat = ACCEPTED
+        String aliceDefaultCalendarUri = "/calendars/" + alice.id() + "/" + alice.id();
+        Function<String, List<JsonNode>> aliceEventsForUri = uri ->
+            calDavClient.reportCalendarEvents(alice, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+        awaitAtMost.untilAsserted(() -> assertThat(aliceEventsForUri.apply(aliceDefaultCalendarUri)).anySatisfy(item -> {
+            String json = item.toString();
+            assertThat(json).contains(eventUid);
+            assertThatJson(item)
+                .inPath("data[2][0][1]")
+                .isArray()
+                .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                    .isEqualTo("""
+                          [
+                          "attendee",
+                          {
+                            "cn": "Bob",
+                            "partstat": "ACCEPTED"
                           },
                           "cal-address",
                           "mailto:%s"
