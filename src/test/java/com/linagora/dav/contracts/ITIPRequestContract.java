@@ -409,7 +409,6 @@ public abstract class ITIPRequestContract {
         }));
     }
 
-    @Disabled("Sabre allows any user to send ITIP to another user's calendar, should be forbidden. See https://github.com/linagora/esn-sabre/issues/49")
     @Test
     void itipShouldNotBeAllowedWhenSenderHasNoWriteAccess() throws Exception {
         // GIVEN Cedric and Bob, and Cedric has no write access to Bob’s calendars
