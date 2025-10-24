@@ -1572,6 +1572,92 @@ public abstract class ITIPRequestContract {
             .doesNotContain("RRULE");
     }
 
+    @Test
+    void itipCancelShouldRemoveEventWithAlarmFromDefaultCalendar() {
+        // GIVEN Cedric an event with Bob (event has an alarm)
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting To Be Cancelled
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:%s
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email(), bob.email());
+
+        String bobCalendarEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobCalendarEventUri), initialIcs);
+
+        Function<String, List<JsonNode>> bobEventsForUri = (uri) ->
+            calDavClient.reportCalendarEvents(bob, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+
+        // Ensure event is present initially
+        List<JsonNode> beforeCancel = bobEventsForUri.apply(bobDefaultCalendarUri);
+        assertThat(beforeCancel).anySatisfy(item -> {
+            String json = item.toString();
+            assertThat(json).contains(eventUid);
+            assertThat(json).contains("Meeting To Be Cancelled");
+        });
+
+        // WHEN Cedric sends an ITIP CANCEL
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting To Be Cancelled
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        // THEN Bob’s default calendar should reflect cancellation
+        awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
+            .filteredOn(item -> item.toString().contains(eventUid))
+            .allSatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains("CANCELLED");
+            }));
+    }
+
     private String createRecurringEvent(OpenPaasUser organizer, String eventUid) {
         String masterIcs = """
             BEGIN:VCALENDAR
