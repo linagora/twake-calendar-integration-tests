@@ -32,10 +32,14 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
@@ -2039,6 +2043,141 @@ public abstract class ITIPRequestContract {
             .contains("UID:" + eventUid)
             .contains("SUMMARY:Yahoo meeting update test")
             .contains("DESCRIPTION:Updated description from yahoo");
+    }
+
+    // All parameterized RECURRENCE-ID representations below correspond to the same instant as Paris 2025-12-29 22:00
+    private static Stream<Arguments> recurrenceIdTestCases() {
+        return Stream.of(
+            Arguments.of(
+                "RECURRENCE-ID with TZID Asia/Ho_Chi_Minh",
+                "DTSTART;TZID=Asia/Ho_Chi_Minh:20251230T040000",
+                "DTEND;TZID=Asia/Ho_Chi_Minh:20251230T050000",
+                "RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:20251230T040000"),
+            Arguments.of(
+                "RECURRENCE-ID in UTC",
+                "DTSTART:20251229T210000Z",
+                "DTEND:20251229T220000Z",
+                "RECURRENCE-ID:20251229T210000Z"),
+            Arguments.of(
+                "RECURRENCE-ID with TZID Europe/Moscow",
+                "DTSTART;TZID=Europe/Moscow:20251230T000000",
+                "DTEND;TZID=Europe/Moscow:20251230T010000",
+                "RECURRENCE-ID;TZID=Europe/Moscow:20251230T000000"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("recurrenceIdTestCases")
+    void shouldHandleReplyWithRecurrenceIdInDifferentTimezone(String caseName,
+                                                              String replyDtstart,
+                                                              String replyDtend,
+                                                              String recurrenceIdProp) {
+        // GIVEN organizer (Cedric, Europe/Paris) creates a recurring event
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251229T080000Z
+            DTSTART;TZID=Europe/Paris:20251229T220000
+            DTEND;TZID=Europe/Paris:20251229T230000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Morning sync Paris time
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String organizerEventUri = "/calendars/" + cedric.id() + "/" + cedric.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(cedric, URI.create(organizerEventUri), organizerIcs);
+
+        // WHEN Bob replies using a parameterized RECURRENCE-ID representation referring to the same instant as Paris 2025-12-29 22:00
+        String replyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251230T170000Z
+            {REPLY_DTSTART}
+            {REPLY_DTEND}
+            {RECURRENCE_ID_LINE}
+            SUMMARY:Morning sync Paris time
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email())
+            .replace("{REPLY_DTSTART}", replyDtstart)
+            .replace("{REPLY_DTEND}", replyDtend)
+            .replace("{RECURRENCE_ID_LINE}", recurrenceIdProp);
+
+        String replyBody = ITIPJsonBodyRequest.builder()
+            .ical(replyIcs)
+            .sender(bob.email())
+            .recipient(cedric.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        String cedricCalendarUri = "/calendars/" + cedric.id();
+        calDavClient.sendITIPRequest(cedric, URI.create(cedricCalendarUri), replyBody).block();
+
+        // Each parameterized representation should map back to the same instant as the organizer's local time (Paris 22:00).
+        String cedricInboxUri = "/calendars/" + cedric.id() + "/inbox";
+        String cedricDefaultCalendarUri = "/calendars/" + cedric.id() + "/" + cedric.id();
+
+        List<String> inboxHrefs = awaitCalendarEntries(cedric, cedricInboxUri, 1);
+
+        assertThat(calDavClient.getCalendarEvent(cedric, URI.create(inboxHrefs.getFirst())))
+            .as("Check iTIP REPLY content")
+            .contains("METHOD:REPLY")
+            .contains(eventUid)
+            .contains("Bob")
+            .contains("ACCEPTED");
+
+        // Verify Cedric’s calendar reflects updated participant status
+        List<String> calendarHrefs = awaitCalendarEntries(cedric, cedricDefaultCalendarUri, 1);
+        String calendarIc = calDavClient.getCalendarEvent(cedric, URI.create(calendarHrefs.getLast()));
+
+        Calendar currentCalendar = CalendarUtil.parseIcsAndSanitize(calendarIc);
+
+        // The RECURRENCE-ID should match the original event's local Paris time (22:00),
+        // even if Bob replied using a Vietnam time equivalent.
+        assertThat(currentCalendar)
+            .isEqualTo(CalendarUtil.parseIcsAndSanitize("""
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                CALSCALE:GREGORIAN
+                BEGIN:VEVENT
+                UID:{EVENT_UID}
+                DTSTART;TZID=Europe/Paris:20251229T220000
+                DTEND;TZID=Europe/Paris:20251229T230000
+                RRULE:FREQ=DAILY;COUNT=3
+                SUMMARY:Morning sync Paris time
+                ORGANIZER;CN=Cedric:mailto:{ORG_EMAIL}
+                ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=1.1:mailto:{ATTENDEE_EMAIL}
+                END:VEVENT
+                BEGIN:VEVENT
+                UID:{EVENT_UID}
+                DTSTAMP:20251229T080000Z
+                DTSTART;TZID=Europe/Paris:20251229T220000
+                DTEND;TZID=Europe/Paris:20251229T230000
+                SUMMARY:Morning sync Paris time
+                ORGANIZER;CN=Cedric:mailto:{ORG_EMAIL}
+                ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED;SCHEDULE-STATUS=1.1:mailto:{ATTENDEE_EMAIL}
+                RECURRENCE-ID;TZID=Europe/Paris:20251229T220000
+                END:VEVENT
+                END:VCALENDAR
+                """.replace("{ORG_EMAIL}", cedric.email())
+                .replace("{ATTENDEE_EMAIL}", bob.email())
+                .replace("{EVENT_UID}", eventUid)));
     }
 
 }
