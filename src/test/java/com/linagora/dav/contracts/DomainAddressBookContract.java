@@ -325,4 +325,76 @@ public abstract class DomainAddressBookContract {
         Assertions.assertThatThrownBy(() -> cardDavClient.deleteContact(bob, domainId, "dab", vcardUid))
             .hasMessageContaining("Unexpected status code: 403");
     }
+
+    @Test
+    void normalUserCannotSetPublicRightOfDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        assertThatThrownBy(() -> cardDavClient.setPublicRight(bob, domainId, "dab", CardDavClient.PublicRight.READ_WRITE))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void normalUserCannotDelegateDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser alice = extension().newTestUser();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        assertThatThrownBy(() -> cardDavClient.grantDelegation(bob, domainId, "dab", alice, CardDavClient.DelegationRight.READ_WRITE))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/169")
+    @Test
+    void domainAdministratorCannotSetPublicRightOfDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(bob.email(), "@");
+
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + bob.email())
+            .then()
+            .statusCode(204);
+
+        assertThatThrownBy(() -> cardDavClient.setPublicRight(bob, domainId, "dab", CardDavClient.PublicRight.READ_WRITE))
+            .hasMessageContaining("Unexpected status code: 405");
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/169")
+    @Test
+    void domainAdministratorCannotDelegateDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser alice = extension().newTestUser();
+        OpenPaasUser bob = extension().newTestUser();
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(bob.email(), "@");
+
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + bob.email())
+            .then()
+            .statusCode(204);
+
+        assertThatThrownBy(() -> cardDavClient.grantDelegation(bob, domainId, "dab", alice, CardDavClient.DelegationRight.READ_WRITE))
+            .hasMessageContaining("Unexpected status code: 405");
+    }
 }
