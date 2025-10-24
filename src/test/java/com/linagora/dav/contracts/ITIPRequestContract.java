@@ -1744,4 +1744,301 @@ public abstract class ITIPRequestContract {
         return hrefsFromPropfind;
     }
 
+    @Test
+    void itipRequestWithDuplicatedStatusShouldBeAccepted() throws JsonProcessingException {
+        // GIVEN a Yahoo-like ITIP REQUEST containing duplicated STATUS lines
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Yahoo Inc.//Yahoo Calendar//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251024T032242Z
+            DTSTART;TZID=Etc/GMT:20251025T110000
+            DTEND;TZID=Etc/GMT:20251025T120000
+            SUMMARY:Test from yahoo calendar
+            DESCRIPTION:from yahoo
+            CLASS:PUBLIC
+            PRIORITY:0
+            SEQUENCE:0
+            STATUS:CONFIRMED
+            STATUS:TENTATIVE
+            ORGANIZER;CN=Shi Karen;SENT-BY="mailto:k@yahoo.com.vn":mailto:k@yahoo.com.vn
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender("k@yahoo.com.vn")
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
+
+        // THEN the event should appear in Bob’s inbox and default calendar
+        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
+        List<String> inboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 1);
+        assertThat(inboxHrefs)
+            .as("Expected one ITIP REQUEST in Bob's inbox")
+            .hasSize(1);
+
+        String inboxIcs = calDavClient.getCalendarEvent(bob, URI.create(inboxHrefs.getFirst()));
+        assertThat(inboxIcs)
+            .as("Inbox ICS should contain valid Yahoo event despite duplicate STATUS")
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Test from yahoo calendar");
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        List<String> calendarHrefs = awaitCalendarEntries(bob, bobDefaultCalendarUri, 1);
+        assertThat(calendarHrefs)
+            .as("Expected the event to be stored in default calendar")
+            .hasSize(1);
+
+        String calendarIcs = calDavClient.getCalendarEvent(bob, URI.create(calendarHrefs.getFirst()));
+        assertThat(calendarIcs)
+            .as("Calendar ICS should contain UID and summary even with duplicated STATUS")
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Test from yahoo calendar");
+
+        // AND verify that REPORT API can still list the event normally
+        DavResponse reportResponse = calDavClient.findEventsByTime(bob,
+            CalendarURL.from(bob.id()),
+            "20250101T000000",
+            "20251231T000000");
+        List<JsonCalendarEventData> reportEvents = JsonCalendarEventData.from(reportResponse.body());
+
+        assertThat(reportEvents)
+            .as("REPORT API should return the event even when ICS has duplicated STATUS")
+            .anySatisfy(event -> {
+                assertThat(event.uid()).isEqualTo(eventUid);
+                assertThat(event.summary().orElse("")).contains("Test from yahoo calendar");
+            });
+    }
+
+    @Test
+    void itipCancelWithDuplicatedStatusShouldBeAccepted() {
+        // GIVEN an existing Yahoo-like event previously sent by organizer
+        String eventUid = "event-" + UUID.randomUUID();
+
+        // Step 1: send initial REQUEST to create the event
+        String requestIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Yahoo Inc.//Yahoo Calendar//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251024T032242Z
+            DTSTART;TZID=Etc/GMT:20251025T110000
+            DTEND;TZID=Etc/GMT:20251025T120000
+            SUMMARY:Yahoo meeting to be cancelled
+            DESCRIPTION:from yahoo
+            CLASS:PUBLIC
+            PRIORITY:0
+            SEQUENCE:0
+            STATUS:CONFIRMED
+            STATUS:TENTATIVE
+            ORGANIZER;CN=Shi Karen;SENT-BY="mailto:k@yahoo.com.vn":mailto:k@yahoo.com.vn
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(requestIcs)
+            .sender("k@yahoo.com.vn")
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+
+        // Verify the event exists initially
+        List<String> initialHrefs = awaitCalendarEntries(bob, "/calendars/" + bob.id() + "/" + bob.id(), 1);
+        String initialCalendarIcs = calDavClient.getCalendarEvent(bob, URI.create(initialHrefs.getFirst()));
+        assertThat(initialCalendarIcs)
+            .as("Initial event should be stored in Bob's calendar")
+            .contains("SUMMARY:Yahoo meeting to be cancelled")
+            .contains("UID:" + eventUid);
+
+        // WHEN Yahoo sends CANCEL with duplicated STATUS
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Yahoo Inc.//Yahoo Calendar//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251024T050000Z
+            DTSTART;TZID=Etc/GMT:20251025T110000
+            DTEND;TZID=Etc/GMT:20251025T120000
+            SUMMARY:Yahoo meeting to be cancelled
+            DESCRIPTION:cancelled from yahoo
+            CLASS:PUBLIC
+            PRIORITY:0
+            SEQUENCE:1
+            STATUS:CANCELLED
+            STATUS:TENTATIVE
+            ORGANIZER;CN=Shi Karen;SENT-BY="mailto:k@yahoo.com.vn":mailto:k@yahoo.com.vn
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender("k@yahoo.com.vn")
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        // THEN Bob’s inbox should receive the CANCEL iTIP
+        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
+        List<String> inboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 2); // REQUEST + CANCEL
+        String cancelInboxIcs = calDavClient.getCalendarEvent(bob, URI.create(inboxHrefs.getLast()));
+
+        assertThat(cancelInboxIcs)
+            .as("Inbox should contain Yahoo CANCEL even with duplicated STATUS")
+            .contains("METHOD:CANCEL")
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Yahoo meeting to be cancelled");
+
+        // AND the cancelled event should be removed from Bob's default calendar
+        String bobDefaultCalendarURI =  "/calendars/" + bob.id() + "/" + bob.id();
+        List<String> calendarUri = awaitCalendarEntries(bob, bobDefaultCalendarURI, 1);
+        String calendarEvent = calDavClient.getCalendarEvent(bob, URI.create(calendarUri.getLast()));
+
+        assertThat(calendarEvent)
+            .contains("STATUS:CANCELLED");
+    }
+
+    @Test
+    void itipUpdateWithDuplicatedStatusShouldBeAccepted() throws JsonProcessingException {
+        // GIVEN: Yahoo-like organizer sends initial event
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Yahoo Inc.//Yahoo Calendar//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251024T032242Z
+            DTSTART;TZID=Etc/GMT:20251025T110000
+            DTEND;TZID=Etc/GMT:20251025T120000
+            SUMMARY:Yahoo meeting update test
+            DESCRIPTION:Initial description
+            CLASS:PUBLIC
+            PRIORITY:0
+            SEQUENCE:0
+            STATUS:CONFIRMED
+            STATUS:TENTATIVE
+            ORGANIZER;CN=Shi Karen;SENT-BY="mailto:k@yahoo.com.vn":mailto:k@yahoo.com.vn
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(initialIcs)
+            .sender("k@yahoo.com.vn")
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+
+        // Verify event exists before update
+        List<String> beforeUpdate = awaitCalendarEntries(bob, "/calendars/" + bob.id() + "/" + bob.id(), 1);
+        String calendarBefore = calDavClient.getCalendarEvent(bob, URI.create(beforeUpdate.getFirst()));
+        assertThat(calendarBefore)
+            .contains("SUMMARY:Yahoo meeting update test")
+            .contains("DESCRIPTION:Initial description");
+
+        // WHEN: Yahoo sends updated iTIP (duplicate STATUS + new description)
+        String updateIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Yahoo Inc.//Yahoo Calendar//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251024T050000Z
+            DTSTART;TZID=Etc/GMT:20251025T110000
+            DTEND;TZID=Etc/GMT:20251025T120000
+            SUMMARY:Yahoo meeting update test
+            DESCRIPTION:Updated description from yahoo
+            CLASS:PUBLIC
+            PRIORITY:0
+            SEQUENCE:1
+            STATUS:CONFIRMED
+            STATUS:CONFIRMED
+            ORGANIZER;CN=Shi Karen;SENT-BY="mailto:k@yahoo.com.vn":mailto:k@yahoo.com.vn
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String updateBody = ITIPJsonBodyRequest.builder()
+            .ical(updateIcs)
+            .sender("k@yahoo.com.vn")
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), updateBody).block();
+
+        // THEN: Inbox should have both original and updated REQUESTs
+        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
+        List<String> inboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 2);
+        String updatedInboxIcs = calDavClient.getCalendarEvent(bob, URI.create(inboxHrefs.getLast()));
+
+        assertThat(updatedInboxIcs)
+            .as("Yahoo duplicated STATUS should still allow update REQUEST")
+            .contains("METHOD:REQUEST")
+            .contains("UID:" + eventUid)
+            .contains("Updated description from yahoo");
+
+        // AND: Default calendar should contain updated description
+        List<String> afterUpdate = awaitCalendarEntries(bob, "/calendars/" + bob.id() + "/" + bob.id(), 1);
+        String updatedCalendarIcs = calDavClient.getCalendarEvent(bob, URI.create(afterUpdate.getFirst()));
+
+        assertThat(updatedCalendarIcs)
+            .as("Default calendar should have updated description after Yahoo duplicated STATUS update")
+            .contains("DESCRIPTION:Updated description from yahoo")
+            .contains("SUMMARY:Yahoo meeting update test");
+
+        // AND verify via PROPFIND that updated event exists and matches expected content
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        List<String> propfindHrefs = awaitCalendarEntries(bob, bobDefaultCalendarUri, 1);
+        String propfindIcs = calDavClient.getCalendarEvent(bob, URI.create(propfindHrefs.getFirst()));
+
+        assertThat(propfindIcs)
+            .as("PROPFIND should return the updated Yahoo event after duplicated STATUS update")
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Yahoo meeting update test")
+            .contains("DESCRIPTION:Updated description from yahoo");
+    }
+
 }
