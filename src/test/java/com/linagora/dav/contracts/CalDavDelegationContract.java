@@ -21,17 +21,25 @@ package com.linagora.dav.contracts;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
+import static com.linagora.dav.contracts.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
+import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,11 +59,17 @@ import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
+import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarEventData;
+import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestUtil;
 import com.linagora.dav.TwakeCalendarEvent;
 
 import com.linagora.dav.XMLUtil;
+
+import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
@@ -65,13 +79,16 @@ import io.restassured.http.ContentType;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
+import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 public abstract class CalDavDelegationContract {
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     private CalDavClient calDavClient;
-
+    private OpenPaasUser bob;
+    private OpenPaasUser alice;
     @BeforeEach
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
@@ -82,6 +99,8 @@ public abstract class CalDavDelegationContract {
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
             .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
             .build();
+        bob = dockerExtension().newTestUser();
+        alice = dockerExtension().newTestUser();
     }
 
     @Test
@@ -1676,5 +1695,125 @@ public abstract class CalDavDelegationContract {
         assertThat(response)
             .doesNotContain("\"dav:name\":\"new name\"")
             .doesNotContain("\"apple:color\":\"#009688\"");
+    }
+
+    @Test
+    void resourceAdminCanUpdateParticipationStatus() {
+        // GIVEN: Create a resource 'whiteboard' with Bob as administrator
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+
+        // GIVEN: Grant Bob read-write rights on the resource calendar using a technical token
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        // GIVEN: Alice creates an event that invites the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T100000
+            SUMMARY:Whiteboard session
+            LOCATION:Meeting Room
+            DESCRIPTION:Test event with resource attendee
+            ORGANIZER;CN=Alice:mailto:%s
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=whiteboard:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email(), resource.id());
+
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        // GIVEN: Fetch Bob's delegated resource calendar URL
+        CalendarURL resourceCalendarURL = calDavClient.findUserCalendars(bob)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next().blockOptional()
+            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
+
+        // WHEN: Bob locates the event in the resource calendar
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+
+        // THEN: Bob can retrieve the event via GET
+        DavResponse getResponse = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics"));
+
+        assertThat(getResponse.status()).isEqualTo(200);
+        assertThat(getResponse.body()).contains(eventUid);
+
+        // WHEN: Bob updates the resource participation status to ACCEPTED
+        String updatedEventIcs = getResponse.body()
+            .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+
+        int updateStatusCode = executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .put()
+            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics")
+            .send(body(updatedEventIcs)));
+
+        assertThat(updateStatusCode).isEqualTo(204);
+
+        // THEN: Verify that the participation status is updated
+        DavResponse verifyResponse = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics"));
+
+        assertThat(verifyResponse.status()).isEqualTo(200);
+        assertThat(verifyResponse.body())
+            .contains("mailto:" + resource.id() + "@open-paas.org")
+            .contains("PARTSTAT=ACCEPTED");
+    }
+
+    private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
+        Map.Entry<Integer, String> delegationResponse = dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
+            .send(Mono.defer(() -> {
+                String payload = """
+                    {
+                      "share": {
+                        "set": [
+                          {
+                            "dav:href": "mailto:%s",
+                            "dav:read-write": true
+                          }
+                        ],
+                        "remove": []
+                      }
+                    }
+                    """.formatted(admin.email());
+                return Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)));
+            }))
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .flatMap(body -> {
+                    int status = response.status().code();
+                    if (status != 200 && status != 201 && status != 204) {
+                        return Mono.error(new RuntimeException("HTTP " + status + ": " + body));
+                    }
+                    return Mono.just(Map.entry(status, body));
+                }))
+            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1))
+                .filter(error -> StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path")))
+            .block();
+
+        assertThat(delegationResponse.getKey())
+            .as("Bob should be granted write access to the resource calendar")
+            .isIn(200, 201, 204);
     }
 }
