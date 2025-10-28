@@ -268,6 +268,26 @@ public class CardDavClient {
         sendDelegationRequest(user, uri, payload);
     }
 
+    public void grantDomainBookDelegation(OpenPaasUser user, String baseId, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+
+        String payload = """
+            {
+                "dav:share-resource": {
+                    "dav:sharee": [
+                        {
+                            "dav:href": "mailto:{email}",
+                            "dav:share-access": {right}
+                        }
+                    ]
+                }
+            }
+            """.replace("{email}", delegatedUser.email())
+            .replace("{right}", String.valueOf(right.getValue()));
+
+        sendDelegationRequest(user, uri, payload);
+    }
+
     public void setPublicRight(OpenPaasUser user, String baseId, String addressBookId, PublicRight right) {
         String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
 
@@ -288,6 +308,25 @@ public class CardDavClient {
         String payload = """
             {
                 "dav:unpublish-addressbook": true
+            }
+            """;
+
+        sendPublicRightRequest(user, uri, payload);
+    }
+
+    public void setDomainBookPublicRight(OpenPaasUser user, String baseId, String addressBookId) {
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+
+        String payload = """
+            {
+                "dav:group-addressbook": {
+                    "privileges": [
+                        "{DAV:}read",
+                        "{DAV:}write-content",
+                        "{DAV:}bind",
+                        "{DAV:}unbind"
+                    ]
+                }
             }
             """;
 
@@ -527,15 +566,14 @@ public class CardDavClient {
         String uri = "/addressbooks/" + domainId + ".json";
         byte[] payload = """
             {
-                "id": "{id}",
-                "dav:name": "{addressBookName}",
+                "id": "dab",
+                "dav:name": "Domain address book",
                 "carddav:description": "Domain address book",
                 "dav:acl": [ "{DAV:}read" ],
-                "type": "group"
+                "type": "group",
+                "state": "enabled"
             }
-            """.replace("{id}", "dab")
-            .replace("addressBookName", "Domain address book")
-            .getBytes(StandardCharsets.UTF_8);
+            """.getBytes(StandardCharsets.UTF_8);
 
         client.headers(headers -> headers
                 .add("TwakeCalendarToken", technicalToken)
