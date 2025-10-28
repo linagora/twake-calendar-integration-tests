@@ -772,6 +772,40 @@ public abstract class CalDavContract {
     }
 
     @Test
+    public void reportShouldSupportNoFiltersPushedToDBLayer() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        HttpClientResponse response = dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_1)).response()
+            .block();
+
+        DavResponse response2 = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id())
+            .send(body("""
+                <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                  <D:prop>
+                    <D:getetag/>
+                    <C:calendar-data/>
+                  </D:prop>
+                  <C:filter>
+                       <C:comp-filter name="VCALENDAR">
+                         <C:comp-filter name="VEVENT"/>
+                       </C:comp-filter>
+                   </C:filter>
+                </C:calendar-query>""")));
+
+        assertThat(response.status().code()).isEqualTo(201);
+        assertThat(response2.status()).isEqualTo(207);
+    }
+
+    @Test
     void syncTokenCanReportDeleted() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
