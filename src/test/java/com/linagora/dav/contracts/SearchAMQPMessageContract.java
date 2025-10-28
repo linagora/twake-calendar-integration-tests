@@ -1205,14 +1205,13 @@ public abstract class SearchAMQPMessageContract {
             .method("REQUEST")
             .buildJson();
 
-        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
-
-
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
 
         // THEN we have a message
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
