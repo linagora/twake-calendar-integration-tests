@@ -20,8 +20,10 @@ package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
@@ -30,12 +32,14 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 
 import net.javacrumbs.jsonunit.core.Option;
@@ -1163,5 +1167,54 @@ public abstract class SearchAMQPMessageContract {
             .replace("{description}", description)
             .replace("{dtstart}", dtstart)
             .replace("{dtend}", dtend);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/165 ITIP: EventRealTime plugin skips external events")
+    @Test
+    void itipRequestShouldResultInEventInDefaultCalendar() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Cedric and Bob
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        // WHEN sends an ITIP REQUEST to Bob
+        String bobCalendarUri = "/calendars/" + bob.id();
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
+
+        // THEN we have a message
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        assertThat(actual).isNotNull();
     }
 }
