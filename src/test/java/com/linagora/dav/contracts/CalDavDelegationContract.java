@@ -1775,6 +1775,202 @@ public abstract class CalDavDelegationContract {
             .contains("PARTSTAT=ACCEPTED");
     }
 
+    @Test
+    void resourceAdminCanSendItipCounterViaResourceCalendarUri() {
+        // GIVEN: a resource "whiteboard" with Bob as administrator
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+
+        // GIVEN: grant Bob read-write rights on the resource calendar using a technical token
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        // GIVEN: Alice creates an event that invites the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T100000
+            SUMMARY:Design meeting
+            LOCATION:Meeting Room
+            DESCRIPTION:Initial meeting
+            ORGANIZER;CN=Alice:mailto:%s
+            ATTENDEE;CN=whiteboard;CUTYPE=RESOURCE;PARTSTAT=NEEDS-ACTION:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email(), resource.id());
+
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        // WHEN: Bob (resource admin) sends an ITIP COUNTER on behalf of the resource
+        String counterIcal = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T030000Z
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T110000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T120000
+            SUMMARY:Design meeting - Proposed new time
+            ORGANIZER;CN=whiteboard:mailto:%s@open-paas.org
+            ATTENDEE;CN=Alice;ROLE=REQ-PARTICIPANT:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, resource.id(), alice.email());
+
+        String counterJsonBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcal)
+            .sender(resource.id() + "@open-paas.org")
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        assertThatCode(() ->
+            calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + resource.id()), counterJsonBody).block())
+            .doesNotThrowAnyException();
+
+        // THEN: Alice should receive the COUNTER request in her inbox
+        String aliceInboxUri = "/calendars/" + alice.id() + "/inbox/";
+        List<JsonNode> aliceInboxItems = calDavClient.reportCalendarEvents(
+                alice,
+                aliceInboxUri,
+                Instant.parse("2024-09-01T00:00:00Z"),
+                Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(aliceInboxItems)
+            .as("Alice should receive a COUNTER proposal from the resource in her inbox")
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("\"COUNTER\"");
+                assertThat(json).contains("mailto:" + alice.email());
+                assertThat(json).contains("mailto:" + resource.id() + "@open-paas.org");
+            });
+    }
+
+    @Test
+    void resourceAdminCanSendItipCounterViaDelegatedCalendarUri() {
+        // GIVEN: Create resource with Bob as admin and grant him read-write rights on the resource calendar
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+
+        // GIVEN: grant Bob read-write rights on the resource calendar using a technical token
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        // GIVEN: Alice creates an event that invites the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T100000
+            SUMMARY:Design meeting
+            LOCATION:Meeting Room
+            DESCRIPTION:Initial meeting
+            ORGANIZER;CN=Alice:mailto:%s
+            ATTENDEE;CN=whiteboard;CUTYPE=RESOURCE;PARTSTAT=NEEDS-ACTION:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email(), resource.id());
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        // GIVEN: Bob's delegated resource calendar URL and event href
+        CalendarURL resourceCalendarUrl = calDavClient.findUserCalendars(bob)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next().blockOptional()
+            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
+
+        List<String> propfindHrefs = TestUtil.awaitCalendarEntries(
+            dockerExtension().davHttpClient(),
+            bob, resourceCalendarUrl.asUri().toString(), 1);
+
+        // WHEN: Bob (resource admin) sends ITIP COUNTER via calendar URI
+        String counterIcal = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T030000Z
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T110000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T120000
+            SUMMARY:Design meeting - Proposed new time
+            ORGANIZER;CN=whiteboard:mailto:%s@open-paas.org
+            ATTENDEE;CN=Alice;ROLE=REQ-PARTICIPANT:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, resource.id(), alice.email());
+
+        String counterJsonBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcal)
+            .sender(resource.id() + "@open-paas.org")
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        Map.Entry<Integer, String> postResponse = dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .headers(header -> header.add("Accept", "application/json, text/plain, */*")
+                .add("Content-Type", "application/calendar+json"))
+            .request(HttpMethod.valueOf("ITIP"))
+            .uri(propfindHrefs.getFirst())
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, content) ->
+                content.asString().defaultIfEmpty("").map(body -> Map.entry(response.status().code(), body)))
+            .block();
+
+        assertThat(postResponse.getKey())
+            .as("POST COUNTER request by resource admin should succeed")
+            .isIn(200, 202, 204);
+
+        // THEN: Alice should receive the COUNTER request in her inbox
+        String aliceInboxUri = "/calendars/" + alice.id() + "/inbox/";
+        List<JsonNode> aliceInboxItems = calDavClient.reportCalendarEvents(
+                alice,
+                aliceInboxUri,
+                Instant.parse("2024-09-01T00:00:00Z"),
+                Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(aliceInboxItems)
+            .as("Alice should receive a COUNTER proposal from the resource in her inbox")
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("\"COUNTER\"");
+                assertThat(json).contains("mailto:" + alice.email());
+                assertThat(json).contains("mailto:" + resource.id() + "@open-paas.org");
+            });
+    }
+
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
         Map.Entry<Integer, String> delegationResponse = dockerExtension().davHttpClient()
             .headers(headers -> headers

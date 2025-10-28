@@ -18,10 +18,16 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.contracts.ITIPRequestContract.awaitAtMost;
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.http.HttpMethod;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
@@ -51,5 +57,22 @@ public class TestUtil {
             .block()
             .status()
             .code();
+    }
+
+    public static List<String> awaitCalendarEntries(HttpClient client, OpenPaasUser attendee, String collectionPath, int expectedCount) {
+        List<String> hrefsFromPropfind = new ArrayList<>();
+        awaitAtMost.untilAsserted(() -> {
+            List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(
+                execute(client
+                    .headers(attendee::impersonatedBasicAuth)
+                    .request(HttpMethod.valueOf("PROPFIND"))
+                    .uri(collectionPath))
+                    .body());
+            assertThat(hrefs)
+                .as("Expected number of messages in " + collectionPath + " for " + attendee.email())
+                .hasSize(expectedCount);
+            hrefsFromPropfind.addAll(hrefs);
+        });
+        return hrefsFromPropfind;
     }
 }

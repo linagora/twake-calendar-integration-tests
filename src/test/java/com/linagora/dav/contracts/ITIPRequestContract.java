@@ -53,6 +53,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestUtil;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -1732,20 +1733,7 @@ public abstract class ITIPRequestContract {
     }
 
     private List<String> awaitCalendarEntries(OpenPaasUser attendee, String collectionPath, int expectedCount) {
-        List<String> hrefsFromPropfind = new ArrayList<>();
-        awaitAtMost.untilAsserted(() -> {
-            List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(
-                execute(extension().davHttpClient()
-                    .headers(attendee::impersonatedBasicAuth)
-                    .request(HttpMethod.valueOf("PROPFIND"))
-                    .uri(collectionPath))
-                    .body());
-            assertThat(hrefs)
-                .as("Expected number of iTIP messages in " + collectionPath + " for " + attendee.email())
-                .hasSize(expectedCount);
-            hrefsFromPropfind.addAll(hrefs);
-        });
-        return hrefsFromPropfind;
+        return TestUtil.awaitCalendarEntries(extension().davHttpClient(), attendee, collectionPath, expectedCount);
     }
 
     @Test
