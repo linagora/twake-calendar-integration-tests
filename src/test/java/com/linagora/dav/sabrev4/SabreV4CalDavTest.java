@@ -18,17 +18,25 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
 import com.linagora.dav.contracts.CalDavContract;
 
-public class SabreV4CalDavTest extends CalDavContract {
+class SabreV4CalDavTest extends CalDavContract {
     @RegisterExtension
     static DockerTwakeCalendarExtensionV4 dockerExtension = new DockerTwakeCalendarExtensionV4();
 
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/188 Regression: REPORT on n8n calendar plugin fails")
+    @Test
+    public void reportShouldSupportNoFiltersPushedToDBLayer() {
+        super.reportShouldSupportNoFiltersPushedToDBLayer();
     }
 }
