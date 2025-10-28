@@ -32,7 +32,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -1169,7 +1168,6 @@ public abstract class SearchAMQPMessageContract {
             .replace("{dtend}", dtend);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165 ITIP: EventRealTime plugin skips external events")
     @Test
     void itipRequestShouldResultInEventInDefaultCalendar() throws Exception {
         OpenPaasUser bob = dockerExtension().newTestUser();

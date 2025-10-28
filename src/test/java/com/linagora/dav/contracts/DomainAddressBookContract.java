@@ -28,7 +28,6 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CardDavClient;
@@ -41,7 +40,6 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
-import net.javacrumbs.jsonunit.assertj.JsonAssertions;
 
 public abstract class DomainAddressBookContract {
 
@@ -407,7 +405,6 @@ public abstract class DomainAddressBookContract {
         assertThat(actual).isEqualTo(expected);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/169")
     @Test
     void domainAdministratorCannotDelegateDomainAddressBook() {
         String domainId = extension().domainId();
@@ -523,7 +520,6 @@ public abstract class DomainAddressBookContract {
         assertThat(actual).isEqualTo(expected);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/169")
     @Test
     void domainAdministratorCannotDelegateDomainMembersBook() {
         String domainId = extension().domainId();

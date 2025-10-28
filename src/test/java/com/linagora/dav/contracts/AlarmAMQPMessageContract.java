@@ -48,7 +48,6 @@ import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
-import com.rabbitmq.client.GetResponse;
 
 import net.javacrumbs.jsonunit.core.Option;
 
@@ -2858,7 +2857,6 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{partStat}", partStat);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165 ITIP: EventRealTime plugin skips external events")
     @Test
     void itipCancelShouldRemoveAlarm() throws Exception {
         OpenPaasUser bob = dockerExtension().newTestUser();
