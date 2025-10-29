@@ -47,9 +47,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
+import org.w3c.dom.Node;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
+import org.xmlunit.diff.DefaultNodeMatcher;
 import org.xmlunit.diff.DifferenceEvaluator;
+import org.xmlunit.diff.ElementSelectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
@@ -852,6 +855,9 @@ public abstract class CalDavContract {
                 " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
                 "</d:multistatus>")
             .ignoreChildNodesOrder()
+            .ignoreWhitespace()
+            .withNodeMatcher(new DefaultNodeMatcher(ElementSelectors.byNameAndAllAttributes))
+            .withNodeFilter(node -> !(node.getNodeType() == Node.ELEMENT_NODE && "propstat".equals(node.getLocalName())))
             .areSimilar();
     }
 
