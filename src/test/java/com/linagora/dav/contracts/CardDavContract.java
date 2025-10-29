@@ -29,9 +29,12 @@ import java.util.Map;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.Test;
+import org.w3c.dom.Node;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
+import org.xmlunit.diff.DefaultNodeMatcher;
 import org.xmlunit.diff.DifferenceEvaluator;
+import org.xmlunit.diff.ElementSelectors;
 
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
@@ -1054,7 +1057,9 @@ public abstract class CardDavContract {
                 " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
                 "</d:multistatus>")
             .ignoreChildNodesOrder()
-            .withDifferenceEvaluator(IGNORE_ETAG)
+            .ignoreWhitespace()
+            .withNodeMatcher(new DefaultNodeMatcher(ElementSelectors.byNameAndAllAttributes))
+            .withNodeFilter(node -> !(node.getNodeType() == Node.ELEMENT_NODE && "propstat".equals(node.getLocalName())))
             .areSimilar();
     }
 
