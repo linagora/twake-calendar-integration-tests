@@ -1773,6 +1773,20 @@ public abstract class CalDavDelegationContract {
         assertThat(verifyResponse.body())
             .contains("mailto:" + resource.id() + "@open-paas.org")
             .contains("PARTSTAT=ACCEPTED");
+
+        // THEN: Verify that Alice sees the updated participation status of the resource
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse aliceViewResponse = execute(dockerExtension().davHttpClient()
+                .headers(alice::impersonatedBasicAuth)
+                .get()
+                .uri("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics"));
+
+            assertThat(aliceViewResponse.status()).isEqualTo(200);
+            assertThat(aliceViewResponse.body())
+                .contains("mailto:" + resource.id() + "@open-paas.org")
+                .contains("PARTSTAT=ACCEPTED");
+        });
+
     }
 
     @Test
