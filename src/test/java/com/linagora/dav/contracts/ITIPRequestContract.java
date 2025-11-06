@@ -26,7 +26,6 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -1116,10 +1115,8 @@ public abstract class ITIPRequestContract {
             .doesNotContain("RRULE");
     }
 
-    @Disabled("SabreDav currently sends unwanted iTIP REQUEST even when organizer modifies a different occurrence that the attendee was not invited to." +
-        "See https://github.com/linagora/esn-sabre/issues/152")
     @Test
-    void shouldNotSendUpdateToUninvitedAttendeesWhenOrganizerModifiesOtherInstances() throws Exception {
+    protected void shouldNotSendUpdateToUninvitedAttendeesWhenOrganizerModifiesOtherInstances() throws Exception {
         // GIVEN Bob invites Cedric only for occurrence #2
         String eventUid = "event-" + UUID.randomUUID();
         createRecurringEvent(bob, eventUid);
@@ -1153,7 +1150,6 @@ public abstract class ITIPRequestContract {
             BEGIN:VEVENT
             UID:{UID}
             DTSTAMP:20260320T080000Z
-            SEQUENCE:1
             DTSTART;TZID=Europe/Paris:20260323T090000
             DTEND;TZID=Europe/Paris:20260323T100000
             RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
