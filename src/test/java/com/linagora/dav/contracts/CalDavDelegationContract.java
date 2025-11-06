@@ -1775,6 +1775,78 @@ public abstract class CalDavDelegationContract {
             .contains("PARTSTAT=ACCEPTED");
     }
 
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/195")
+    @Test
+    void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
+        // GIVEN: Create a resource 'whiteboard' with Bob as administrator
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+
+        // GIVEN: Grant Bob read-write rights on the resource calendar using a technical token
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        // GIVEN: Alice creates an event that invites the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T100000
+            SUMMARY:Whiteboard session
+            LOCATION:Meeting Room
+            DESCRIPTION:Test event with resource attendee
+            ORGANIZER;CN=Alice:mailto:%s
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=whiteboard:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email(), resource.id());
+
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        // GIVEN: Fetch Bob's delegated resource calendar URL
+        CalendarURL resourceCalendarURL = calDavClient.findUserCalendars(bob)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next().blockOptional()
+            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
+
+        // WHEN: Bob updates the resource participation status to ACCEPTED
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+        DavResponse getResponse = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics"));
+
+        String updatedEventIcs = getResponse.body()
+            .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .put()
+            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics")
+            .send(body(updatedEventIcs)));
+
+        // THEN: Verify that Alice sees the updated participation status of the resource
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse aliceViewResponse = execute(dockerExtension().davHttpClient()
+                .headers(alice::impersonatedBasicAuth)
+                .get()
+                .uri("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics"));
+
+            assertThat(aliceViewResponse.status()).isEqualTo(200);
+            assertThat(aliceViewResponse.body())
+                .contains("mailto:" + resource.id() + "@open-paas.org")
+                .contains("PARTSTAT=ACCEPTED");
+        });
+    }
+
     @Test
     void resourceAdminCanSendItipCounterViaResourceCalendarUri() {
         // GIVEN: a resource "whiteboard" with Bob as administrator
