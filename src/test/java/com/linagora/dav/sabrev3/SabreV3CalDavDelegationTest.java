@@ -18,6 +18,7 @@
 
 package com.linagora.dav.sabrev3;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV3;
@@ -30,5 +31,10 @@ public class SabreV3CalDavDelegationTest extends CalDavDelegationContract {
     @Override
     public DockerTwakeCalendarExtensionV3 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Override
+    @Disabled("https://github.com/linagora/esn-sabre/issues/206")
+    protected void resourceAdminCanListEventsViaDelegatedCalendar() {
     }
 }
