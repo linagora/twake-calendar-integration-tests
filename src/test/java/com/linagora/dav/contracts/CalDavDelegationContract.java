@@ -2043,6 +2043,28 @@ public abstract class CalDavDelegationContract {
             });
     }
 
+    @Test
+    protected void resourceAdminCanListEventsViaDelegatedCalendar() {
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("resourceA", "Shared resource", bob)
+            .block();
+
+        // GIVEN: Grant Bob read-write rights on the resource calendar
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .headers(headers -> headers.add("Accept", "application/calendar+json"))
+            .get()
+            .uri("/calendars/" + bob.id() + "/events.json"));
+
+        assertThat(response.status())
+            .as("Expected status 200 but got %s with body: %s", response.status(), response.body())
+            .isEqualTo(200);
+    }
+
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
         Map.Entry<Integer, String> delegationResponse = dockerExtension().davHttpClient()
             .headers(headers -> headers
