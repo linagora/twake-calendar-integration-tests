@@ -21,22 +21,12 @@ package com.linagora.dav;
 import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.utils.URIBuilder;
 import org.junit.platform.commons.util.Preconditions;
 import org.testcontainers.containers.ComposeContainer;
-import org.testcontainers.containers.ContainerState;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
-
-import reactor.core.publisher.Mono;
-import reactor.netty.ByteBufFlux;
-import reactor.netty.http.client.HttpClient;
 
 public class DockerTwakeCalendarSetup {
     public enum DockerService {
@@ -71,8 +61,6 @@ public class DockerTwakeCalendarSetup {
     public static final String SABRE_V4 = "sabre-v4-it";
     public static final String SABRE_V4_7 = "sabre-v4-7-it";
 
-    private static final Path definitionFilePath = Path.of("src/test/resources/rabbitmq-definitions.json");
-
     private final ComposeContainer environment;
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
 
@@ -104,8 +92,6 @@ public class DockerTwakeCalendarSetup {
         twakeCalendarProvisioningService = new TwakeCalendarProvisioningService(
             getServiceUri(DockerService.MONGO, "mongodb").toString(),
             getServiceUri(DockerService.CALENDAR_SIDE_ADMIN, "http").toString());
-
-        waitForRabbitMQToBeReady();
     }
 
     public void stop() {
@@ -115,51 +101,6 @@ public class DockerTwakeCalendarSetup {
     public TwakeCalendarProvisioningService getTwakeCalendarProvisioningService() {
         Preconditions.notNull(twakeCalendarProvisioningService, "Twake Calendar Provisioning Service not initialized");
         return twakeCalendarProvisioningService;
-    }
-
-    private boolean importRabbitMQDefinitions() {
-        try {
-            rabbitmqAdminHttpclient().post()
-                .uri("/api/definitions")
-                .send(ByteBufFlux.fromPath(definitionFilePath))
-                .responseSingle((response, responseContent) -> {
-                    if (response.status().code() == 204) {
-                        System.out.println("Successfully imported RabbitMQ definitions (HTTP 204)");
-                        return Mono.empty();
-                    } else {
-                        return responseContent.asString(StandardCharsets.UTF_8)
-                            .switchIfEmpty(Mono.just(StringUtils.EMPTY))
-                            .flatMap(responseBody -> Mono.error(new RuntimeException("""
-                                Unexpected status code: %d when import RabbitMQ definitions
-                                %s
-                                """.formatted(response.status().code(), responseBody))));
-                    }
-                }).block();
-            return true;
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-            return false;
-        }
-    }
-
-    private void waitForRabbitMQToBeReady() {
-        Awaitility.await()
-            .atMost(60, TimeUnit.SECONDS)
-            .pollInterval(100, TimeUnit.MILLISECONDS)
-            .until(this::importRabbitMQDefinitions);
-    }
-
-    private HttpClient rabbitmqAdminHttpclient() {
-        return HttpClient.create()
-            .baseUrl(getServiceUri(DockerService.RABBITMQ_ADMIN, "http").toString())
-            .headers(headers -> {
-                headers.add("Authorization", "Basic Z3Vlc3Q6Z3Vlc3Q="); // "guest:guest"
-                headers.add("Content-Type", "application/json");
-            });
-    }
-
-    public ContainerState getContainer(DockerService service) {
-        return environment.getContainerByServiceName(service.serviceName()).orElseThrow();
     }
 
     public String getHost(DockerService service) {
