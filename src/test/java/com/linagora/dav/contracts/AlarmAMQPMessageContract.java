@@ -2335,7 +2335,6 @@ public abstract class AlarmAMQPMessageContract {
             .isEqualTo(expected);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
     @Test
     void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
