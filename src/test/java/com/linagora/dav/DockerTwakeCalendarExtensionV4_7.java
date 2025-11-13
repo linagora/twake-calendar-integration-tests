@@ -35,7 +35,7 @@ public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtensi
     }
 
     @Override
-    DockerTwakeCalendarSetup setup() {
+    protected DockerTwakeCalendarSetup setup() {
         return dockerTwakeCalendarSetup;
     }
 }
