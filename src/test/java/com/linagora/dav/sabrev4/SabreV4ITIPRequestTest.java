@@ -18,7 +18,6 @@
 
 package com.linagora.dav.sabrev4;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -33,8 +32,4 @@ public class SabreV4ITIPRequestTest extends ITIPRequestContract {
         return dockerExtension;
     }
 
-    @Disabled("Ref https://github.com/linagora/esn-sabre/issues/152")
-    @Override
-    protected void shouldNotSendUpdateToUninvitedAttendeesWhenOrganizerModifiesOtherInstances() {
-    }
 }

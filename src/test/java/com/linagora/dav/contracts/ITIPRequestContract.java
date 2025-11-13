@@ -577,65 +577,6 @@ public abstract class ITIPRequestContract {
             .isNotEmpty();
     }
 
-    @Disabled("Sabre currently ignores the specified calendar path. See https://github.com/linagora/esn-sabre/issues/56")
-    @Test
-    void itipShouldRespectSpecifiedCalendarPath() throws Exception {
-        // GIVEN Bob has multiple calendars (default + custom)
-        String calendarA = bob.id(); // default calendar
-        String calendarB = bobCustomCalendarId;
-
-        String eventUid = "event-" + UUID.randomUUID();
-        String ics = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Example Corp.//CalDAV Client//EN
-            CALSCALE:GREGORIAN
-            METHOD:REQUEST
-            BEGIN:VEVENT
-            UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
-            SUMMARY:Meeting on Specific Calendar
-            ORGANIZER;CN=Cedric:mailto:%s
-            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
-            END:VEVENT
-            END:VCALENDAR
-            """.formatted(eventUid, cedric.email(), bob.email());
-
-        // WHEN Cedric sends an ITIP REQUEST explicitly targeting Bob’s calendarB
-        String body = ITIPJsonBodyRequest.builder()
-            .ical(ics)
-            .sender(cedric.email())
-            .recipient(bob.email())
-            .uid(eventUid)
-            .method("REQUEST")
-            .buildJson();
-
-        String bobCalendarBUri = "/calendars/" + bob.id() + "/" + calendarB;
-        calDavClient.sendITIPRequest(cedric, URI.create(bobCalendarBUri), body).block();
-
-        // THEN the event should appear in the specific target calendar (calendarB)
-        Function<String, List<JsonNode>> eventsForUri = uri ->
-            calDavClient.reportCalendarEvents(bob, uri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
-                .collectList()
-                .block();
-
-        Thread.sleep(1000);
-        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + calendarA;
-        List<JsonNode> eventsInDefault = eventsForUri.apply(bobDefaultCalendarUri);
-        List<JsonNode> eventsInB = eventsForUri.apply("/calendars/" + bob.id() + "/" + calendarB);
-
-        assertThat(eventsInB)
-            .as("Expected the ITIP event to appear in the explicitly targeted calendarB")
-            .anySatisfy(item -> assertThat(item.toString()).contains(eventUid));
-
-        assertThat(eventsInDefault)
-            .as("Default calendar should not receive this event once issue #49 is fixed")
-            .noneSatisfy(item -> assertThat(item.toString()).contains(eventUid));
-    }
 
     @Test
     void itipCancelShouldRemoveOnlyExceptionFromRecurringEvent() throws JsonProcessingException {
