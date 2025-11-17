@@ -1218,7 +1218,7 @@ public abstract class SearchAMQPMessageContract {
     }
 
     @Test
-    void shouldNotPublishEventRequestWhenOrganizerSelfInvitedWithoutMailto() throws Exception {
+    protected void shouldNotPublishEventRequestWhenOrganizerSelfInvitedWithoutMailto() throws Exception {
         // GIVEN
         // Bind a fresh queue listening to calendar:event:request
         String testQueue = "test-no-mailto-" + UUID.randomUUID();
