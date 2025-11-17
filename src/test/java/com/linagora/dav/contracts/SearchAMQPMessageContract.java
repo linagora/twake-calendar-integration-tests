@@ -40,6 +40,7 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
+import com.rabbitmq.client.GetResponse;
 
 import net.javacrumbs.jsonunit.core.Option;
 import net.minidev.json.JSONObject;
@@ -1214,5 +1215,56 @@ public abstract class SearchAMQPMessageContract {
         // THEN we have a message
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
         assertThat(actual).isNotNull();
+    }
+
+    @Test
+    protected void shouldNotPublishEventRequestWhenOrganizerSelfInvitedWithoutMailto() throws Exception {
+        // GIVEN
+        // Bind a fresh queue listening to calendar:event:request
+        String testQueue = "test-no-mailto-" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:request", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // Calendar event missing `mailto:` in ATTENDEE
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:%s
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Self invite without mailto
+            ORGANIZER;CN=Bob Smith:mailto:%s
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email());
+
+        // WHEN Bob creates the event
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // THEN: There should be NO message published to calendar:event:request
+        Thread.sleep(1000);
+        GetResponse response = dockerExtension()
+            .getChannel()
+            .basicGet(testQueue, true);
+
+        assertThat(response)
+            .as("No AMQP message must be published for self-invite when ATTENDEE lacks mailto")
+            .isNull();
     }
 }
