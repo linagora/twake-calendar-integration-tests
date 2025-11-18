@@ -48,6 +48,7 @@ import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
+import com.rabbitmq.client.GetResponse;
 
 import net.javacrumbs.jsonunit.core.Option;
 
@@ -2940,5 +2941,119 @@ public abstract class AlarmAMQPMessageContract {
         // THEN we have a message
         String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
         Assertions.assertThat(actual).isNotNull();
+    }
+
+    @Test
+    protected void shouldNotPublishAlarmRequestForUnaffectedAttendeeWhenAnotherAttendeeUpdatesPartStat() throws Exception {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN the organizer creates an event with Bob + Alice + VALARM
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250101T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250101T100000
+            SUMMARY:Team sync
+            LOCATION:Meeting Room A
+            DESCRIPTION:Discuss weekly plan
+            ORGANIZER;CN=Cedric:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{bobEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(cedric, eventUid, calendarData);
+
+        // Ensure attendee copies are created
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(bob), Optional::isPresent);
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent);
+
+        // WHEN Bob accepts the invitation
+        String bobEventId = calDavClient.findFirstEventId(bob).get();
+
+        String acceptedIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:2
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250101T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250101T100000
+            SUMMARY:Team sync
+            LOCATION:Meeting Room A
+            DESCRIPTION:Discuss weekly plan
+            ORGANIZER;CN=Cedric:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{bobEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        String testQueue = "tcalendar:event:test" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:alarm:request", "");
+
+        calDavClient.upsertCalendarEvent(bob, bobEventId, acceptedIcs);
+
+        Thread.sleep(1000);
+
+        // THEN  Alice should NOT receive alarm:request
+        GetResponse aliceMsg = dockerExtension()
+            .getChannel()
+            .basicGet(testQueue, true);
+
+        assertThat(aliceMsg)
+            .as("Unexpected alarm:request published for Alice")
+            .isNull();
     }
 }
