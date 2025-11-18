@@ -363,15 +363,42 @@ public class CalDavClient {
     }
 
     public DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL, String start, String end) {
+        String json = """
+            {
+                "match": {
+                    "start": "{start}",
+                    "end": "{end}"
+                }
+            }
+            """.replace("{start}", start)
+            .replace("{end}", end);
+
+        return getCalendarEvents(user, calendarURL, json);
+    }
+
+    public DavResponse findEventsByTimeAndSyncToken(OpenPaasUser user, CalendarURL calendarURL, String start, String end, String syncToken) {
+        String json = """
+            {
+                "match": {
+                    "start": "{start}",
+                    "end": "{end}"
+                },
+                "sync-token": "{syncToken}"
+            }
+            """.replace("{start}", start)
+            .replace("{end}", end)
+            .replace("{syncToken}", syncToken);
+
+        return getCalendarEvents(user, calendarURL, json);
+    }
+
+    private DavResponse getCalendarEvents(OpenPaasUser user, CalendarURL calendarURL, String json) {
         return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add("Depth", 0)
                 .add("Accept", "application/json"))
             .request(HttpMethod.valueOf("REPORT"))
-            .uri(calendarURL.asUri().toString() + ".json")
-            .send(body("""
-                {"match":{"start":"{start}","end":"{end}"}}"""
-                .replace("{start}", start)
-                .replace("{end}", end)))
+            .uri(calendarURL.asUri() + ".json")
+            .send(body(json))
             .responseSingle((response, content) -> content.asString()
                 .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
             .block();
