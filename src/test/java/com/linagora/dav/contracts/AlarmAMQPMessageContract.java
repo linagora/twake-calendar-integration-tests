@@ -2944,7 +2944,7 @@ public abstract class AlarmAMQPMessageContract {
     }
 
     @Test
-    void shouldNotPublishAlarmRequestForUnaffectedAttendeeWhenAnotherAttendeeUpdatesPartStat() throws Exception {
+    protected void shouldNotPublishAlarmRequestForUnaffectedAttendeeWhenAnotherAttendeeUpdatesPartStat() throws Exception {
         OpenPaasUser cedric = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();

@@ -18,6 +18,8 @@
 
 package com.linagora.dav.sabrev3;
 
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV3;
@@ -30,5 +32,10 @@ public class SabreV3AlarmAMQPMessageTest extends AlarmAMQPMessageContract {
     @Override
     public DockerTwakeCalendarExtensionV3 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/221 wait to rebuild new image")
+    @Test
+    protected void shouldNotPublishAlarmRequestForUnaffectedAttendeeWhenAnotherAttendeeUpdatesPartStat() {
     }
 }
