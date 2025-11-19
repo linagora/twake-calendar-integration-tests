@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -119,6 +120,59 @@ public abstract class EmailAMQPMessageContract {
 
         assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/229")
+    @Test
+    void shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT={partStat};CN=Benoît TELLIER:mailto:{attendeeEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT1D
+            ACTION:EMAIL
+            ATTENDEE:mailto:mailto:mailto:{organizerEmail}
+            SUMMARY:{summary}
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{summary}", "Sprint planning #01")
+            .replace("{dtstart}", "30250411T100000")
+            .replace("{dtend}", "30250411T110000")
+            .replace("{partStat}", "NEEDS-ACTION");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        assertThat(actual).contains("TRIGGER:-PT1D");
     }
 
     @Test
