@@ -3106,4 +3106,136 @@ public abstract class AlarmAMQPMessageContract {
         assertThat(root.path("eventPath").asText())
             .contains(attendee.id());
     }
+
+    @Test
+    void shouldPublishAlarmRequestWhenOrganizerUpdatesSummary() throws Exception {
+        // Given organizer + attendee
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+
+        // Create event with VALARM
+        String initial = generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Initial summary",
+            "Initial location",
+            "Initial description",
+            "30250411T100000",
+            "30250411T110000",
+            organizer.email());
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initial);
+
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(attendee), Optional::isPresent);
+
+        // Bind queue
+        String testQueue = "tcalendar:event:test" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:alarm:request", "");
+
+        // Fetch ICS from Sabre
+        String existingIcs = calDavClient.getCalendarEvent(organizer,
+            URI.create("/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics"));
+
+        // Modify SUMMARY only (scheduling relevant)
+        String updated = existingIcs.replace("SUMMARY:Initial summary", "SUMMARY:Updated summary");
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, updated);
+
+        // Expect alarm:request
+        GetResponse msg = awaitAtMost
+            .atMost(Duration.ofSeconds(10))
+            .until(() -> dockerExtension().getChannel().basicGet(testQueue, true), Objects::nonNull);
+
+        assertThat(msg)
+            .as("Expected alarm:request when organizer updates SUMMARY")
+            .isNotNull();
+
+        JsonNode body = MAPPER.readTree(msg.getBody());
+        assertThat(body.path("eventPath").asText())
+            .contains(attendee.id());
+    }
+
+    @Test
+    void shouldPublishAlarmRequestWhenOrganizerUpdatesLocation() throws Exception {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+
+        String initial = generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Summary",
+            "Room A",
+            "Description",
+            "30250411T100000",
+            "30250411T110000",
+            organizer.email());
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initial);
+
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(attendee), Optional::isPresent);
+
+        String testQueue = "tcalendar:event:test" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:alarm:request", "");
+
+        String existingIcs = calDavClient.getCalendarEvent(organizer,
+            URI.create("/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics"));
+
+        String updated = existingIcs
+            .replace("LOCATION:Room A", "LOCATION:Room B");
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, updated);
+
+        GetResponse msg = awaitAtMost
+            .atMost(Duration.ofSeconds(10))
+            .until(() -> dockerExtension().getChannel().basicGet(testQueue, true), Objects::nonNull);
+
+        assertThat(msg)
+            .as("Expected alarm:request when organizer updates LOCATION")
+            .isNotNull();
+    }
+
+    @Test
+    void shouldPublishAlarmRequestWhenOrganizerUpdatesDescription() throws Exception {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+
+        String initial = generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Summary",
+            "Location",
+            "Old description",
+            "30250411T100000",
+            "30250411T110000",
+            organizer.email());
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initial);
+
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(attendee), Optional::isPresent);
+
+        String testQueue = "tcalendar:event:test" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:alarm:request", "");
+
+        String existingIcs = calDavClient.getCalendarEvent(organizer,
+            URI.create("/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics"));
+
+        String updated = existingIcs
+            .replace("DESCRIPTION:Old description", "DESCRIPTION:New description");
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, updated);
+
+        GetResponse msg = awaitAtMost
+            .atMost(Duration.ofSeconds(10))
+            .until(() -> dockerExtension().getChannel().basicGet(testQueue, true), Objects::nonNull);
+
+        assertThat(msg)
+            .as("Expected alarm:request when organizer updates DESCRIPTION")
+            .isNotNull();
+    }
 }
