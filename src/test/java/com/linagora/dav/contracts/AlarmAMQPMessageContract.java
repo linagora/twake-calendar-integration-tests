@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.dto.share.SubscribedCalendarRequest.MAPPER;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
@@ -3055,5 +3056,54 @@ public abstract class AlarmAMQPMessageContract {
         assertThat(aliceMsg)
             .as("Unexpected alarm:request published for Alice")
             .isNull();
+    }
+
+    @Test
+    void shouldPublishAlarmRequestWhenOrganizerRemovesValarm() throws IOException, InterruptedException {
+        // Given: organizer & attendee
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+
+        // Organizer creates event *with VALARM*
+        String initial = generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Sprint planning #01",
+            "Meeting Room",
+            "desc",
+            "30250411T100000",
+            "30250411T110000",
+            organizer.email());
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initial);
+
+        // Wait for attendee copy to exist in Sabre
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(attendee), Optional::isPresent);
+
+        // Bind queue to alarm:request exchange
+        String testQueue = "tcalendar:event:test" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:alarm:request", "");
+
+        // Step 2: Organizer updates event and *removes VALARM completely*
+        String existingIcs = calDavClient.getCalendarEvent(organizer, URI.create("/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics"));
+        // Remove the VALARM section completely
+        String withoutAlarm = existingIcs.replaceAll("(?s)BEGIN:VALARM.*?END:VALARM\\s*", "");
+        calDavClient.upsertCalendarEvent(organizer, eventUid, withoutAlarm);
+
+        Thread.sleep(1000);
+        // THEN  Alice should receive alarm:request
+        GetResponse aliceMsg = dockerExtension()
+            .getChannel()
+            .basicGet(testQueue, true);
+
+        assertThat(aliceMsg)
+            .as("Expected alarm:request AMQP message, but queue was empty")
+            .isNotNull();
+
+        JsonNode root = MAPPER.readTree(new String(aliceMsg.getBody(), StandardCharsets.UTF_8));
+        assertThat(root.path("eventPath").asText())
+            .contains(attendee.id());
     }
 }
