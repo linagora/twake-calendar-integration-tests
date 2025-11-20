@@ -18,6 +18,8 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +32,12 @@ public class SabreV4EmailAMQPMessageTest extends EmailAMQPMessageContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/229 Sabe 4.1.5 bug! Fxed in 4.7.0...")
+    @Test
+    @Override
+    public void shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM() {
+        super.shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM();
     }
 }
