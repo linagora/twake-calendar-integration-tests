@@ -566,7 +566,7 @@ public abstract class CalJsonContract {
                                 ],
                                 "status": 200
                             }
-                        ]
+                        ],"sync-token":"http://sabre.io/ns/sync/2"
                     }
                 }
                     """, testUser.id(), testUser.id(),
@@ -1493,7 +1493,8 @@ public abstract class CalJsonContract {
                                 ],
                                 "status": 200
                             }
-                        ]
+                        ],
+                        "sync-token":"http://sabre.io/ns/sync/2"
                     }
                 }""", testUser.id(), testUser.id(),
                 testUser.id(), testUser.id()));
@@ -1641,7 +1642,7 @@ public abstract class CalJsonContract {
                                 ],
                                 "status": 200
                             }
-                        ]
+                        ],"sync-token":"http://sabre.io/ns/sync/3"
                     }
                 }""", testUser.id(), testUser.id(),
                 testUser.id(), testUser.id()));
