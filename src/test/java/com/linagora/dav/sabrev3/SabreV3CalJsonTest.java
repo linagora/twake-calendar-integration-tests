@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.linagora.dav.DockerTwakeCalendarExtensionV3;
 import com.linagora.dav.contracts.CalJsonContract;
 
@@ -39,5 +40,47 @@ public class SabreV3CalJsonTest extends CalJsonContract {
     @Override
     public void reportShouldIncludeSyncToken() throws Exception {
         super.reportShouldIncludeSyncToken();
+    }
+
+    @Test
+    @Disabled("CF https://github.com/linagora/esn-sabre/pull/231")
+    @Override
+    public void reportShouldExpandSingleRecurringEventWithTimeRange() throws JsonProcessingException {
+        super.reportShouldExpandSingleRecurringEventWithTimeRange();
+    }
+
+    @Test
+    @Disabled("CF https://github.com/linagora/esn-sabre/pull/231")
+    @Override
+    public void reportOnSingleEventShouldReturn400WhenMissingStartParameter() {
+        super.reportOnSingleEventShouldReturn400WhenMissingStartParameter();
+    }
+
+    @Test
+    @Disabled("CF https://github.com/linagora/esn-sabre/pull/231")
+    @Override
+    public void reportOnSingleEventShouldReturn400WhenMissingEndParameter() {
+        super.reportOnSingleEventShouldReturn400WhenMissingEndParameter();
+    }
+
+    @Test
+    @Disabled("CF https://github.com/linagora/esn-sabre/pull/231")
+    @Override
+    public void reportOnSingleEventShouldReturn400WhenMissingBothParameters() {
+        super.reportOnSingleEventShouldReturn400WhenMissingBothParameters();
+    }
+
+    @Test
+    @Disabled("CF https://github.com/linagora/esn-sabre/pull/231")
+    @Override
+    public void reportOnSingleEventShouldReturnEmptyWhenOutOfRange() throws JsonProcessingException {
+        super.reportOnSingleEventShouldReturnEmptyWhenOutOfRange();
+    }
+
+    @Test
+    @Disabled("CF https://github.com/linagora/esn-sabre/pull/231")
+    @Override
+    public void reportOnSingleEventShouldIncludeETag() throws JsonProcessingException {
+        super.reportOnSingleEventShouldIncludeETag();
     }
 }
