@@ -94,6 +94,7 @@ public abstract class OpenPaaSAPIContract {
             .isEqualTo(String.format("""
                 {
                     "_id": "%s",
+                    "timezone":"Europe/Paris",
                     "firstname": "%s",
                     "lastname": "%s",
                     "preferredEmail": "%s",
@@ -325,6 +326,7 @@ public abstract class OpenPaaSAPIContract {
                     [
                          {
                              "_id": "%s",
+                             "timezone":"Europe/Paris",
                              "firstname": "%s",
                              "lastname": "%s",
                              "preferredEmail": "%s",
