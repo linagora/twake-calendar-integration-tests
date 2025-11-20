@@ -376,18 +376,12 @@ public class CalDavClient {
         return getCalendarEvents(user, calendarURL, json);
     }
 
-    public DavResponse findEventsByTimeAndSyncToken(OpenPaasUser user, CalendarURL calendarURL, String start, String end, String syncToken) {
+    public DavResponse findEventsBySyncToken(OpenPaasUser user, CalendarURL calendarURL, String syncToken) {
         String json = """
             {
-                "match": {
-                    "start": "{start}",
-                    "end": "{end}"
-                },
                 "sync-token": "{syncToken}"
             }
-            """.replace("{start}", start)
-            .replace("{end}", end)
-            .replace("{syncToken}", syncToken);
+            """.replace("{syncToken}", syncToken);
 
         return getCalendarEvents(user, calendarURL, json);
     }

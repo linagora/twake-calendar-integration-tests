@@ -93,18 +93,15 @@ public abstract class ReportContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, eventUid2, calendarData2);
 
-        DavResponse response = calDavClient.findEventsByTimeAndSyncToken(alice,
+        DavResponse response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(alice.id()),
-            "20300110T000000",
-            "20301210T000000",
             "http://sabre.io/ns/sync/2");
         JsonCalendarData result = JsonCalendarData.from(response.body());
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(1);
-            softly.assertThat(result.items().get(0).events()).hasSize(1);
-            softly.assertThat(result.items().get(0).events().get(0).uid()).isEqualTo(eventUid2);
-            softly.assertThat(result.items().get(0).events().get(0).summary().get()).isEqualTo("Sprint planning #02");
+            softly.assertThat(result.items().get(0).href()).isEqualTo("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid2 + ".ics");
+            softly.assertThat(result.items().get(0).status()).isEqualTo(200);
         });
     }
 
@@ -136,18 +133,19 @@ public abstract class ReportContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, eventUid2, calendarData2);
 
-        DavResponse response = calDavClient.findEventsByTimeAndSyncToken(alice,
+        DavResponse response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(alice.id()),
-            "20300101T000000",
-            "20301203T000000",
             "http://sabre.io/ns/sync/1");
         JsonCalendarData result = JsonCalendarData.from(response.body());
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(2);
-            softly.assertThat(result.items()).flatExtracting(JsonCalendarData.DavItem::events)
-                .extracting(JsonCalendarEventData::uid)
-                .containsExactlyInAnyOrder(eventUid1, eventUid2);
+            softly.assertThat(result.items())
+                .extracting(JsonCalendarData.DavItem::href)
+                .containsExactlyInAnyOrder(
+                    "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid1 + ".ics",
+                    "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid2 + ".ics");
+            softly.assertThat(result.items()).allMatch(item -> item.status() == 200);
         });
     }
 
@@ -181,19 +179,15 @@ public abstract class ReportContract {
 
         calDavClient.deleteCalendarEvent(alice, eventUid1);
 
-        DavResponse response = calDavClient.findEventsByTimeAndSyncToken(alice,
+        DavResponse response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(alice.id()),
-            "20300101T000000",
-            "20301210T000000",
             "http://sabre.io/ns/sync/3");
         JsonCalendarData result = JsonCalendarData.from(response.body());
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(1);
             softly.assertThat(result.syncToken()).isEqualTo("http://sabre.io/ns/sync/4");
-
             softly.assertThat(result.items().get(0).href()).isEqualTo("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid1 + ".ics");
-            softly.assertThat(result.items().get(0).events()).isEmpty();
             softly.assertThat(result.items().get(0).status()).isEqualTo(404);
         });
     }
@@ -239,18 +233,15 @@ public abstract class ReportContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, eventUid, updatedCalendarData);
 
-        DavResponse response = calDavClient.findEventsByTimeAndSyncToken(alice,
+        DavResponse response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(alice.id()),
-            "20300101T000000",
-            "20301215T000000",
             "http://sabre.io/ns/sync/3");
         JsonCalendarData result = JsonCalendarData.from(response.body());
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(1);
-            softly.assertThat(result.items().get(0).events()).hasSize(1);
-            softly.assertThat(result.items().get(0).events().get(0).uid()).isEqualTo(eventUid);
-            softly.assertThat(result.items().get(0).events().get(0).summary().get()).isEqualTo("Updated Summary");
+            softly.assertThat(result.items().get(0).href()).isEqualTo("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics");
+            softly.assertThat(result.items().get(0).status()).isEqualTo(200);
         });
     }
 
@@ -283,11 +274,9 @@ public abstract class ReportContract {
         calDavClient.upsertCalendarEvent(alice, eventUid2, calendarData2);
 
         // Sync with token after no changes
-        DavResponse response = calDavClient.findEventsByTimeAndSyncToken(alice,
+        DavResponse response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(alice.id()),
-            "20300401T000000",
-            "20300425T000000",
-            "http://sabre.io/ns/sync/2");
+            "http://sabre.io/ns/sync/3");
         JsonCalendarData result = JsonCalendarData.from(response.body());
 
         SoftAssertions.assertSoftly(softly -> {
