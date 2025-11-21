@@ -383,7 +383,7 @@ public abstract class CalJsonContract {
                 {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")));
 
         assertThatJson(response.body())
-            .whenIgnoringPaths("_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .whenIgnoringPaths("_embedded.dav:item[0].data[1][0][3]", "_embedded.sync-token")  // ignore prodid
             .isEqualTo(String.format("""
                 {
                     "_links": {
@@ -1382,7 +1382,8 @@ public abstract class CalJsonContract {
 
         assertThatJson(response.body())
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]")   // ignore etag, prodid
+            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]",
+                "_embedded.sync-token")   // ignore etag, prodid
             .isEqualTo(String.format("""
                 {
                     "_links": {
@@ -1530,7 +1531,7 @@ public abstract class CalJsonContract {
 
         assertThatJson(response.body())
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]")   // ignore etag, prodid
+            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]", "_embedded.sync-token")   // ignore etag, prodid
             .isEqualTo(String.format("""
                 {
                     "_links": {
@@ -2980,5 +2981,33 @@ public abstract class CalJsonContract {
 
         assertThat(response2).isEqualTo(ICS_1);
         assertThat(status).isEqualTo(201);
+    }
+
+    @Test
+    public void reportShouldIncludeSyncToken() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        // Create an event
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/json, text/plain, */*"))
+            .put()
+            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_1)));
+
+        // Execute REPORT request
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .send(body("""
+                {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")));
+
+        // Check for sync-token in _embedded
+        // The sync-token should have the namespace http://sabre.io/ns/sync/
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(response.body());
+        assertThat(root.at("/_embedded").at("/sync-token").asText()).isEqualTo("http://sabre.io/ns/sync/2");
     }
 }

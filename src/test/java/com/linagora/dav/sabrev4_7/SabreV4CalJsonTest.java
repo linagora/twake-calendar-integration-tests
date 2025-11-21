@@ -18,6 +18,8 @@
 
 package com.linagora.dav.sabrev4_7;
 
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4_7;
@@ -30,5 +32,13 @@ public class SabreV4CalJsonTest extends CalJsonContract {
     @Override
     public DockerTwakeCalendarExtensionV4_7 dockerExtension() {
         return dockerExtension;
+    }
+
+
+    @Disabled("CF super.reportShouldIncludeSyncToken();")
+    @Test
+    @Override
+    public void reportShouldIncludeSyncToken() throws Exception {
+        super.reportShouldIncludeSyncToken();
     }
 }
