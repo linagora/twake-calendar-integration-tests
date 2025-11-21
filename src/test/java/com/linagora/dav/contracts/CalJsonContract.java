@@ -383,7 +383,7 @@ public abstract class CalJsonContract {
                 {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")));
 
         assertThatJson(response.body())
-            .whenIgnoringPaths("_embedded.dav:item[0].data[1][0][3]")  // ignore prodid
+            .whenIgnoringPaths("_embedded.dav:item[0].data[1][0][3]", "_embedded.sync-token")  // ignore prodid
             .isEqualTo(String.format("""
                 {
                     "_links": {
@@ -1382,7 +1382,8 @@ public abstract class CalJsonContract {
 
         assertThatJson(response.body())
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]")   // ignore etag, prodid
+            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]",
+                "_embedded.sync-token")   // ignore etag, prodid
             .isEqualTo(String.format("""
                 {
                     "_links": {
@@ -1530,7 +1531,7 @@ public abstract class CalJsonContract {
 
         assertThatJson(response.body())
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]")   // ignore etag, prodid
+            .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]", "_embedded.sync-token")   // ignore etag, prodid
             .isEqualTo(String.format("""
                 {
                     "_links": {
