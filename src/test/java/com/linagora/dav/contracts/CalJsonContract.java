@@ -110,6 +110,18 @@ public abstract class CalJsonContract {
             }).toList();
         }
 
+        public static List<EventData> fromReportSingleEvent(String json) throws JsonProcessingException {
+            JsonNode root = OBJECT_MAPPER.readTree(json);
+            JsonNode vevents = root.at("/data/2");
+            return Streams.stream(vevents.elements()).map(vevent -> {
+                String uid = getEventDataField(vevent.get(1), "uid").get();
+                String dtstart = getEventDataField(vevent.get(1), "dtstart").get();
+                String dtend = getEventDataField(vevent.get(1), "dtend").get();
+                Optional<String> recurrenceId = getEventDataField(vevent.get(1), "recurrence-id");
+                return new EventData(uid, dtstart, dtend, recurrenceId);
+            }).toList();
+        }
+
         private static Optional<String> getEventDataField(JsonNode vevent, String fieldName) {
             return Streams.stream(vevent.elements())
                 .filter(jsonNode -> jsonNode.get(0).asText().equals(fieldName))
@@ -3009,5 +3021,198 @@ public abstract class CalJsonContract {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode root = mapper.readTree(response.body());
         assertThat(root.at("/_embedded").at("/sync-token").asText()).isEqualTo("http://sabre.io/ns/sync/2");
+    }
+
+
+    @Test
+    public void reportShouldExpandSingleRecurringEventWithTimeRange() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Daily standup")
+            .dtstart("20300410T100000")
+            .dtend("20300410T110000")
+            .rrule("FREQ=DAILY;COUNT=5")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300412T000000","end":"20300414T000000"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-12T03:00:00Z")
+                .dtend("2030-04-12T04:00:00Z")
+                .recurrenceId("2030-04-12T03:00:00Z")
+                .build()
+        );
+        assertThat(result.get(1)).isEqualTo(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-04-13T03:00:00Z")
+                .dtend("2030-04-13T04:00:00Z")
+                .recurrenceId("2030-04-13T03:00:00Z")
+                .build()
+        );
+    }
+
+    @Test
+    public void reportOnSingleEventShouldReturn400WhenMissingStartParameter() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Test event")
+            .dtstart("20300410T100000")
+            .dtend("20300410T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"end":"20300430T000000"}}""")));
+
+        assertThat(status).isEqualTo(400);
+    }
+
+    @Test
+    public void reportOnSingleEventShouldReturn400WhenMissingEndParameter() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Test event")
+            .dtstart("20300410T100000")
+            .dtend("20300410T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300401T000000"}}""")));
+
+        assertThat(status).isEqualTo(400);
+    }
+
+    @Test
+    public void reportOnSingleEventShouldReturn400WhenMissingBothParameters() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Test event")
+            .dtstart("20300410T100000")
+            .dtend("20300410T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{}}""")));
+
+        assertThat(status).isEqualTo(400);
+    }
+
+    @Test
+    public void reportOnSingleEventShouldReturnEmptyWhenOutOfRange() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Test event")
+            .dtstart("20300410T100000")
+            .dtend("20300410T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300501T000000","end":"20300530T000000"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    public void reportOnSingleEventShouldIncludeETag() throws JsonProcessingException {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(testUser.email())
+            .summary("Test event")
+            .dtstart("20300410T100000")
+            .dtend("20300410T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300401T000000","end":"20300430T000000"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode jsonResponse = mapper.readTree(response.body());
+
+        assertThat(jsonResponse.has("etag")).isTrue();
+        assertThat(jsonResponse.get("etag").asText()).isNotEmpty();
     }
 }
