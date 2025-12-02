@@ -190,6 +190,10 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                         "name": "calendar",
                         "configurations": [
                           {
+                            "name" : "displayWeekNumbers",
+                            "value" : true
+                          },
+                          {
                             "name": "alarmEmails",
                             "value": null
                           }
