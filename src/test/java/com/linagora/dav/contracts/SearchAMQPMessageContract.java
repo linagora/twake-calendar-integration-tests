@@ -32,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -1120,6 +1121,58 @@ public abstract class SearchAMQPMessageContract {
             .when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
             .isEqualTo(expected);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/235")
+    @Test
+    void shouldReceiveOnlyOneMessageFromEventRequestExchange() throws IOException, InterruptedException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:request", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        getMessageFromQueue();
+        Thread.sleep(2000);
+        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/235")
+    @Test
+    void shouldReceiveOnlyOneMessageFromEventCancelExchange() throws IOException, InterruptedException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:cancel", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        calDavClient.deleteCalendarEvent(testUser, eventUid);
+
+        getMessageFromQueue();
+        Thread.sleep(2000);
+        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull();
     }
 
     private byte[] getMessageFromQueue() {
