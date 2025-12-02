@@ -38,7 +38,7 @@ public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback
     private Channel channel;
     private Connection connection;
 
-    abstract DockerTwakeCalendarSetup setup();
+    protected abstract DockerTwakeCalendarSetup setup();
 
     @Override
     public void beforeEach(ExtensionContext extensionContext) throws Exception {

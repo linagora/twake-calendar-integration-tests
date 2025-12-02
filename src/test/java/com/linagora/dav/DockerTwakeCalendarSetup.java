@@ -23,6 +23,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
 
+import org.apache.commons.lang3.BooleanUtils;
 import org.apache.http.client.utils.URIBuilder;
 import org.junit.platform.commons.util.Preconditions;
 import org.testcontainers.containers.ComposeContainer;
@@ -60,11 +61,16 @@ public class DockerTwakeCalendarSetup {
     public static final String SABRE_V3 = "sabre-v3-it";
     public static final String SABRE_V4 = "sabre-v4-it";
     public static final String SABRE_V4_7 = "sabre-v4-7-it";
+    public static final boolean SCHEDULE_ASYNC_DEFAULT = false;
 
     private final ComposeContainer environment;
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
 
     public DockerTwakeCalendarSetup(String sabreVersion) {
+        this(sabreVersion, SCHEDULE_ASYNC_DEFAULT);
+    }
+
+    public DockerTwakeCalendarSetup(String sabreVersion, boolean scheduleAsync) {
         try {
             environment = new ComposeContainer(
                 new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
@@ -80,6 +86,7 @@ public class DockerTwakeCalendarSetup {
                 .waitingFor(DockerService.CALENDAR_SIDE.serviceName(), Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
+                .withEnv("SCHEDULE_ASYNC", BooleanUtils.toStringTrueFalse(scheduleAsync))
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("sabre_dav " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
         } catch (URISyntaxException e) {
