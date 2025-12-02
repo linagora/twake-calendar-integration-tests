@@ -26,6 +26,7 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -1003,7 +1004,7 @@ public abstract class CalendarSharingContract {
 
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
-        // THEN: Ensure no message is emitted for Alice's copy (but Bob's is fine)
+        // THEN: Ensure message is emitted for Alice's copy (but Bob's is fine)
         String aliceCalendarPath = "/calendars/" + alice.id();
         Thread.sleep(2000);
 
@@ -1979,4 +1980,259 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("403");
     }
 
+    @Test
+    void amqpMessagesEmittedForSubscribedCopyOfResourceCalendarInEventRequestExchange() throws IOException, InterruptedException {
+        // GIVEN: an AMQP channel listening to calendar event request
+        String queueName = "sharing-test" + alice.id();
+        channel.queueDeclare(queueName, false, true, true, null);
+        channel.queueBind(queueName, "calendar:event:request", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
+
+        // AND a resource "projector" in the same domain as Alice and Bob
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "Meeting room projector", bob)
+            .block();
+
+        // WHEN: Alice subscribes to the resource calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("Projector resource calendar")
+            .color("#FFA500")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Bob (organizer) creates an event with the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String summary = "Sprint planning #01";
+
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:{summary}
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Meeting to discuss sprint planning for next week.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{uid}", eventUid)
+            .replace("{summary}", summary)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{resourceId}", resource.id());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // CONFIRM: The resource actually received the event (its copy exists)
+        String resourceEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent)
+            .get();
+
+        assertThat(resourceEventId).isNotEmpty();
+
+        // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)
+        String aliceCalendarPath = "/calendars/" + alice.id();
+        Thread.sleep(2000);
+
+        assertThat(messages)
+            .anySatisfy(json ->
+                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+    }
+
+    @Test
+    void amqpMessagesEmittedForSubscribedCopyOfResourceCalendarInEventCancelExchange() throws IOException, InterruptedException {
+        // GIVEN: an AMQP channel listening to calendar event request
+        String queueName = "sharing-test" + alice.id();
+        channel.queueDeclare(queueName, false, true, true, null);
+        channel.queueBind(queueName, "calendar:event:cancel", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
+
+        // AND a resource "projector" in the same domain as Alice and Bob
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "Meeting room projector", bob)
+            .block();
+
+        // AND: Alice subscribes to the resource calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("Projector resource calendar")
+            .color("#FFA500")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Bob (organizer) creates an event with the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String summary = "Sprint planning #01";
+
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:{summary}
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Meeting to discuss sprint planning for next week.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{uid}", eventUid)
+            .replace("{summary}", summary)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{resourceId}", resource.id());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // CONFIRM: The resource actually received the event (its copy exists)
+        String resourceEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent)
+            .get();
+
+        assertThat(resourceEventId).isNotEmpty();
+
+        // WHEN: Bob deletes the event
+        calDavClient.deleteCalendarEvent(bob, eventUid);
+
+        // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)
+        String aliceCalendarPath = "/calendars/" + alice.id();
+        Thread.sleep(2000);
+
+        assertThat(messages)
+            .anySatisfy(json ->
+                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+    }
+
+    @Test
+    void amqpMessagesEmittedForSubscribedCopyOfResourceCalendarWhenResourceIsAccepted() throws IOException, InterruptedException {
+        // GIVEN: an AMQP channel listening to calendar event request
+        String queueName = "sharing-test" + alice.id();
+        channel.queueDeclare(queueName, false, true, true, null);
+        channel.queueBind(queueName, "calendar:event:updated", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
+
+        // AND a resource "projector" in the same domain as Alice and Bob
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "Meeting room projector", bob)
+            .block();
+
+        // AND: Alice subscribes to the resource calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("Projector resource calendar")
+            .color("#FFA500")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Bob (organizer) creates an event with the resource as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String summary = "Sprint planning #01";
+
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:{summary}
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Meeting to discuss sprint planning for next week.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{uid}", eventUid)
+            .replace("{summary}", summary)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{resourceId}", resource.id());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // CONFIRM: The resource actually received the event (its copy exists)
+        String resourceEventId = awaitAtMost
+            .until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent)
+            .get();
+
+        assertThat(resourceEventId).isNotEmpty();
+
+        // WHEN: accept resource's participation status
+        String updatedCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:{summary}
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Meeting to discuss sprint planning for next week.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{uid}", eventUid)
+            .replace("{summary}", summary)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{resourceId}", resource.id());
+
+        String token = extension().twakeCalendarProvisioningService().generateToken();
+        // To ensure calendar directory is activated
+        try {
+            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
+        } catch (Exception ignored) {
+        }
+        calDavClient.upsertCalendarEvent(resource.id(), resourceEventId, updatedCalendarData, token);
+
+        // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)
+        String aliceCalendarPath = "/calendars/" + alice.id();
+        Thread.sleep(2000);
+
+        assertThat(messages)
+            .anySatisfy(json ->
+                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+    }
 }
