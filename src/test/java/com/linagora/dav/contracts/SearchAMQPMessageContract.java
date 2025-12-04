@@ -1123,7 +1123,6 @@ public abstract class SearchAMQPMessageContract {
             .isEqualTo(expected);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/235")
     @Test
     void shouldReceiveOnlyOneMessageFromEventRequestExchange() throws IOException, InterruptedException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:request", "");
@@ -1148,7 +1147,6 @@ public abstract class SearchAMQPMessageContract {
         assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull();
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/235")
     @Test
     void shouldReceiveOnlyOneMessageFromEventCancelExchange() throws IOException, InterruptedException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:cancel", "");
