@@ -18,6 +18,8 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +32,19 @@ public class SabreV4SearchAMQPMessageTest extends SearchAMQPMessageContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/235 Fixed in 4.7.0")
+    @Test
+    @Override
+    protected void shouldReceiveOnlyOneMessageFromEventCancelExchange()  {
+
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/235 Fixed in 4.7.0")
+    @Override
+    @Test
+    protected void shouldReceiveOnlyOneMessageFromEventRequestExchange()  {
+
     }
 }
