@@ -195,7 +195,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                           },
                           {
                             "name": "alarmEmails",
-                            "value": null
+                            "value": true
                           }
                         ]
                       }
