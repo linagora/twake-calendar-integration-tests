@@ -32,7 +32,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -1123,9 +1122,8 @@ public abstract class SearchAMQPMessageContract {
             .isEqualTo(expected);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/235")
     @Test
-    void shouldReceiveOnlyOneMessageFromEventRequestExchange() throws IOException, InterruptedException {
+    protected void shouldReceiveOnlyOneMessageFromEventRequestExchange() throws IOException, InterruptedException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:request", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -1148,9 +1146,8 @@ public abstract class SearchAMQPMessageContract {
         assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull();
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/235")
     @Test
-    void shouldReceiveOnlyOneMessageFromEventCancelExchange() throws IOException, InterruptedException {
+    protected void shouldReceiveOnlyOneMessageFromEventCancelExchange() throws IOException, InterruptedException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:cancel", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
