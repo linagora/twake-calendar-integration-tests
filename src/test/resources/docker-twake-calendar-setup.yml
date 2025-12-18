@@ -1,7 +1,5 @@
-version: "3"
-
 networks:
-  emaily:
+  tcalendar:
     driver: bridge
 
 services:
@@ -21,7 +19,7 @@ services:
       sabre_dav:
         condition: service_started
     networks:
-      - emaily
+      - tcalendar
 
   opensearch:
     image: opensearchproject/opensearch:2.14.0
@@ -35,22 +33,17 @@ services:
       timeout: 10s
       retries: 10
     networks:
-      - emaily
+      - tcalendar
 
   redis:
     image: redis:latest
     networks:
-      - emaily
+      - tcalendar
 
   rabbitmq:
     image: rabbitmq:3.13.3-management
     networks:
-      - emaily
-
-  mongo:
-    image: mongo
-    networks:
-      - emaily
+      - tcalendar
 
   ldap:
     hostname: esn_ldap
@@ -62,7 +55,7 @@ services:
       - LDAP_ROOT=dc=open-paas.org,dc=lng
       - BITNAMI_DEBUG=true
     networks:
-      - emaily
+      - tcalendar
 
   sabre_dav:
     hostname: esn_sabre
@@ -94,4 +87,26 @@ services:
       - LDAP_USERNAME_MODE=username
       - LOG_TRACE=true
     networks:
-      - emaily
+      - tcalendar
+
+  postgres:
+    image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
+    hostname: postgres
+    environment:
+      - POSTGRES_USER=username
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    networks:
+      - tcalendar
+
+  mongo:
+    image: ghcr.io/ferretdb/ferretdb:2.7.0
+    hostname: mongo
+    depends_on:
+      - postgres
+    environment:
+      - FERRETDB_AUTH=false
+      - FERRETDB_LOG_LEVEL=debug
+      - FERRETDB_POSTGRESQL_URL=postgres://username:password@postgres:5432/postgres?sslmode=disable
+    networks:
+      - tcalendar
