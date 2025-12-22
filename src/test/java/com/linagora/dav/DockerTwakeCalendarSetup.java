@@ -57,7 +57,6 @@ public class DockerTwakeCalendarSetup {
         }
     }
 
-    public static final String SABRE_V3 = "sabre-v3-it";
     public static final String SABRE_V4 = "sabre-v4-it";
     public static final String SABRE_V4_7 = "sabre-v4-7-it";
 
