@@ -80,12 +80,10 @@ public interface TechnicalTokenService {
             "domainId", domainId,
             "_id", UUID.nameUUIDFromBytes(domainId.getBytes(StandardCharsets.UTF_8)).toString());
 
-        private static final Logger LOGGER = LoggerFactory.getLogger(TechnicalTokenService.class);
         private static final String CLAIM_NAME_DOMAIN_ID = "domainId";
         private static final String CLAIM_NAME_DATA = "data";
         private static final String CLAIM_TECHNICAL_TOKEN = "technicalToken";
         private static final String ISSUER = "Twake-calendar-side-service";
-        private static final long DEFAULT_EXPIRATION_SECONDS = 3600;
 
         private final Algorithm algorithm;
         private final Duration expiration;

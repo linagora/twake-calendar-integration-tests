@@ -832,7 +832,6 @@ public abstract class CalendarSharingContract {
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
         // AND: Alice subscribes to Bob's calendar
-        String subscribedCalendarId = UUID.randomUUID().toString();
         SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
             .id(UUID.randomUUID().toString())
             .sourceUserId(bob.id())

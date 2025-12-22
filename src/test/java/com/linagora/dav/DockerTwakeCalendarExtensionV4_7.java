@@ -22,8 +22,6 @@ import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4_7;
 
 public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtension {
 
-    public static final String QUEUE_NAME = "tcalendar:event:test";
-
     private static final DockerTwakeCalendarSetup dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7);
 
     static {
