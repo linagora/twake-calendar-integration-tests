@@ -52,7 +52,6 @@ public abstract class CardDavSharingContract {
     private CardDavClient cardDavClient;
     private OpenPaasUser alice;
     private OpenPaasUser bob;
-    private OpenPaasUser cedric;
 
     @BeforeEach
     void setUp() {
@@ -60,7 +59,6 @@ public abstract class CardDavSharingContract {
 
         alice = dockerExtension().newTestUser();
         bob = dockerExtension().newTestUser();
-        cedric = dockerExtension().newTestUser();
 
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)

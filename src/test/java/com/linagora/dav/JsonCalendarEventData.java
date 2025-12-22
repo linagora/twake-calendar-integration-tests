@@ -33,61 +33,7 @@ public record JsonCalendarEventData(Optional<String> method,
                                     String dtend,
                                     Optional<String> recurrenceId) {
 
-    public static class Builder {
-        private Optional<String> method = Optional.empty();
-        private Optional<String> uid = Optional.empty();
-        private Optional<String> summary = Optional.empty();
-        private Optional<String> dtstart = Optional.empty();
-        private Optional<String> dtend = Optional.empty();
-        private Optional<String> recurrenceId = Optional.empty();
-
-        public Builder method(String method) {
-            this.method = Optional.of(method);
-            return this;
-        }
-
-        public Builder uid(String uid) {
-            this.uid = Optional.of(uid);
-            return this;
-        }
-
-        public Builder summary(String summary) {
-            this.summary = Optional.of(summary);
-            return this;
-        }
-
-        public Builder dtstart(String dtstart) {
-            this.dtstart = Optional.of(dtstart);
-            return this;
-        }
-
-        public Builder dtend(String dtend) {
-            this.dtend = Optional.of(dtend);
-            return this;
-        }
-
-        public Builder recurrenceId(String recurrenceId) {
-            this.recurrenceId = Optional.of(recurrenceId);
-            return this;
-        }
-
-        public JsonCalendarEventData build() {
-            return new JsonCalendarEventData(
-                method,
-                uid.get(),
-                summary,
-                dtstart.get(),
-                dtend.get(),
-                recurrenceId
-            );
-        }
-    }
-
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-    public static Builder builder() {
-        return new Builder();
-    }
 
     public static List<JsonCalendarEventData> from(String json) throws JsonProcessingException {
         JsonNode root = OBJECT_MAPPER.readTree(json);

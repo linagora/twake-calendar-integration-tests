@@ -48,7 +48,6 @@ public abstract class ReportContract {
 
     private CalDavClient calDavClient;
     private OpenPaasUser alice;
-    private OpenPaasUser bob;
 
     @BeforeEach
     void setUp() {
@@ -62,7 +61,6 @@ public abstract class ReportContract {
             .build();
 
         alice = dockerExtension().newTestUser();
-        bob = dockerExtension().newTestUser();
     }
 
     @Test
