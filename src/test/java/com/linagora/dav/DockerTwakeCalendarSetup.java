@@ -59,6 +59,7 @@ public class DockerTwakeCalendarSetup {
 
     public static final String SABRE_V4 = "sabre-v4-it";
     public static final String SABRE_V4_7 = "sabre-v4-7-it";
+    public static final boolean SABRE_IMPERSONATION_ENABLED = true;
 
     private final ComposeContainer environment;
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
@@ -79,11 +80,17 @@ public class DockerTwakeCalendarSetup {
                 .waitingFor(DockerService.CALENDAR_SIDE.serviceName(), Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
+                .withEnv("SABRE_IMPERSONATION_ENABLED", String.valueOf(SABRE_IMPERSONATION_ENABLED))
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("sabre_dav " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
         } catch (URISyntaxException e) {
             throw new RuntimeException("Failed to initialize Twake Calendar Setup from docker compose.", e);
         }
+    }
+
+    public DockerTwakeCalendarSetup withEnv(String key, String value) {
+        this.environment.withEnv(key, value);
+        return this;
     }
 
     public void start() {
