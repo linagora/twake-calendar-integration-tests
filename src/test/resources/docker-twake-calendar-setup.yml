@@ -93,5 +93,6 @@ services:
       - LDAP_SERVER=ldap://esn_ldap:389
       - LDAP_USERNAME_MODE=username
       - LOG_TRACE=true
+      - SABRE_IMPERSONATION_ENABLED=true
     networks:
       - emaily
