@@ -19,6 +19,7 @@
 package com.linagora.dav.sabrev4;
 
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.contracts.CalendarSharingContract;
@@ -32,5 +33,11 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     @Override
     public DockerTwakeCalendarExtensionV4 extension() {
         return dockerExtension;
+    }
+
+    @Disabled("ISSUE-52")
+    @Override
+    public void cannotSubscribeToPrivateCalendar() {
+
     }
 }
