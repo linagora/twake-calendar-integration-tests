@@ -68,9 +68,8 @@ public abstract class CardDavSharingContract {
             .build();
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/111")
     @Test
-    void subscribeShouldThrowErrorWhenAddressBookPublicRightIsHidden() {
+    public void subscribeShouldThrowErrorWhenAddressBookPublicRightIsHidden() {
         String addressBook = "collected";
         cardDavClient.setHiddenPublicRight(bob, bob.id(), addressBook);
 
@@ -149,8 +148,9 @@ public abstract class CardDavSharingContract {
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
 
-        cardDavClient.setHiddenPublicRight(bob, bob.id(), addressBook);
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
         cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+        cardDavClient.setHiddenPublicRight(bob, bob.id(), addressBook);
 
         assertThatThrownBy(() -> cardDavClient.getContacts(alice, bob.id(), addressBook))
             .hasMessageContaining("Unexpected status code: 403");

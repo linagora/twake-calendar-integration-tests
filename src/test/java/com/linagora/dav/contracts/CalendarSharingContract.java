@@ -104,10 +104,8 @@ public abstract class CalendarSharingContract {
         channel = extension().getChannel();
     }
 
-    @Disabled("Sabre DAV wrongly allows subscribing to private calendars. " +
-        "Expected: forbidden. https://github.com/linagora/esn-sabre/issues/52")
     @Test
-    void cannotSubscribeToPrivateCalendar() {
+    public void cannotSubscribeToPrivateCalendar() {
         // Given: Bob sets his calendar as private
         calDavClient.updateCalendarAcl(bob, "");
 
@@ -1668,6 +1666,8 @@ public abstract class CalendarSharingContract {
 
     @Test
     void userCanUpdateSettingOfCopiedCalendar() {
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
         SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
             .id(UUID.randomUUID().toString())
             .sourceUserId(bob.id())
@@ -1693,6 +1693,8 @@ public abstract class CalendarSharingContract {
 
     @Test
     void updateNameAndColorOfCopiedCalendarShouldNotAffectOriginalCalendar() {
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
         SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
             .id(UUID.randomUUID().toString())
             .sourceUserId(bob.id())
@@ -1727,6 +1729,8 @@ public abstract class CalendarSharingContract {
 
     @Test
     void updateNameAndColorOfOriginalCalendarShouldNotAffectCopiedCalendar() {
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
         SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
             .id(UUID.randomUUID().toString())
             .sourceUserId(bob.id())
