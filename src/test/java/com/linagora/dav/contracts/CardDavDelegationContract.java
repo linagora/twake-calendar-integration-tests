@@ -73,7 +73,7 @@ public abstract class CardDavDelegationContract {
     void listAddressBooksShouldShowDelegatedAddressBook() {
         // GIVEN Bob has a address book named "collected"
         // WHEN Bob delegates that address book to Alice
-        cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.ADMIN);
+        cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.READ);
 
         String response = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -105,7 +105,7 @@ public abstract class CardDavDelegationContract {
                         "dav:read",
                         "dav:write"
                     ],
-                    "dav:share-access": 5,
+                    "dav:share-access": 2,
                     "openpaas:subscription-type": "delegation",
                     "type": "",
                     "state": "",

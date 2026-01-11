@@ -1867,7 +1867,7 @@ public abstract class CardJsonContract {
         "dav:sharee": [
             {
                 "dav:href": "mailto:%s",
-                "dav:share-access": 5
+                "dav:share-access": 2
             },
             {
                 "dav:href": "principals/users/%s",
@@ -1890,7 +1890,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id() + ".json").prettyPeek()
         .then()
             .extract()
             .body()
@@ -1898,11 +1898,11 @@ public abstract class CardJsonContract {
 
         assertThatJson(response)
             .whenIgnoringPaths("_embedded.dav:addressbook[2]._links.self.href")
-            .isEqualTo(String.format("""
+            .isEqualTo("""
                 {
                     "_links": {
                         "self": {
-                            "href": "/addressbooks/%s.json"
+                            "href": "/addressbooks/BOB_ID.json"
                         }
                     },
                     "_embedded": {
@@ -1910,7 +1910,7 @@ public abstract class CardJsonContract {
                             {
                                 "_links": {
                                     "self": {
-                                        "href": "/addressbooks/%s/collected.json"
+                                        "href": "/addressbooks/BOB_ID/collected.json"
                                     }
                                 },
                                 "dav:name": "",
@@ -1927,7 +1927,7 @@ public abstract class CardJsonContract {
                                 "acl": [
                                     {
                                         "privilege": "{DAV:}all",
-                                        "principal": "principals/users/%s",
+                                        "principal": "principals/users/BOB_ID",
                                         "protected": true
                                     }
                                 ],
@@ -1936,7 +1936,7 @@ public abstract class CardJsonContract {
                             {
                                 "_links": {
                                     "self": {
-                                        "href": "/addressbooks/%s/contacts.json"
+                                        "href": "/addressbooks/BOB_ID/contacts.json"
                                     }
                                 },
                                 "dav:name": "",
@@ -1953,7 +1953,7 @@ public abstract class CardJsonContract {
                                 "acl": [
                                     {
                                         "privilege": "{DAV:}all",
-                                        "principal": "principals/users/%s",
+                                        "principal": "principals/users/BOB_ID",
                                         "protected": true
                                     }
                                 ],
@@ -1962,7 +1962,7 @@ public abstract class CardJsonContract {
                             {
                                 "_links": {
                                     "self": {
-                                        "href": "/addressbooks/%s/a72cf3f8-0dc2-4416-bf66-43e5aeaeff24.json"
+                                        "href": "/addressbooks/BOB_ID/a72cf3f8-0dc2-4416-bf66-43e5aeaeff24.json"
                                     }
                                 },
                                 "dav:name": "",
@@ -1971,7 +1971,7 @@ public abstract class CardJsonContract {
                                     "dav:read",
                                     "dav:write"
                                 ],
-                                "dav:share-access": 5,
+                                "dav:share-access": 2,
                                 "openpaas:subscription-type": "delegation",
                                 "type": "",
                                 "state": "",
@@ -1979,21 +1979,22 @@ public abstract class CardJsonContract {
                                 "acl": [
                                     {
                                         "privilege": "{DAV:}read",
-                                        "principal": "principals/users/%s",
+                                        "principal": "principals/users/BOB_ID",
                                         "protected": true
                                     },
                                     {
                                         "privilege": "{DAV:}write-properties",
-                                        "principal": "principals/users/%s",
+                                        "principal": "principals/users/BOB_ID",
                                         "protected": true
                                     }
                                 ],
                                 "dav:group": null,
-                                "openpaas:source": "/addressbooks/%s/contacts.json"
+                                "openpaas:source": "/addressbooks/ALICE_ID/contacts.json"
                             }
                         ]
                     }
                 }
-            """, bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), bob.id(), alice.id()));
+            """.replace("ALICE_ID", alice.id())
+                .replace("BOB_ID", bob.id()));
     }
 }
