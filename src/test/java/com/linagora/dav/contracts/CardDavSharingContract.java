@@ -208,12 +208,12 @@ public abstract class CardDavSharingContract {
                             "protected": true
                         },
                         {
-                            "privilege": "{DAV:}write-properties",
+                            "privilege": "{DAV:}read",
                             "principal": "principals/users/{aliceId}",
                             "protected": true
                         },
                         {
-                            "privilege": "{DAV:}read",
+                            "privilege": "{DAV:}write-properties",
                             "principal": "principals/users/{aliceId}",
                             "protected": true
                         }
