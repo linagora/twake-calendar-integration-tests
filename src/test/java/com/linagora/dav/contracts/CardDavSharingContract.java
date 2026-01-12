@@ -30,8 +30,6 @@ import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 
 import com.google.common.collect.ImmutableSet;
 import com.linagora.dav.AddressBookURL;
@@ -82,15 +80,14 @@ public abstract class CardDavSharingContract {
             .hasMessageContaining("Unexpected status code: 403");
     }
 
-    @ParameterizedTest
-    @EnumSource(value = PublicRight.class, names = {"READ", "READ_WRITE"})
-    void subscribeShouldSucceedWhenAddressBookPublicRightIsNotHidden(PublicRight right) {
+    @Test
+    void subscribeShouldSucceedWhenAddressBookIsPubliclyReadable() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
         // GIVEN Bob has a address book named "collected"
         // AND the public right of this address book is not hidden
-        cardDavClient.setPublicRight(bob, bob.id(), addressBook, right);
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
 
         // WHEN Alice subscribes to Bob's "collected" address book
         cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
@@ -102,9 +99,73 @@ public abstract class CardDavSharingContract {
             .queryParam("personal", true)
             .queryParam("shared", true)
             .queryParam("subscribed", true)
-            .when()
+        .when()
             .get("/addressbooks/" + alice.id() + ".json")
-            .then()
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        // THEN a copy of Bob's address book is visible in Alice's address book list
+        assertThatJson(response)
+            .inPath("_embedded.dav:addressbook[2]")
+            .isEqualTo("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "${json-unit.ignore}"
+                        }
+                    },
+                    "dav:name": "{addressBook}",
+                    "carddav:description": "",
+                    "dav:acl": ["dav:read"],
+                    "dav:share-access": null,
+                    "openpaas:subscription-type": "public",
+                    "type": null,
+                    "state": null,
+                    "numberOfContacts": null,
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        }
+                    ],
+                    "dav:group": null,
+                    "openpaas:source": "/addressbooks/{bobId}/collected.json"
+                }
+                """.replace("{addressBook}", copiedAddressBook)
+                .replace("{aliceId}", alice.id())
+                .replace("{bobId}", bob.id()));
+    }
+
+    @Test
+    void subscribeShouldSucceedWhenAddressBookIsPubliclyWritable() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        // GIVEN Bob has a address book named "collected"
+        // AND the public right of this address book is not hidden
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+
+        // WHEN Alice subscribes to Bob's "collected" address book
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        String response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("contactsCount", true)
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get("/addressbooks/" + alice.id() + ".json")
+        .then()
             .extract()
             .body()
             .asString();
@@ -131,6 +192,26 @@ public abstract class CardDavSharingContract {
                     "state": null,
                     "numberOfContacts": null,
                     "acl": [
+                        {
+                            "privilege": "{DAV:}write-content",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}bind",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}unbind",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{aliceId}",
+                            "protected": true
+                        },
                         {
                             "privilege": "{DAV:}read",
                             "principal": "principals/users/{aliceId}",
@@ -387,7 +468,9 @@ public abstract class CardDavSharingContract {
 
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
+
+        assertThatThrownBy(() -> cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload))
+            .hasMessageContaining("403 when creating contact");
     }
 
     @Test
