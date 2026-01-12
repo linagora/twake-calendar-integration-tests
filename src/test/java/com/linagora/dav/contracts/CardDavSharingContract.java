@@ -132,7 +132,7 @@ public abstract class CardDavSharingContract {
                     "numberOfContacts": null,
                     "acl": [
                         {
-                            "privilege": "{DAV:}all",
+                            "privilege": "{DAV:}read",
                             "principal": "principals/users/{aliceId}",
                             "protected": true
                         }
