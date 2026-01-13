@@ -55,6 +55,7 @@ public abstract class CardDavSharingContract {
     private CardDavClient cardDavClient;
     private OpenPaasUser alice;
     private OpenPaasUser bob;
+    private OpenPaasUser cedric;
 
     @BeforeEach
     void setUp() {
@@ -62,6 +63,7 @@ public abstract class CardDavSharingContract {
 
         alice = dockerExtension().newTestUser();
         bob = dockerExtension().newTestUser();
+        cedric = dockerExtension().newTestUser();
 
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
@@ -429,6 +431,46 @@ public abstract class CardDavSharingContract {
 
         assertThatThrownBy(() -> cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId()))
             .hasMessageContaining("404 when fetching contacts");
+    }
+
+    @Test
+    public void thridPartyShouldNotReadDelegation() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        assertThatThrownBy(() -> cardDavClient.getContacts(cedric, alice.id(), addressBookURL.addressBookId()))
+            .hasMessageContaining("403 when fetching contacts");
+    }
+
+    @Test
+    public void thridPartyShouldNotWriteDelegation() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        assertThatThrownBy(() -> cardDavClient.upsertContact(cedric, addressBookURL.base(), addressBookURL.addressBookId(), vcardUid, vcardPayload))
+            .hasMessageContaining("403 when creating contact");
     }
 
     @Test
