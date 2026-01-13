@@ -27,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -367,10 +366,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).doesNotContain("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 500 upon contact creation: " +
-        "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
-    void canCreateNewContactDirectlyInCopiedAddressBook() {
+    public void canCreateNewContactDirectlyInCopiedAddressBook() {
         String addressBook = "collected";
 
         cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
@@ -389,10 +386,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 500 upon contact creation: " +
-        "PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
-    void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+    public void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
         String addressBook = "collected";
 
         cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
@@ -411,10 +406,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 upsertContact fails with a 500 error" +
-        "[error] 13#13: *23 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Uncaught TypeError: Argument 1 passed to Sabre\\CalDAV\\Plugin::getSupportedPrivilegeSet() must implement interface Sabre\\DAV\\INode, null given in /var/www/vendor/sabre/dav/lib/CalDAV/Plugin.php:970")
     @Test
-    void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
+    public void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
@@ -436,9 +429,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Cole");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Fails with 403 upon delete")
     @Test
-    void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
+    public void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
@@ -458,9 +450,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).doesNotContain("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
     @Test
-    void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
+    public void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
         String addressBook = "collected";
 
         String vcardUid = "test-contact-uid";
@@ -479,9 +470,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 Data is not copied")
     @Test
-    void createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook() {
+    public void createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook() {
         String addressBook = "collected";
 
         cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
@@ -500,9 +490,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 PUT is accepted but not applied")
     @Test
-    void updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook() {
+    public void updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook() {
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
@@ -524,9 +513,8 @@ public abstract class CardDavDelegationContract {
         assertThat(response).contains("John Cole");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/60 contact is not copied in the first place so it cannot be deleted and test succeeds")
     @Test
-    void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
+    public void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
