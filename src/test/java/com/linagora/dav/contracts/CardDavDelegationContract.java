@@ -19,13 +19,18 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.CardDavClient.*;
+import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
+import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,10 +39,13 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.google.common.collect.ImmutableSet;
 import com.linagora.dav.AddressBookURL;
 import com.linagora.dav.CardDavClient;
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 
+import com.linagora.dav.XMLUtil;
+import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
@@ -448,6 +456,143 @@ public abstract class CardDavDelegationContract {
         String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
 
         assertThat(response).doesNotContain("John Doe");
+    }
+
+    @Test
+    public void deleteShouldFailWhenRightsAreRemoved() {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        assertThatThrownBy(() -> cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid))
+            .hasMessageContaining("403 when deleting contact");
+    }
+
+    @Test
+    public void createShouldFailWhenRightsAreRemoved() {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload2))
+            .hasMessageContaining("403 when creating contact");
+    }
+
+    @Test
+    public void getShouldFailWhenRightsAreRemoved() {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        cardDavClient.revokeDelegation(bob, addressBook, alice);
+
+        assertThatThrownBy(() -> cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId()))
+            .hasMessageContaining("404 when fetching contacts");
+    }
+
+    @Test
+    public void getShouldFailWhenRightsAreRemovedWhenHasPublicRight() {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        cardDavClient.revokeDelegation(bob, addressBook, alice);
+
+        assertThatThrownBy(() -> cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId()))
+            .hasMessageContaining("404 when fetching contacts");
+    }
+
+    @Test
+    public void davShouldListDelegatedAddressBooks() throws Exception {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + alice.id()));
+
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        AssertionsForInterfaceTypes.assertThat(actual).contains("/addressbooks/" + addressBookURL.serialize() + "/");
+    }
+
+    @Test
+    public void shouldNotShowMeaningfullDisplayName() throws Exception {
+        String addressBook = "contacts";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + alice.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        assertThat(response.body())
+            .contains("<d:response><d:href>/addressbooks/ALICE_ID/BOOK_ID/</d:href><d:propstat><d:prop><d:displayname></d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+                .replace("ALICE_ID", alice.id())
+                .replace("BOOK_ID", addressBookURL.addressBookId()));
     }
 
     @Test

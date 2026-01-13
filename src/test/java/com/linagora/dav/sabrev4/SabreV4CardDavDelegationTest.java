@@ -89,4 +89,46 @@ public class SabreV4CardDavDelegationTest extends CardDavDelegationContract {
     public void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
         super.deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook();
     }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void deleteShouldFailWhenRightsAreRemoved() {
+        super.deleteShouldFailWhenRightsAreRemoved();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void createShouldFailWhenRightsAreRemoved() {
+        super.createShouldFailWhenRightsAreRemoved();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void getShouldFailWhenRightsAreRemoved() {
+        super.getShouldFailWhenRightsAreRemoved();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void getShouldFailWhenRightsAreRemovedWhenHasPublicRight() {
+        super.getShouldFailWhenRightsAreRemovedWhenHasPublicRight();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void davShouldListDelegatedAddressBooks() throws Exception {
+        super.davShouldListDelegatedAddressBooks();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void shouldNotShowMeaningfullDisplayName() throws Exception {
+        super.shouldNotShowMeaningfullDisplayName();
+    }
 }
