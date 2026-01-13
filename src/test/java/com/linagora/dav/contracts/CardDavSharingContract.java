@@ -582,8 +582,6 @@ public abstract class CardDavSharingContract {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + alice.id()));
 
-        System.out.println(response.body());
-
         List<String> addressBookHrefs = XMLUtil.extractMultipleValueByXPath(
             response.body(),
             "//d:multistatus/d:response/d:href",
