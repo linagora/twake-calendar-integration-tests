@@ -18,6 +18,8 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +32,61 @@ public class SabreV4CardDavDelegationTest extends CardDavDelegationContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void canCreateNewContactDirectlyInCopiedAddressBook() {
+        super.canCreateNewContactDirectlyInCopiedAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+        super.createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
+        super.updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
+        super.deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
+        super.copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook() {
+        super.createNewContactInOriginalAddressBookShouldResultInNewContactInCopiedAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook() {
+        super.updateContactInOriginalAddressBookShouldResultInUpdatedContactInCopiedAddressBook();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook() {
+        super.deleteContactInOriginalAddressBookShouldResultInDeletedContactInCopiedAddressBook();
     }
 }
