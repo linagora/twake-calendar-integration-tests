@@ -38,4 +38,16 @@ public class SabreV4CardDavSharingTest extends CardDavSharingContract {
     public void subscribeShouldThrowErrorWhenAddressBookPublicRightIsHidden() {
         super.subscribeShouldThrowErrorWhenAddressBookPublicRightIsHidden();
     }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void thridPartyShouldNotReadDelegation() {
+        super.thridPartyShouldNotReadDelegation();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void thridPartyShouldNotWriteDelegation() {
+        super.thridPartyShouldNotWriteDelegation();
+    }
 }

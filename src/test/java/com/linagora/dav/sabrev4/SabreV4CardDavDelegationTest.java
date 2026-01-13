@@ -131,4 +131,18 @@ public class SabreV4CardDavDelegationTest extends CardDavDelegationContract {
     public void shouldNotShowMeaningfullDisplayName() throws Exception {
         super.shouldNotShowMeaningfullDisplayName();
     }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void getShouldFailWhenNotDelegationTarget() {
+        super.getShouldFailWhenNotDelegationTarget();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void createShouldFailWhenNotDelegationTarget() {
+        super.createShouldFailWhenNotDelegationTarget();
+    }
 }

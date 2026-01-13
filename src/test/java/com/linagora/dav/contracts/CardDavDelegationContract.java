@@ -537,6 +537,39 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    public void getShouldFailWhenNotDelegationTarget() {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        assertThatThrownBy(() -> cardDavClient.getContacts(cedric, alice.id(), addressBookURL.addressBookId()))
+            .hasMessageContaining("403 when fetching contacts");
+    }
+
+    @Test
+    public void createShouldFailWhenNotDelegationTarget() {
+        String addressBook = "collected";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        byte[] vcardPayload2 = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> cardDavClient.upsertContact(cedric, addressBookURL.addressBookId(), vcardUid, vcardPayload2))
+            .hasMessageContaining("404 when creating contact");
+    }
+
+    @Test
     public void davShouldListDelegatedAddressBooks() throws Exception {
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
