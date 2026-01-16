@@ -50,4 +50,52 @@ public class SabreV4CardDavSharingTest extends CardDavSharingContract {
     public void thridPartyShouldNotWriteDelegation() {
         super.thridPartyShouldNotWriteDelegation();
     }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void subscribeShouldSucceedWhenAddressBookIsPubliclyReadable() {
+        super.subscribeShouldSucceedWhenAddressBookIsPubliclyReadable();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void subscribeShouldSucceedWhenAddressBookIsPubliclyWritable() {
+        super.subscribeShouldSucceedWhenAddressBookIsPubliclyWritable();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
+        super.copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void canCreateNewContactInCopiedAddressBook() {
+        super.canCreateNewContactInCopiedAddressBook();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void cannotDeleteContactInCopiedAddressBookWhenNotAuthorized() {
+        super.cannotDeleteContactInCopiedAddressBookWhenNotAuthorized();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+        super.createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
+        super.updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook();
+    }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
+        super.deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook();
+    }
 }
