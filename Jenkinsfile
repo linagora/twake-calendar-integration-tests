@@ -15,7 +15,7 @@ pipeline {
         stage('Compile and Test') {
             steps {
                 sh 'sh pre-build.sh'
-                sh 'mvn clean install'
+                sh 'mvn clean install -Dapi.version=1.43'
             }
             post {
                 always {
