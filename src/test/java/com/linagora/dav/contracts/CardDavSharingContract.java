@@ -83,7 +83,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void subscribeShouldSucceedWhenAddressBookIsPubliclyReadable() {
+    public void subscribeShouldSucceedWhenAddressBookIsPubliclyReadable() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
@@ -147,7 +147,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void subscribeShouldSucceedWhenAddressBookIsPubliclyWritable() {
+    public void subscribeShouldSucceedWhenAddressBookIsPubliclyWritable() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
@@ -391,7 +391,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
+    public void copiedAddressBookShouldContainsExistingContactsInOriginalAddressBook() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
@@ -474,7 +474,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void canCreateNewContactInCopiedAddressBook() {
+    public void canCreateNewContactInCopiedAddressBook() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
@@ -516,7 +516,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void cannotDeleteContactInCopiedAddressBookWhenNotAuthorized() {
+    public void cannotDeleteContactInCopiedAddressBookWhenNotAuthorized() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
@@ -538,7 +538,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+    public void createNewContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
@@ -560,7 +560,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
+    public void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
         String vcardUid = "test-contact-uid";
@@ -585,7 +585,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
+    public void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
         String vcardUid = "test-contact-uid";
