@@ -146,6 +146,25 @@ public class CalDavClient {
             }).block();
     }
 
+    public void upsertJsonCalendarEvent(OpenPaasUser openPaasUser, String eventId, String calendarData) {
+        httpClient.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/calendar+json"))
+            .put()
+            .uri("/calendars/" + openPaasUser.id() + "/" + openPaasUser.id() + "/" + eventId + ".ics")
+            .send(TestUtil.body(calendarData))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201 || response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when create/update calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
     public String getCalendarEvent(String entityId, String eventId, String token) {
         return httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
             .get()
