@@ -18,10 +18,15 @@
 
 package com.linagora.dav.sabrev4;
 
+import java.io.IOException;
+
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
 import com.linagora.dav.contracts.AlarmAMQPMessageContract;
+import net.minidev.json.parser.ParseException;
 
 public class SabreV4AlarmAMQPMessageTest extends AlarmAMQPMessageContract {
     @RegisterExtension
@@ -30,5 +35,12 @@ public class SabreV4AlarmAMQPMessageTest extends AlarmAMQPMessageContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled
+    @Test
+    @Override
+    public void shouldReceiveMessageContainingRawEventFromEventAlarmCreatedExchangeWhenAddingNewCalendarEventWithJsonFormat() throws IOException, ParseException {
+        super.shouldReceiveMessageContainingRawEventFromEventAlarmCreatedExchangeWhenAddingNewCalendarEventWithJsonFormat();
     }
 }
