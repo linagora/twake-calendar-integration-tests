@@ -52,6 +52,10 @@ import com.linagora.dav.OpenPaasUser;
 import com.rabbitmq.client.GetResponse;
 
 import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Parameter;
+import net.fortuna.ical4j.model.Property;
+import net.fortuna.ical4j.model.parameter.ScheduleStatus;
 import net.javacrumbs.jsonunit.core.Option;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
@@ -305,6 +309,10 @@ public abstract class AlarmAMQPMessageContract {
         Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
         CalendarUtil.sanitize(actualCalendar);
         CalendarUtil.sanitize(expectedCalendar);
+
+        actualCalendar.getComponent(Component.VEVENT)
+            .ifPresent(vevent -> vevent.getProperties(Property.ATTENDEE)
+                .forEach(attendee -> attendee.remove(new ScheduleStatus("1.1"))));
 
         assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
             .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
@@ -2963,7 +2971,7 @@ public abstract class AlarmAMQPMessageContract {
             LOCATION:Twake Meeting Room
             DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             BEGIN:VALARM
             TRIGGER:-PT10M
