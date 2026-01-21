@@ -18,6 +18,7 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +31,11 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/195")
+    @Override
+    public void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
+        super.shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat();
     }
 }
