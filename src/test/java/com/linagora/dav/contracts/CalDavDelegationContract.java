@@ -1775,9 +1775,8 @@ public abstract class CalDavDelegationContract {
             .contains("PARTSTAT=ACCEPTED");
     }
 
-    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/195")
     @Test
-    void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
+    public void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
         // GIVEN: Create a resource 'whiteboard' with Bob as administrator
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
