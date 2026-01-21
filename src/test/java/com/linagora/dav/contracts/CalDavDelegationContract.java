@@ -890,10 +890,9 @@ public abstract class CalDavDelegationContract {
         assertThat(result.get(0).summary().get()).isEqualTo("Busy");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/256")
     @ParameterizedTest
     @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
-    void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass) throws Exception {
+    public void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass) throws Exception {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
 
