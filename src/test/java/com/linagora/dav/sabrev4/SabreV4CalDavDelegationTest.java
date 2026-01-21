@@ -38,4 +38,10 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     public void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
         super.shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat();
     }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/55")
+    @Override
+    public void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
+        super.updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight();
+    }
 }

@@ -1621,9 +1621,8 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403 when updating ACL for calendar");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/55")
     @Test
-    void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
+    public void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
 
