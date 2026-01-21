@@ -79,6 +79,7 @@ import io.restassured.http.ContentType;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
+import net.fortuna.ical4j.model.component.VEvent;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -322,6 +323,131 @@ public abstract class CalDavDelegationContract {
         expectedCalendar.removeAll(Property.PRODID);
         expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DelegationRight.class)
+    void bobCannotReadAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Alice has an event in her calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Alice's event
+            DESCRIPTION:Event in Alice source calendar
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        // WHEN Alice delegates her calendar to Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // THEN Bob can read Alice's SOURCE calendar directly via CalDAV REPORT (not his copy)
+        String aliceSourceCalendarUri = "/calendars/" + alice.id() + "/" + alice.id();
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(aliceSourceCalendarUri)
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">%s</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.formatted(eventUid))));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body()).contains("<d:status>HTTP/1.1 403 Forbidden</d:status>");
+    }
+
+    @ParameterizedTest
+    @EnumSource(DelegationRight.class)
+    void bobCannotUpsertInAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Alice delegates her calendar to Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob tries to create an event directly in Alice's SOURCE calendar (not his copy)
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's event in Alice calendar
+            DESCRIPTION:Event created by Bob directly in Alice source calendar
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        URI aliceSourceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics");
+
+        // THEN Bob gets a 403 Forbidden
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(bob, aliceSourceCalendarEventUri, calendarData))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @ParameterizedTest
+    @EnumSource(DelegationRight.class)
+    void bobCannotDeleteInAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Alice has an event in her calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Alice's event
+            DESCRIPTION:Event in Alice source calendar
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        // AND Alice delegates her calendar to Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob tries to delete the event directly in Alice's SOURCE calendar (not his copy)
+        URI aliceSourceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics");
+
+        // THEN Bob gets a 403 Forbidden
+        assertThatThrownBy(() -> calDavClient.deleteCalendarEvent(bob, aliceSourceCalendarEventUri))
+            .hasMessageContaining("Unexpected status code: 403");
     }
 
     @Test
@@ -764,6 +890,82 @@ public abstract class CalDavDelegationContract {
         assertThat(result.get(0).summary().get()).isEqualTo("Busy");
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/256")
+    @ParameterizedTest
+    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
+    void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass) throws Exception {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Alice's secret meeting
+            DESCRIPTION:Confidential information that Bob should not see
+            LOCATION:Secret Room
+            CLASS:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, eventClass);
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        // WHEN Alice delegates her calendar to Bob with READ access
+        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
+
+        // THEN Bob can access the delegated calendar
+        CalendarURL calendarURL = calDavClient.findUserCalendars(bob).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Bob queries the event via CalDAV REPORT
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(calendarURL.asUri().toString())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">%s</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.formatted(eventUid))));
+
+        assertThat(response.status()).isEqualTo(207);
+
+        // THEN Bob sees an anonymized version of the event
+        String calendarDataResponse = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(calendarDataResponse);
+        VEvent event = (VEvent) actualCalendar.getComponent(Component.VEVENT).get();
+
+        // The event should be anonymized: SUMMARY = "Busy", no DESCRIPTION, no LOCATION
+        assertThat(event.getProperty(Property.SUMMARY).get().getValue()).isEqualTo("Busy");
+        assertThat(event.getProperty(Property.DESCRIPTION)).isEmpty();
+        assertThat(event.getProperty(Property.LOCATION)).isEmpty();
+    }
+
     @Test
     void copiedCalendarShouldContainsNewEvent() throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -1009,6 +1211,219 @@ public abstract class CalDavDelegationContract {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid2);
         assertThat(result.get(0).summary().get()).isEqualTo("Alice created event");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
+    void upsertedEventViaDelegatedCalendarShouldAppearInOwnerSourceCalendarInDav(String param) throws Exception {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+
+        // AND Alice gets her delegated calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice creates an event via her delegated calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251030T090000Z
+            DTEND:20251030T100000Z
+            SUMMARY:Alice created event
+            DESCRIPTION:Created via delegated calendar
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, calendarData);
+
+        // THEN the event appears in Bob's SOURCE calendar via CalDAV REPORT
+        String bobSourceCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(bobSourceCalendarUri)
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">%s</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.formatted(eventUid))));
+
+        assertThat(response.status()).isEqualTo(207);
+
+        String calendarDataResponse = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+
+        Calendar actualCalendar = CalendarUtil.parseIcs(calendarDataResponse);
+        VEvent event = (VEvent) actualCalendar.getComponent(Component.VEVENT).get();
+
+        assertThat(event.getProperty(Property.UID).get().getValue()).isEqualTo(eventUid);
+        assertThat(event.getProperty(Property.SUMMARY).get().getValue()).isEqualTo("Alice created event");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
+    void aliceCanDeleteEventsInDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar with an event
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251030T090000Z
+            DTEND:20251030T100000Z
+            SUMMARY:Bob's event to delete
+            DESCRIPTION:This event will be deleted by Alice
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+
+        // THEN a copy of bob calendar is created in Alice calendar list
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice deletes the event via CalDAV using her delegated calendar
+        calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
+
+        // THEN the event is deleted in Bob's original calendar
+        DavResponse response = calDavClient.findEventsByTime(bob,
+            "20251029T090000",
+            "20251031T100000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        assertThat(result).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
+    void deletedEventViaDelegatedCalendarShouldBeRemovedFromOwnerSourceCalendarInDav(String param) throws Exception {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251030T090000Z
+            DTEND:20251030T100000Z
+            SUMMARY:Bob's event to delete
+            DESCRIPTION:This event will be deleted by Alice
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+
+        // AND Alice gets her delegated calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice deletes the event via her delegated calendar
+        calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
+
+        // THEN the event is removed from Bob's SOURCE calendar (verified via CalDAV REPORT)
+        String bobSourceCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(bobSourceCalendarUri)
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">%s</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.formatted(eventUid))));
+
+        assertThat(response.status()).isEqualTo(207);
+        // No calendar-data should be returned for the deleted event
+        String calendarDataResponse = XMLUtil.extractByXPath(
+            response.body(),
+            "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+        assertThat(calendarDataResponse).isNullOrEmpty();
+    }
+
+    @Test
+    void deleteCalendarEventShouldThrowErrorWhenCopiedCalendarOnlyHasReadRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar with an event
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Bob's protected event")
+            .location("Twake Meeting Room")
+            .description("This event should not be deletable by Alice with READ only.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Bob delegates that calendar to Alice with READ only
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Alice tries to delete the event in Bob calendar copy
+        // THEN a 403 error is thrown
+        assertThatThrownBy(() -> calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid))
+            .hasMessageContaining("Unexpected status code: 403 when delete calendar object");
     }
 
     @Test
