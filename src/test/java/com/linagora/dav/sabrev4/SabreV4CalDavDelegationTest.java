@@ -50,4 +50,10 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     public void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass) throws Exception {
         super.privateOrConfidentialEventShouldBeAnonymizedInDavReport(eventClass);
     }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/256")
+    @Override
+    public void privateOrConfidentialEventShouldBeAnonymizedInDavGet(String eventClass) {
+        super.privateOrConfidentialEventShouldBeAnonymizedInDavGet(eventClass);
+    }
 }

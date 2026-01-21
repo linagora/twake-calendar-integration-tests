@@ -965,6 +965,57 @@ public abstract class CalDavDelegationContract {
         assertThat(event.getProperty(Property.LOCATION)).isEmpty();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
+    public void privateOrConfidentialEventShouldBeAnonymizedInDavGet(String eventClass) {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Alice's secret meeting
+            DESCRIPTION:Confidential information that Bob should not see
+            LOCATION:Secret Room
+            CLASS:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, eventClass);
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        // WHEN Alice delegates her calendar to Bob with READ access
+        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
+
+        // THEN Bob can access the delegated calendar
+        CalendarURL calendarURL = calDavClient.findUserCalendars(bob).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // WHEN Bob queries the event via CalDAV GET
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(calendarURL.asUri().toASCIIString() + "/" + eventUid + ".ics"));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        // THEN Bob sees an anonymized version of the event
+        Calendar actualCalendar = CalendarUtil.parseIcs(response.body());
+        VEvent event = (VEvent) actualCalendar.getComponent(Component.VEVENT).get();
+
+        // The event should be anonymized: SUMMARY = "Busy", no DESCRIPTION, no LOCATION
+        assertThat(event.getProperty(Property.SUMMARY).get().getValue()).isEqualTo("Busy");
+        assertThat(event.getProperty(Property.DESCRIPTION)).isEmpty();
+        assertThat(event.getProperty(Property.LOCATION)).isEmpty();
+    }
+
     @Test
     void copiedCalendarShouldContainsNewEvent() throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
