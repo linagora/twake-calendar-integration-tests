@@ -40,4 +40,59 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     public void cannotSubscribeToPrivateCalendar() {
 
     }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void publicSubscriptionsCanContainVEvent() {
+        super.publicSubscriptionsCanContainVEvent();
+    }
+
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void publicSubscriptionsAreReadableInDav() throws Exception {
+        super.publicSubscriptionsAreReadableInDav();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void readRightsCanBeRevoked() {
+        super.readRightsCanBeRevoked();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void nativeUpsertShouldBeRejectedOnReadPublicCalender() {
+        super.nativeUpsertShouldBeRejectedOnReadPublicCalender();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void nativeUpsertShouldBeAcceptedOnWritePublicCalender() {
+        super.nativeUpsertShouldBeAcceptedOnWritePublicCalender();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void nativeUpsertShouldBeReplicatedForWritePublicCalender() {
+        super.nativeUpsertShouldBeReplicatedForWritePublicCalender();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void nativeDeleteShouldBeRejectedOnReadPublicCalender() {
+        super.nativeDeleteShouldBeRejectedOnReadPublicCalender();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void nativeDeleteShouldBeAcceptedOnWritePublicCalender() {
+        super.nativeDeleteShouldBeAcceptedOnWritePublicCalender();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void nativeDeleteShouldBeReplicatedForWritePublicCalender() {
+        super.nativeDeleteShouldBeReplicatedForWritePublicCalender();
+    }
 }

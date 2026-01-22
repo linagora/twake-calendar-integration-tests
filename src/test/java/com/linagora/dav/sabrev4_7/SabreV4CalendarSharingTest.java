@@ -18,7 +18,6 @@
 
 package com.linagora.dav.sabrev4_7;
 
-
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4_7;
