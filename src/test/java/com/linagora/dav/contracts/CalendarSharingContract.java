@@ -72,6 +72,19 @@ import net.fortuna.ical4j.model.Property;
 
 public abstract class CalendarSharingContract {
 
+    /**
+     * TODO
+     *
+     * nativeUpsertShouldBeRejectedOnReadPublicCalender     │ PUT │ Vérifie qu'Alice ne peut pas creer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
+     * nativeUpsertShouldBeAcceptedOnWritePublicCalender    │ PUT │ Vérifie qu'Alice peut creer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
+     * nativeUpsertShouldBeReplicatedForWritePublicCalender │ PUT │ Vérifie que l'evenement cree par Alice sur sa souscription est correctement ajoute au calendrier source
+     *
+     * nativeDeleteShouldBeRejectedOnReadPublicCalender     │ PUT │ Vérifie qu'Alice ne peut pas supprimer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
+     * nativeDeleteShouldBeAcceptedOnWritePublicCalender    │ PUT │ Vérifie qu'Alice peut supprimer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
+     * nativeDeleteShouldBeReplicatedForWritePublicCalender │ PUT │ Vérifie que l'evenement supprime par Alice sur sa souscription est correctement ajoute au calendrier source
+     *
+     *  */
+
     public static final ObjectMapper MAPPER = new ObjectMapper();
 
     public abstract DockerTwakeCalendarExtension extension();
