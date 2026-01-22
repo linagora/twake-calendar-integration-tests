@@ -608,6 +608,37 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
+    public void publicSubscriptionsCanGetContactViaNativeCardDAV() throws Exception {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+        String vcardUid = "test-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN: Bob sets his address book as read-only
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+
+        // AND: Bob has a contact in his address book
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        // WHEN: Alice subscribes to Bob's address book
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // THEN: Alice can GET the contact using native CardDAV
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.GET)
+            .uri("/addressbooks/" + alice.id() + "/" + addressBookURL.addressBookId() + "/" + vcardUid + ".vcf"));
+
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body()).contains("John Doe");
+    }
+
+    @Test
     void propfindShouldListSubscriptionsInUserAddressBooks() throws Exception {
         String addressBook = "collected";
         String copiedAddressBook = "new book";

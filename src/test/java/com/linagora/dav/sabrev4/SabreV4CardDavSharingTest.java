@@ -98,4 +98,10 @@ public class SabreV4CardDavSharingTest extends CardDavSharingContract {
     public void deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook() {
         super.deleteContactInCopiedAddressBookShouldResultInDeletedContactInOriginalAddressBook();
     }
+
+    @Disabled("ISSUE-111")
+    @Override
+    public void publicSubscriptionsCanGetContactViaNativeCardDAV() throws Exception {
+        super.publicSubscriptionsCanGetContactViaNativeCardDAV();
+    }
 }
