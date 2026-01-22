@@ -186,10 +186,8 @@ public abstract class CalendarSharingContract {
             sharedCalendarPath + "/");
     }
 
-    @Disabled("Public subscription do not contain events CF https://github.com/linagora/esn-sabre/issues/61")
     @Test
-    void publicSubscriptionsCanContainVEvent() {
-        // See https://github.com/linagora/esn-sabre/issues/61
+    public void publicSubscriptionsCanContainVEvent() {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
@@ -218,7 +216,6 @@ public abstract class CalendarSharingContract {
 
     @Test
     void publicSubscriptionsAreListedInDAVWhenPubliclyWritable() throws Exception {
-        // See https://github.com/linagora/esn-sabre/issues/61
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
 
@@ -250,10 +247,8 @@ public abstract class CalendarSharingContract {
             sharedCalendarPath + "/");
     }
 
-    @Disabled("Public subscription do not contain events CF https://github.com/linagora/esn-sabre/issues/61")
     @Test
-    void publicSubscriptionsAreReadableInDav() throws Exception {
-        // See https://github.com/linagora/esn-sabre/issues/61
+    public void publicSubscriptionsAreReadableInDav() throws Exception {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
