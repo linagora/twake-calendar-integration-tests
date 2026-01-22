@@ -326,6 +326,74 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    public void readRightsCanBeRevoked() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Important meeting with Alice";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's readonly event
+            DESCRIPTION:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        calDavClient.updateCalendarAcl(bob, "");
+
+        // THEN: Alice can report the event in her subscription
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(sharedCalendarPath)
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))));
+
+        assertThat(response.status()).isEqualTo(404);
+    }
+
+    @Test
     void canSubscribeToReadWriteCalendar() {
         // GIVEN: Bob sets his calendar as read-write
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");

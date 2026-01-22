@@ -40,4 +40,23 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     public void cannotSubscribeToPrivateCalendar() {
 
     }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void publicSubscriptionsCanContainVEvent() {
+        super.publicSubscriptionsCanContainVEvent();
+    }
+
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void publicSubscriptionsAreReadableInDav() throws Exception {
+        super.publicSubscriptionsAreReadableInDav();
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/61")
+    @Override
+    public void readRightsCanBeRevoked() {
+        super.readRightsCanBeRevoked();
+    }
 }
