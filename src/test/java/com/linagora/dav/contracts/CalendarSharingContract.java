@@ -72,19 +72,6 @@ import net.fortuna.ical4j.model.Property;
 
 public abstract class CalendarSharingContract {
 
-    /**
-     * TODO
-     *
-     * nativeUpsertShouldBeRejectedOnReadPublicCalender     │ PUT │ Vérifie qu'Alice ne peut pas creer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
-     * nativeUpsertShouldBeAcceptedOnWritePublicCalender    │ PUT │ Vérifie qu'Alice peut creer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
-     * nativeUpsertShouldBeReplicatedForWritePublicCalender │ PUT │ Vérifie que l'evenement cree par Alice sur sa souscription est correctement ajoute au calendrier source
-     *
-     * nativeDeleteShouldBeRejectedOnReadPublicCalender     │ PUT │ Vérifie qu'Alice ne peut pas supprimer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
-     * nativeDeleteShouldBeAcceptedOnWritePublicCalender    │ PUT │ Vérifie qu'Alice peut supprimer un événement dans le calendrier de Bob via une requête PUT sur sa souscription
-     * nativeDeleteShouldBeReplicatedForWritePublicCalender │ PUT │ Vérifie que l'evenement supprime par Alice sur sa souscription est correctement ajoute au calendrier source
-     *
-     *  */
-
     public static final ObjectMapper MAPPER = new ObjectMapper();
 
     public abstract DockerTwakeCalendarExtension extension();
@@ -2313,5 +2300,349 @@ public abstract class CalendarSharingContract {
         assertThat(messages)
             .anySatisfy(json ->
                 AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+    }
+
+    @Test
+    public void nativeUpsertShouldBeRejectedOnReadPublicCalender() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Alice subscribes to Bob's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice tries to create a new event via PUT on her subscription
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Alice's new event
+            DESCRIPTION:Event created by Alice on her subscription
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        URI eventUri = URI.create("/calendars/" + alice.id() + "/" + subscribedCalendarId + "/" + eventUid + ".ics");
+
+        // THEN: The creation should be rejected with 403
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, eventUri, calendarData))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    public void nativeUpsertShouldBeAcceptedOnWritePublicCalender() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice creates a new event via PUT on her subscription
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251006T090000Z
+            DTEND:20251006T100000Z
+            SUMMARY:Alice's new event
+            DESCRIPTION:Event created by Alice on her subscription
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        URI eventUri = URI.create("/calendars/" + alice.id() + "/" + subscribedCalendarId + "/" + eventUid + ".ics");
+
+        // THEN: The creation should succeed (no exception thrown)
+        calDavClient.upsertCalendarEvent(alice, eventUri, calendarData);
+
+        // AND: Alice should see the event in her subscription
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("Alice's new event");
+            });
+    }
+
+    @Test
+    public void nativeUpsertShouldBeReplicatedForWritePublicCalender() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice creates a new event via PUT on her subscription
+        String eventUid = "event-" + UUID.randomUUID();
+        String description = "Event created by Alice on her subscription";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251007T090000Z
+            DTEND:20251007T100000Z
+            SUMMARY:Alice's replicated event
+            DESCRIPTION:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        URI eventUri = URI.create("/calendars/" + alice.id() + "/" + subscribedCalendarId + "/" + eventUid + ".ics");
+        calDavClient.upsertCalendarEvent(alice, eventUri, calendarData);
+
+        // THEN: Bob should see the event in his own calendar (source calendar)
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("Alice's replicated event");
+                assertThat(json).contains(description);
+            });
+    }
+
+    @Test
+    public void nativeDeleteShouldBeRejectedOnReadPublicCalender() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251008T090000Z
+            DTEND:20251008T100000Z
+            SUMMARY:Bob's event
+            DESCRIPTION:Event to attempt deletion
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND: Alice subscribes to Bob's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Alice sees the event in her subscription
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice tries to delete the event from her subscription
+        // THEN: The deletion should be rejected with 403
+        assertThatThrownBy(() -> calDavClient.deleteCalendarEvent(alice, URI.create(eventHref)))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403")
+            .hasMessageContaining("User did not have the required privileges");
+    }
+
+    @Test
+    public void nativeDeleteShouldBeAcceptedOnWritePublicCalender() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Bob's deletable event
+            DESCRIPTION:Event to be deleted by Alice
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Alice sees the event in her subscription
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice deletes the event from her subscription
+        // THEN: The deletion should succeed (no exception thrown)
+        calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
+
+        // AND: Alice should no longer see the event in her subscription
+        List<JsonNode> aliceEventsAfter = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEventsAfter)
+            .noneSatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+            });
+    }
+
+    @Test
+    public void nativeDeleteShouldBeReplicatedForWritePublicCalender() {
+        // GIVEN: Bob sets his calendar as read-write
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251010T090000Z
+            DTEND:20251010T100000Z
+            SUMMARY:Bob's event to be deleted
+            DESCRIPTION:Event that Alice will delete
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND: Alice subscribes to Bob's writable calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Alice sees the event in her subscription
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice deletes the event from her subscription
+        calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
+
+        // THEN: Bob should no longer see the event in his own calendar (source calendar)
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .noneSatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+            });
     }
 }
