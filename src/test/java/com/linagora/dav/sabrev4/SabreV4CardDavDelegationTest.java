@@ -128,8 +128,15 @@ public class SabreV4CardDavDelegationTest extends CardDavDelegationContract {
     @Test
     @Disabled("https://github.com/linagora/esn-sabre/issues/60")
     @Override
-    public void shouldNotShowMeaningfullDisplayName() throws Exception {
-        super.shouldNotShowMeaningfullDisplayName();
+    public void delegationShouldShowOwnerDisplayNameWhenSourceHasNoDisplayName() throws Exception {
+        super.delegationShouldShowOwnerDisplayNameWhenSourceHasNoDisplayName();
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/60")
+    @Override
+    public void delegationShouldShowSourceDisplayNameSuffixedWithOwnerDisplayName() throws Exception {
+        super.delegationShouldShowSourceDisplayNameSuffixedWithOwnerDisplayName();
     }
 
     @Test
