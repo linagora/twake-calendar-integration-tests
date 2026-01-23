@@ -27,6 +27,7 @@ import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 import java.util.List;
 import java.util.Map;
 
+import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Node;
@@ -557,6 +558,42 @@ public abstract class CardDavContract {
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
             .areSimilar();
+    }
+
+    @Test
+    void defaultAddressBooksShouldHaveEmptyDisplayName() throws Exception {
+        // GIVEN: A new user with default addressbooks
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        // WHEN: Retrieving the displaynames of the user's addressbooks
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        // THEN: The "contacts" addressbook should have an empty displayname
+        List<String> contactsDisplayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'contacts/')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:")
+        );
+        assertThat(contactsDisplayNames).hasSize(1);
+        AssertionsForClassTypes.assertThat(contactsDisplayNames.get(0)).contains(testUser.firstname() + " " + testUser.lastname());
+
+        // AND: The "collected" addressbook should have an empty displayname
+        List<String> collectedDisplayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'collected/')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:")
+        );
+        assertThat(collectedDisplayNames).hasSize(1);
+        AssertionsForClassTypes.assertThat(collectedDisplayNames.get(0)).contains(testUser.firstname() + " " + testUser.lastname());
     }
 
     @Test

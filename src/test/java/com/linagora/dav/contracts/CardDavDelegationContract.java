@@ -598,19 +598,21 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    public void shouldNotShowMeaningfullDisplayName() throws Exception {
+    public void delegationShouldShowOwnerDisplayNameWhenSourceHasNoDisplayName() throws Exception {
+        // GIVEN: Bob has an addressbook "contacts" without a displayname
         String addressBook = "contacts";
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(bob, bob.id(), addressBook, vcardUid, vcardPayload);
 
+        // WHEN: Bob delegates that addressbook to Alice
         cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
         AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
             .collectList().block().stream()
             .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
             .findAny().get();
 
-
+        // THEN: The displayname of the delegated addressbook should be the owner's principal displayname
         DavResponse response = execute(dockerExtension().davHttpClient()
             .headers(alice::impersonatedBasicAuth)
             .request(HttpMethod.valueOf("PROPFIND"))
@@ -622,10 +624,49 @@ public abstract class CardDavDelegationContract {
                 "          </d:prop>" +
                 "        </d:propfind>")));
 
+        String expectedDisplayName = bob.firstname() + " " + bob.lastname();
         assertThat(response.body())
-            .contains("<d:response><d:href>/addressbooks/ALICE_ID/BOOK_ID/</d:href><d:propstat><d:prop><d:displayname></d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
-                .replace("ALICE_ID", alice.id())
-                .replace("BOOK_ID", addressBookURL.addressBookId()));
+            .contains(expectedDisplayName);
+    }
+
+    @Test
+    public void delegationShouldShowSourceDisplayNameSuffixedWithOwnerDisplayName() throws Exception {
+        // GIVEN: Bob has an addressbook "contacts" with a displayname
+        String addressBook = "contacts";
+        String sourceDisplayName = "Bob's Contacts";
+
+        // Set a displayname on the source addressbook
+        execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + bob.id() + "/" + addressBook)
+            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>" + sourceDisplayName + "</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>")));
+
+        // WHEN: Bob delegates that addressbook to Alice
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ);
+
+        // THEN: The displayname should be "<source displayname> - <owner principal displayname>"
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + alice.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String ownerDisplayName = bob.firstname() + " " + bob.lastname();
+        String expectedDisplayName = sourceDisplayName + " - " + ownerDisplayName;
+        assertThat(response.body())
+            .contains(expectedDisplayName);
     }
 
     @Test
