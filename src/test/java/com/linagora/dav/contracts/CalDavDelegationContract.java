@@ -2569,4 +2569,78 @@ public abstract class CalDavDelegationContract {
             .as("Bob should be granted write access to the resource calendar")
             .isIn(200, 201, 204);
     }
+
+    @Test
+    void delegationShouldShowOwnerDisplayNameWhenSourceHasNoDisplayName() throws Exception {
+        // GIVEN: Bob has a calendar without a displayname
+        // WHEN: Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // THEN: The displayname of the delegated calendar should be the owner's principal displayname
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String expectedDisplayName = bob.firstname() + " " + bob.lastname();
+        List<String> displayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'" + calendarURL.calendarId() + "')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:"));
+
+        assertThat(displayNames).contains(expectedDisplayName);
+    }
+
+    @Test
+    void delegationShouldShowSourceDisplayNameSuffixedWithOwnerDisplayName() throws Exception {
+        // GIVEN: Bob has a calendar with a displayname
+        String sourceDisplayName = "Fishing";
+
+        // Set a displayname on the source calendar
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/calendars/" + bob.id() + "/" + bob.id())
+            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>" + sourceDisplayName + "</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>")));
+
+        // WHEN: Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        // THEN: The displayname should be "<source displayname> - <owner principal displayname>"
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String ownerDisplayName = bob.firstname() + " " + bob.lastname();
+        String expectedDisplayName = sourceDisplayName + " - " + ownerDisplayName;
+        List<String> displayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'" + calendarURL.calendarId() + "')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:"));
+
+        assertThat(displayNames).contains(expectedDisplayName);
+    }
 }

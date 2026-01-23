@@ -342,6 +342,33 @@ public abstract class CalDavContract {
     }
 
     @Test
+    void defaultCalendarShouldHaveDefaultDisplayName() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        assertThat(response.status()).isEqualTo(207);
+
+        // The default calendar should have an empty displayname
+        List<String> displayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'" + testUser.id() + "/" + testUser.id() + "/')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:"));
+
+        assertThat(displayNames).hasSize(1);
+        assertThat(displayNames.get(0)).contains(testUser.firstname() + " " + testUser.lastname());
+    }
+
+    @Test
     void propfindShouldListEmptyCalendar() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
