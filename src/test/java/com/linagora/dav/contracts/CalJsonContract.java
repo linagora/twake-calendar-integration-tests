@@ -46,6 +46,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
+import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
@@ -3214,5 +3215,72 @@ public abstract class CalJsonContract {
 
         assertThat(jsonResponse.has("etag")).isTrue();
         assertThat(jsonResponse.get("etag").asText()).isNotEmpty();
+    }
+
+    @Disabled("Expand do not sanitize events")
+    @Test
+    public void reportShouldSanitizePrivateEvents() {
+        dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .enableSharedCalendarModule()
+            .block();
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN: Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has a PRIVATE event in his calendar
+        String eventUid = UUID.randomUUID().toString();
+        String description = "Confidential meeting details";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:Bob's private event
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice subscribes to Bob's calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: Alice queries the event via REPORT - the event should be sanitized
+        String eventURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics";
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Depth", "0")
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(eventURI)
+            .send(body("""
+                {"match":{"start":"20250901T000000","end":"20251101T000000"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        // Verify the event is sanitized: summary should be "Busy" and description should be absent
+        assertThat(response.body())
+            .contains(eventUid)
+            .contains("[\"summary\",{},\"text\",\"Busy\"]")
+            .doesNotContain(description)
+            .doesNotContain("Bob's private event");
     }
 }
