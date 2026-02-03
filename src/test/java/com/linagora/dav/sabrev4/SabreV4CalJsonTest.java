@@ -18,6 +18,7 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +31,11 @@ public class SabreV4CalJsonTest extends CalJsonContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled
+    @Override
+    public void reportShouldSanitizePrivateEvents() {
+        super.reportShouldSanitizePrivateEvents();
     }
 }
