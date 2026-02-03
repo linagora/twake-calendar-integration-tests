@@ -38,16 +38,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.function.Predicate;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -65,7 +66,6 @@ import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
 import com.linagora.dav.TwakeCalendarEvent;
-
 import com.linagora.dav.XMLUtil;
 
 import io.netty.buffer.Unpooled;
@@ -1190,6 +1190,197 @@ public abstract class CalDavDelegationContract {
         assertThat(messages)
             .noneSatisfy(json ->
                 assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id()));
+    }
+
+    @Test
+    protected void amqpShouldPublishDelegationUpdatedForSourceCalendarOnGrant() throws Exception {
+        String queueName = "delegation-source-grant-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .isEqualTo("""
+                    {
+                      "calendarPath": "%s",
+                      "calendarProps": {
+                        "delegation_updated": true
+                      }
+                    }
+                    """.formatted(sourcePath))));
+    }
+
+    @Test
+    protected void amqpShouldPublishDelegationUpdatedForSourceCalendarOnUpdateRight() throws Exception {
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        String queueName = "delegation-source-update-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .isEqualTo("""
+                    {
+                      "calendarPath": "%s",
+                      "calendarProps": {
+                        "delegation_updated": true
+                      }
+                    }
+                    """.formatted(sourcePath))));
+    }
+
+    @Test
+    protected void amqpShouldPublishDelegationUpdatedForSourceCalendarOnRevoke() throws Exception {
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        String queueName = "delegation-source-revoke-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        calDavClient.revokeDelegation(bob, bob.id(), alice);
+
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .isEqualTo("""
+                    {
+                      "calendarPath": "%s",
+                      "calendarProps": {
+                        "delegation_updated": true
+                      }
+                    }
+                    """.formatted(sourcePath))));
+    }
+
+    @Test
+    protected void amqpShouldDedupDelegationUpdatedForSameSourceCalendarInSingleRequest() throws Exception {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String queueName = "delegation-source-dedup-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        calDavClient.grantDelegations(bob, bob.id(), Map.of(
+            alice, DelegationRight.READ,
+            cedric, DelegationRight.READ));
+
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        String expected = """
+            {
+              "calendarPath": "%s",
+              "calendarProps": {
+                "delegation_updated": true
+              }
+            }
+            """.formatted(sourcePath);
+        Predicate<JsonNode> isDelegationUpdated = json ->
+            sourcePath.equals(json.path("calendarPath").asText())
+                && json.path("calendarProps").path("delegation_updated").asBoolean(false);
+
+        // Wait until the *unique* delegation_updated notification for this source calendar is observed.
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> delegationUpdated = messages.stream()
+                .filter(isDelegationUpdated)
+                .toList();
+            assertThat(delegationUpdated).hasSize(1);
+            assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+        });
+
+        // And make sure no duplicates arrive a bit later (race with async AMQP publishing).
+        Awaitility.await()
+            .during(Duration.ofSeconds(3))
+            .untilAsserted(() -> {
+                List<JsonNode> delegationUpdated = messages.stream()
+                    .filter(isDelegationUpdated)
+                    .toList();
+                assertThat(delegationUpdated).hasSize(1);
+                assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+            });
+    }
+
+    @Test
+    protected void amqpShouldDedupDelegationUpdatedForSameSourceCalendarOnBulkRevoke() throws Exception {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        calDavClient.grantDelegation(bob, bob.id(), cedric, DelegationRight.READ);
+
+        String queueName = "delegation-source-revoke-two-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        calDavClient.revokeDelegations(bob, bob.id(), List.of(alice, cedric));
+
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        String expected = """
+            {
+              "calendarPath": "%s",
+              "calendarProps": {
+                "delegation_updated": true
+              }
+            }
+            """.formatted(sourcePath);
+        Predicate<JsonNode> isDelegationUpdated = json ->
+            sourcePath.equals(json.path("calendarPath").asText())
+                && json.path("calendarProps").path("delegation_updated").asBoolean(false);
+
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> delegationUpdated = messages.stream()
+                .filter(isDelegationUpdated)
+                .toList();
+            assertThat(delegationUpdated).hasSize(1);
+            assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+        });
+
+        Awaitility.await()
+            .during(Duration.ofSeconds(3))
+            .untilAsserted(() -> {
+                List<JsonNode> delegationUpdated = messages.stream()
+                    .filter(isDelegationUpdated)
+                    .toList();
+                assertThat(delegationUpdated).hasSize(1);
+                assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+            });
+    }
+
+    @Test
+    protected void amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees() throws Exception {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        calDavClient.grantDelegation(bob, bob.id(), cedric, DelegationRight.READ);
+
+        String queueName = "delegation-source-revoke-one-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        calDavClient.revokeDelegation(bob, bob.id(), alice);
+
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .isEqualTo("""
+                    {
+                      "calendarPath": "%s",
+                      "calendarProps": {
+                        "delegation_updated": true
+                      }
+                    }
+                    """.formatted(sourcePath))));
     }
 
     @Test

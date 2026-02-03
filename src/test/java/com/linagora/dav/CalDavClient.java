@@ -26,7 +26,9 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpStatus;
@@ -334,41 +336,61 @@ public class CalDavClient {
     }
 
     public void grantDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser, DelegationRight right) {
+        grantDelegations(user, calendarId, Map.of(delegatedUser, right));
+    }
+
+    public void grantDelegations(OpenPaasUser user, String calendarId, Map<OpenPaasUser, DelegationRight> delegations) {
         String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
+
+        String setEntries = delegations.entrySet().stream()
+            .map(entry -> """
+                {
+                  "dav:href": "mailto:{email}",
+                  {right}
+                }
+                """.replace("{email}", entry.getKey().email())
+                .replace("{right}", entry.getValue().getValue()))
+            .collect(Collectors.joining(","));
 
         String payload = """
             {
               "share": {
                 "set": [
-                  {
-                    "dav:href": "mailto:{email}",
-                    {right}
-                  }
+                  {entries}
                 ],
                 "remove": []
               }
             }
-            """.replace("{email}", delegatedUser.email())
-            .replace("{right}", right.getValue());
+            """.replace("{entries}", setEntries);
 
         sendDelegationRequest(user, uri, payload);
     }
 
     public void revokeDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser) {
+        revokeDelegations(user, calendarId, List.of(delegatedUser));
+    }
+
+    public void revokeDelegations(OpenPaasUser user, String calendarId, List<OpenPaasUser> delegatedUsers) {
         String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
+
+        String removeEntries = delegatedUsers.stream()
+            .map(delegated -> """
+                {
+                    "dav:href": "mailto:{email}"
+                }
+                """.replace("{email}", delegated.email()))
+            .collect(Collectors.joining(","));
 
         String payload = """
             {
                 "share": {
                     "set": [],
                     "remove": [
-                        {
-                            "dav:href": "mailto:{email}"
-                        }
+                        {entries}
                     ]
                 }
             }
-            """.replace("{email}", delegatedUser.email());
+            """.replace("{entries}", removeEntries);
 
         sendDelegationRequest(user, uri, payload);
     }

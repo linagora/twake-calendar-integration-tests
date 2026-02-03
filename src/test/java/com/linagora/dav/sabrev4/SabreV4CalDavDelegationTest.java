@@ -56,4 +56,40 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     public void privateOrConfidentialEventShouldBeAnonymizedInDavGet(String eventClass) {
         super.privateOrConfidentialEventShouldBeAnonymizedInDavGet(eventClass);
     }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.SabreV4CalDavDelegationTest)")
+    @Override
+    public void amqpShouldPublishDelegationUpdatedForSourceCalendarOnGrant() throws Exception {
+        super.amqpShouldPublishDelegationUpdatedForSourceCalendarOnGrant();
+    }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.SabreV4CalDavDelegationTest)")
+    @Override
+    public void amqpShouldPublishDelegationUpdatedForSourceCalendarOnUpdateRight() throws Exception {
+        super.amqpShouldPublishDelegationUpdatedForSourceCalendarOnUpdateRight();
+    }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.SabreV4CalDavDelegationTest)")
+    @Override
+    public void amqpShouldPublishDelegationUpdatedForSourceCalendarOnRevoke() throws Exception {
+        super.amqpShouldPublishDelegationUpdatedForSourceCalendarOnRevoke();
+    }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.SabreV4CalDavDelegationTest)")
+    @Override
+    public void amqpShouldDedupDelegationUpdatedForSameSourceCalendarInSingleRequest() throws Exception {
+        super.amqpShouldDedupDelegationUpdatedForSameSourceCalendarInSingleRequest();
+    }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.SabreV4CalDavDelegationTest)")
+    @Override
+    public void amqpShouldDedupDelegationUpdatedForSameSourceCalendarOnBulkRevoke() throws Exception {
+        super.amqpShouldDedupDelegationUpdatedForSameSourceCalendarOnBulkRevoke();
+    }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.SabreV4CalDavDelegationTest)")
+    @Override
+    public void amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees() throws Exception {
+        super.amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees();
+    }
 }
