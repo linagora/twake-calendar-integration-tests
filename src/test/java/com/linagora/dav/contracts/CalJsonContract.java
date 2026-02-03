@@ -3217,7 +3217,6 @@ public abstract class CalJsonContract {
         assertThat(jsonResponse.get("etag").asText()).isNotEmpty();
     }
 
-    @Disabled("Expand do not sanitize events")
     @Test
     public void reportShouldSanitizePrivateEvents() {
         dockerExtension().getDockerTwakeCalendarSetupSingleton()
