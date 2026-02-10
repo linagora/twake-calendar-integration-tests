@@ -42,6 +42,7 @@ import java.util.function.Function;
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -1396,6 +1397,67 @@ public abstract class CalDavContract {
                             ]""".formatted(partstat, attendee.email())));
             });
         });
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/267")
+    @Test
+    void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerPartStatIsNeedsActionAndPubliclyCreated() throws InterruptedException {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN: An organizer creates an event with PARTSTAT=NEEDS-ACTION and X-PUBLICLY-CREATED:true
+        String eventUid = "event-" + UUID.randomUUID();
+
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251008T080000Z
+            DTSTART:20251009T090000Z
+            DTEND:20251009T100000Z
+            SUMMARY:Publicly created meeting
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            X-PUBLICLY-CREATED:true
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        // WHEN: The organizer creates the event
+        String calendarUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(calendarUri), ics);
+
+        // THEN: The event should exist in the organizer's calendar
+        String organizerDefaultCalendarUri = "/calendars/" + organizer.id() + "/" + organizer.id();
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> organizerEvents = calDavClient.reportCalendarEvents(organizer, organizerDefaultCalendarUri,
+                    Instant.parse("2024-09-01T00:00:00Z"),
+                    Instant.parse("2026-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+            assertThat(organizerEvents)
+                .anySatisfy(node -> assertThat(node.toString()).contains(eventUid));
+        });
+
+        // AND: No clone should be created in the attendee's default calendar
+        String attendeeDefaultCalendarUri = "/calendars/" + attendee.id() + "/" + attendee.id();
+
+        Thread.sleep(1000);
+
+        List<JsonNode> attendeeEvents = calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
+                Instant.parse("2024-09-01T00:00:00Z"),
+                Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(attendeeEvents)
+            .filteredOn(node -> node.toString().contains(eventUid))
+            .isEmpty();
     }
 
     @Test
