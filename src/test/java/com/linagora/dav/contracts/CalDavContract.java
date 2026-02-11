@@ -1399,7 +1399,6 @@ public abstract class CalDavContract {
         });
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/267")
     @Test
     void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerPartStatIsNeedsActionAndPubliclyCreated() throws InterruptedException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
