@@ -1559,18 +1559,20 @@ public abstract class CalDavContract {
             PRODID:-//Example Corp.//CalDAV Client//EN
             CALSCALE:GREGORIAN
             BEGIN:VEVENT
-            UID:%s
+            UID:{eventUid}
             DTSTAMP:20251008T080000Z
             DTSTART:20251009T090000Z
             DTEND:20251009T100000Z
             SUMMARY:Publicly created meeting
-            ORGANIZER;CN=Organizer:mailto:%s
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:{attendeeEmail}
             X-PUBLICLY-CREATED:true
             END:VEVENT
             END:VCALENDAR
-            """.formatted(eventUid, organizer.email(), attendee.email());
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email());
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, ics);
 
@@ -1606,7 +1608,7 @@ public abstract class CalDavContract {
             END:VCALENDAR
             """.formatted(eventUid, organizer.email(), attendee.email());
 
-        // WHEN: The organizer accept the event
+        // WHEN: The organizer decline the event
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedIcs);
 
         // THEN: No clone should be created in the attendee's default calendar
