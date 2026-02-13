@@ -1400,7 +1400,7 @@ public abstract class CalDavContract {
     }
 
     @Test
-    void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerPartStatIsNeedsActionAndPubliclyCreated() throws InterruptedException {
+    protected void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerPartStatIsNeedsActionAndPubliclyCreated() throws InterruptedException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
 
@@ -1419,12 +1419,12 @@ public abstract class CalDavContract {
             DTEND:20251009T100000Z
             SUMMARY:Publicly created meeting
             ORGANIZER;CN=Organizer:mailto:%s
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s
             ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
             X-PUBLICLY-CREATED:true
             END:VEVENT
             END:VCALENDAR
-            """.formatted(eventUid, organizer.email(), attendee.email());
+            """.formatted(eventUid, organizer.email(), organizer.email(), attendee.email());
 
         // WHEN: The organizer creates the event
         calDavClient.upsertCalendarEvent(organizer, eventUid, ics);
@@ -1458,10 +1458,9 @@ public abstract class CalDavContract {
             .isEmpty();
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/268")
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
-    void cloneShouldBeCreatedInAttendeeCalendarWhenOrganizerAcceptMeetingProposition(String partStat) throws InterruptedException {
+    protected void cloneShouldBeCreatedInAttendeeCalendarWhenOrganizerAcceptMeetingProposition(String partStat) {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
 
@@ -1544,9 +1543,8 @@ public abstract class CalDavContract {
         });
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/269")
     @Test
-    void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerDeclineMeetingProposition() throws InterruptedException {
+    protected void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerDeclineMeetingProposition() throws InterruptedException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
 
@@ -1601,12 +1599,12 @@ public abstract class CalDavContract {
             DTEND:20251009T100000Z
             SUMMARY:Publicly created meeting
             ORGANIZER;CN=Organizer:mailto:%s
-            ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s
             ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
             X-PUBLICLY-CREATED:true
             END:VEVENT
             END:VCALENDAR
-            """.formatted(eventUid, organizer.email(), attendee.email());
+            """.formatted(eventUid, organizer.email(), organizer.email(), attendee.email());
 
         // WHEN: The organizer decline the event
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedIcs);
