@@ -18,6 +18,7 @@
 
 package com.linagora.dav.sabrev4;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +31,20 @@ class SabreV4CalDavTest extends CalDavContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Override
+    @Disabled("Supported only on Sabre 4.7 as part of the new spec")
+    protected void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerPartStatIsNeedsActionAndPubliclyCreated() {
+    }
+
+    @Override
+    @Disabled("Supported only on Sabre 4.7 as part of the new spec")
+    protected void cloneShouldBeCreatedInAttendeeCalendarWhenOrganizerAcceptMeetingProposition(String partStat) {
+    }
+
+    @Override
+    @Disabled("Supported only on Sabre 4.7 as part of the new spec")
+    protected void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerDeclineMeetingProposition() {
     }
 }
