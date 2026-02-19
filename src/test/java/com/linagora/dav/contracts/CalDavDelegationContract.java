@@ -2719,6 +2719,175 @@ public abstract class CalDavDelegationContract {
             .isEqualTo(200);
     }
 
+    // ISSUE-273: MOVE 403 with Delegation
+    @Test
+    public void moveEventFromOwnCalendarToDelegatedCalendarShouldSucceedWithWriteRight() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser camille = dockerExtension().newTestUser();
+
+        // GIVEN Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Event to move")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Camille delegates her calendar to Bob with READ_WRITE
+        calDavClient.grantDelegation(camille, camille.id(), bob, DelegationRight.READ_WRITE);
+
+        // WHEN Bob moves the event from his calendar to Camille's calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/calendars/" + camille.id() + "/" + camille.id() + "/" + eventUid + ".ics"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics")
+            .send(TestUtil.body("")));
+
+        // THEN the move should succeed
+        AssertionsForClassTypes.assertThat(status)
+            .as("Expected 201 or 204 for MOVE but got %d", status)
+            .isIn(201, 204);
+
+        // AND the event should now be in Camille's calendar
+        DavResponse camilleResponse = calDavClient.findEventsByTime(camille, "20300410T000000", "20300412T000000");
+        List<JsonCalendarEventData> camilleEvents = JsonCalendarEventData.from(camilleResponse.body());
+        AssertionsForInterfaceTypes.assertThat(camilleEvents)
+            .as("Event should be in Camille's calendar after MOVE")
+            .extracting(JsonCalendarEventData::uid)
+            .contains(eventUid);
+
+        // AND the event should no longer be in Bob's calendar
+        DavResponse bobResponse = calDavClient.findEventsByTime(bob, "20300410T000000", "20300412T000000");
+        List<JsonCalendarEventData> bobEvents = JsonCalendarEventData.from(bobResponse.body());
+        AssertionsForInterfaceTypes.assertThat(bobEvents)
+            .as("Event should NOT be in Bob's calendar after MOVE")
+            .extracting(JsonCalendarEventData::uid)
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    public void moveEventFromDelegatedCalendarToOwnCalendarShouldSucceedWithWriteRight() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser camille = dockerExtension().newTestUser();
+
+        // GIVEN Camille has an event in her calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(camille.email())
+            .summary("Camille's event to move")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(camille, eventUid, calendarData);
+
+        // AND Camille delegates her calendar to Bob with READ_WRITE
+        calDavClient.grantDelegation(camille, camille.id(), bob, DelegationRight.READ_WRITE);
+
+        // WHEN Bob moves the event from Camille's calendar to his own
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/calendars/" + camille.id() + "/" + camille.id() + "/" + eventUid + ".ics")
+            .send(TestUtil.body("")));
+
+        // THEN the move should succeed
+        AssertionsForClassTypes.assertThat(status)
+            .as("Expected 201 or 204 for MOVE but got %d", status)
+            .isIn(201, 204);
+
+        // AND the event should now be in Bob's calendar
+        DavResponse bobResponse = calDavClient.findEventsByTime(bob, "20300410T000000", "20300412T000000");
+        List<JsonCalendarEventData> bobEvents = JsonCalendarEventData.from(bobResponse.body());
+        AssertionsForInterfaceTypes.assertThat(bobEvents)
+            .as("Event should be in Bob's calendar after MOVE")
+            .extracting(JsonCalendarEventData::uid)
+            .contains(eventUid);
+
+        // AND the event should no longer be in Camille's calendar
+        DavResponse camilleResponse = calDavClient.findEventsByTime(camille, "20300410T000000", "20300412T000000");
+        List<JsonCalendarEventData> camilleEvents = JsonCalendarEventData.from(camilleResponse.body());
+        AssertionsForInterfaceTypes.assertThat(camilleEvents)
+            .as("Event should NOT be in Camille's calendar after MOVE")
+            .extracting(JsonCalendarEventData::uid)
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    public void moveEventFromOwnCalendarToDelegatedCalendarShouldFailWithReadOnlyRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser camille = dockerExtension().newTestUser();
+
+        // GIVEN Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Event to move")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Camille delegates her calendar to Bob with READ only
+        calDavClient.grantDelegation(camille, camille.id(), bob, DelegationRight.READ);
+
+        // WHEN Bob tries to move the event from his calendar to Camille's calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/calendars/" + camille.id() + "/" + camille.id() + "/" + eventUid + ".ics"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics")
+            .send(TestUtil.body("")));
+
+        // THEN the move should be rejected with 403
+        AssertionsForClassTypes.assertThat(status)
+            .as("Expected 403 for MOVE to read-only delegated calendar but got %d", status)
+            .isEqualTo(403);
+    }
+
+    @Test
+    public void moveEventFromDelegatedCalendarToOwnCalendarShouldFailWithReadOnlyRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser camille = dockerExtension().newTestUser();
+
+        // GIVEN Camille has an event in her calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(camille.email())
+            .summary("Camille's event to move")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(camille, eventUid, calendarData);
+
+        // AND Camille delegates her calendar to Bob with READ only
+        calDavClient.grantDelegation(camille, camille.id(), bob, DelegationRight.READ);
+
+        // WHEN Bob tries to move the event from Camille's calendar to his own
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/calendars/" + camille.id() + "/" + camille.id() + "/" + eventUid + ".ics")
+            .send(TestUtil.body("")));
+
+        // THEN the move should be rejected with 403
+        AssertionsForClassTypes.assertThat(status)
+            .as("Expected 403 for MOVE from read-only delegated calendar but got %d", status)
+            .isEqualTo(403);
+    }
+
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
         Map.Entry<Integer, String> delegationResponse = dockerExtension().davHttpClient()
             .headers(headers -> headers

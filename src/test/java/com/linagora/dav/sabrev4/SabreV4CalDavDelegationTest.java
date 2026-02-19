@@ -92,4 +92,28 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     public void amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees() throws Exception {
         super.amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees();
     }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveEventFromOwnCalendarToDelegatedCalendarShouldSucceedWithWriteRight() throws Exception {
+        super.moveEventFromOwnCalendarToDelegatedCalendarShouldSucceedWithWriteRight();
+    }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveEventFromDelegatedCalendarToOwnCalendarShouldSucceedWithWriteRight() throws Exception {
+        super.moveEventFromDelegatedCalendarToOwnCalendarShouldSucceedWithWriteRight();
+    }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveEventFromOwnCalendarToDelegatedCalendarShouldFailWithReadOnlyRight() {
+        super.moveEventFromOwnCalendarToDelegatedCalendarShouldFailWithReadOnlyRight();
+    }
+
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveEventFromDelegatedCalendarToOwnCalendarShouldFailWithReadOnlyRight() {
+        super.moveEventFromDelegatedCalendarToOwnCalendarShouldFailWithReadOnlyRight();
+    }
 }
