@@ -805,6 +805,131 @@ public abstract class CardDavDelegationContract {
                 .replace("{bobId}", bob.id()));
     }
 
+    // ISSUE-273: MOVE 403 with Delegation
+    @Test
+    public void moveContactFromOwnAddressBookToDelegatedAddressBookShouldSucceedWithWriteRight() {
+        String addressBook = "contacts";
+        String vcardUid = "test-move-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN Bob has a contact in his address book
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        // AND Cedric delegates his address book to Bob with READ_WRITE
+        cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ_WRITE);
+
+        // WHEN Bob moves the contact from his address book to Cedric's address book
+        int status = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
+            .status();
+
+        // THEN the move should succeed
+        AssertionsForInterfaceTypes.assertThat(status)
+            .as("Expected 201 or 204 for MOVE but got %d", status)
+            .isIn(201, 204);
+
+        // AND the contact should now be in Cedric's address book
+        String cedricContacts = cardDavClient.getContacts(cedric, cedric.id(), addressBook);
+        assertThat(cedricContacts).contains("John Doe");
+
+        // AND the contact should no longer be in Bob's address book
+        String bobContacts = cardDavClient.getContacts(bob, bob.id(), addressBook);
+        assertThat(bobContacts).doesNotContain(vcardUid);
+    }
+
+    @Test
+    public void moveContactFromDelegatedAddressBookToOwnAddressBookShouldSucceedWithWriteRight() {
+        String addressBook = "contacts";
+        String vcardUid = "test-move-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:Jane Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN Cedric has a contact in his address book
+        cardDavClient.upsertContact(cedric, addressBook, vcardUid, vcardPayload);
+
+        // AND Cedric delegates his address book to Bob with READ_WRITE
+        cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ_WRITE);
+
+        // WHEN Bob moves the contact from Cedric's address book to his own
+        int status = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
+            .status();
+
+        // THEN the move should succeed
+        AssertionsForInterfaceTypes.assertThat(status)
+            .as("Expected 201 or 204 for MOVE but got %d", status)
+            .isIn(201, 204);
+
+        // AND the contact should now be in Bob's address book
+        String bobContacts = cardDavClient.getContacts(bob, bob.id(), addressBook);
+        assertThat(bobContacts).contains("Jane Doe");
+
+        // AND the contact should no longer be in Cedric's address book
+        String cedricContacts = cardDavClient.getContacts(cedric, cedric.id(), addressBook);
+        assertThat(cedricContacts).doesNotContain(vcardUid);
+    }
+
+    @Test
+    public void moveContactFromOwnAddressBookToDelegatedAddressBookShouldFailWithReadOnlyRight() {
+        String addressBook = "contacts";
+        String vcardUid = "test-move-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN Bob has a contact in his address book
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        // AND Cedric delegates his address book to Bob with READ only
+        cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ);
+
+        // WHEN Bob tries to move the contact from his address book to Cedric's address book
+        int status = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
+            .status();
+
+        // THEN the move should be rejected with 403
+        AssertionsForInterfaceTypes.assertThat(status)
+            .as("Expected 403 for MOVE to read-only delegated address book but got %d", status)
+            .isEqualTo(403);
+    }
+
+    @Test
+    public void moveContactFromDelegatedAddressBookToOwnAddressBookShouldFailWithReadOnlyRight() {
+        String addressBook = "contacts";
+        String vcardUid = "test-move-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:Jane Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN Cedric has a contact in his address book
+        cardDavClient.upsertContact(cedric, addressBook, vcardUid, vcardPayload);
+
+        // AND Cedric delegates his address book to Bob with READ only
+        cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ);
+
+        // WHEN Bob tries to move the contact from Cedric's address book to his own
+        int status = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", "/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
+            .status();
+
+        // THEN the move should be rejected with 403
+        AssertionsForInterfaceTypes.assertThat(status)
+            .as("Expected 403 for MOVE from read-only delegated address book but got %d", status)
+            .isEqualTo(403);
+    }
+
     @ParameterizedTest
     @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
     void grantDelegationDirectlyInOriginalAddressBookShouldThrowErrorWhenDelegatedUserOnlyHasReadRight(DelegationRight right) {

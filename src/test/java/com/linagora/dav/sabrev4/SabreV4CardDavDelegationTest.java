@@ -145,4 +145,32 @@ public class SabreV4CardDavDelegationTest extends CardDavDelegationContract {
     public void createShouldFailWhenNotDelegationTarget() {
         super.createShouldFailWhenNotDelegationTarget();
     }
+
+    @Test
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveContactFromOwnAddressBookToDelegatedAddressBookShouldSucceedWithWriteRight() {
+        super.moveContactFromOwnAddressBookToDelegatedAddressBookShouldSucceedWithWriteRight();
+    }
+
+    @Test
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveContactFromDelegatedAddressBookToOwnAddressBookShouldSucceedWithWriteRight() {
+        super.moveContactFromDelegatedAddressBookToOwnAddressBookShouldSucceedWithWriteRight();
+    }
+
+    @Test
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveContactFromOwnAddressBookToDelegatedAddressBookShouldFailWithReadOnlyRight() {
+        super.moveContactFromOwnAddressBookToDelegatedAddressBookShouldFailWithReadOnlyRight();
+    }
+
+    @Test
+    @Disabled("Issue https://github.com/linagora/esn-sabre/issues/273")
+    @Override
+    public void moveContactFromDelegatedAddressBookToOwnAddressBookShouldFailWithReadOnlyRight() {
+        super.moveContactFromDelegatedAddressBookToOwnAddressBookShouldFailWithReadOnlyRight();
+    }
 }
