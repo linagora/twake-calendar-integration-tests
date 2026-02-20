@@ -21,6 +21,7 @@ package com.linagora.dav.contracts;
 import static com.linagora.dav.CardDavClient.*;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -819,13 +820,12 @@ public abstract class CardDavDelegationContract {
         cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ_WRITE);
 
         // WHEN Bob moves the contact from his address book to Cedric's address book
-        int status = execute(dockerExtension().davHttpClient()
+        int status = executeNoContent(dockerExtension().davHttpClient()
             .headers(headers -> bob.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
             .request(HttpMethod.valueOf("MOVE"))
             .uri("/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
-            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
-            .status();
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))));
 
         // THEN the move should succeed
         AssertionsForInterfaceTypes.assertThat(status)
@@ -854,13 +854,12 @@ public abstract class CardDavDelegationContract {
         cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ_WRITE);
 
         // WHEN Bob moves the contact from Cedric's address book to his own
-        int status = execute(dockerExtension().davHttpClient()
+        int status = executeNoContent(dockerExtension().davHttpClient()
             .headers(headers -> bob.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
             .request(HttpMethod.valueOf("MOVE"))
             .uri("/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
-            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
-            .status();
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))));
 
         // THEN the move should succeed
         AssertionsForInterfaceTypes.assertThat(status)
@@ -889,13 +888,12 @@ public abstract class CardDavDelegationContract {
         cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ);
 
         // WHEN Bob tries to move the contact from his address book to Cedric's address book
-        int status = execute(dockerExtension().davHttpClient()
+        int status = executeNoContent(dockerExtension().davHttpClient()
             .headers(headers -> bob.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
             .request(HttpMethod.valueOf("MOVE"))
             .uri("/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
-            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
-            .status();
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))));
 
         // THEN the move should be rejected with 403
         AssertionsForInterfaceTypes.assertThat(status)
@@ -916,13 +914,12 @@ public abstract class CardDavDelegationContract {
         cardDavClient.grantDelegation(cedric, addressBook, bob, DelegationRight.READ);
 
         // WHEN Bob tries to move the contact from Cedric's address book to his own
-        int status = execute(dockerExtension().davHttpClient()
+        int status = executeNoContent(dockerExtension().davHttpClient()
             .headers(headers -> bob.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + bob.id() + "/" + addressBook + "/" + vcardUid + ".vcf"))
             .request(HttpMethod.valueOf("MOVE"))
             .uri("/addressbooks/" + cedric.id() + "/" + addressBook + "/" + vcardUid + ".vcf")
-            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))))
-            .status();
+            .send(body(new String(vcardPayload, StandardCharsets.UTF_8))));
 
         // THEN the move should be rejected with 403
         AssertionsForInterfaceTypes.assertThat(status)
