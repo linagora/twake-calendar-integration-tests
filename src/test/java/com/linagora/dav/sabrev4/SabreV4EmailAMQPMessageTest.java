@@ -40,4 +40,14 @@ public class SabreV4EmailAMQPMessageTest extends EmailAMQPMessageContract {
     public void shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM() {
         super.shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM();
     }
+
+    @Override
+    @Disabled("Supported only on Sabre 4.7 as part of the new spec")
+    protected void shouldNotReceiveNotificationEmailMessageWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee() {
+    }
+
+    @Override
+    @Disabled("Supported only on Sabre 4.7 as part of the new spec")
+    protected void shouldNotReceiveNotificationEmailMessageWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithExternalAttendee() {
+    }
 }
