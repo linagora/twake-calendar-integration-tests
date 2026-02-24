@@ -2645,4 +2645,95 @@ public abstract class CalendarSharingContract {
                 assertThat(json).contains(eventUid);
             });
     }
+
+    @Test
+    void publicSubscriptionShouldShowOwnerDisplayNameWhenSourceHasNoDisplayName() throws Exception {
+        // GIVEN: Bob has a public calendar without a displayname
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: The displayname of the subscribed calendar should be the owner's principal displayname
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String expectedDisplayName = bob.firstname() + " " + bob.lastname();
+        List<String> displayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'" + subscribedCalendarRequest.id() + "')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:"));
+
+        assertThat(displayNames).contains(expectedDisplayName);
+    }
+
+    @Test
+    void publicSubscriptionShouldShowSourceDisplayNameSuffixedWithOwnerDisplayName() throws Exception {
+        // GIVEN: Bob has a public calendar with a displayname
+        String sourceDisplayName = "Bob's Calendar";
+
+        // Set a displayname on the source calendar
+        extension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/calendars/" + bob.id() + "/" + bob.id())
+            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>" + sourceDisplayName + "</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>"))
+            .response().block();
+
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // WHEN: Alice subscribes to Bob's calendar
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // THEN: The displayname should be "<source displayname> - <owner principal displayname>"
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id())
+            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String ownerDisplayName = bob.firstname() + " " + bob.lastname();
+        String expectedDisplayName = sourceDisplayName + " - " + ownerDisplayName;
+        List<String> displayNames = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response[d:href[contains(.,'" + subscribedCalendarRequest.id() + "')]]/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:"));
+
+        assertThat(displayNames).contains(expectedDisplayName);
+    }
 }

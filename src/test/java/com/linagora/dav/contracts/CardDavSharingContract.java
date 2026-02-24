@@ -39,6 +39,7 @@ import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestUtil;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -672,5 +673,78 @@ public abstract class CardDavSharingContract {
                 && !href.equals("/addressbooks/" + alice.id() + "/contacts/")
                 && !href.equals("/addressbooks/" + alice.id() + "/")))
             .hasSize(1);
+    }
+
+    @Test
+    void publicSubscriptionShouldShowOwnerDisplayNameWhenSourceHasNoDisplayName() throws Exception {
+        // GIVEN: Bob has an addressbook "collected" without a displayname
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        // Set addressbook as publicly readable
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+
+        // WHEN: Alice subscribes to Bob's addressbook
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        // THEN: The displayname of the subscribed addressbook should be the owner's principal displayname
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + alice.id())
+            .send(TestUtil.body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String expectedDisplayName = bob.firstname() + " " + bob.lastname();
+        assertThat(response.body())
+            .contains(expectedDisplayName);
+    }
+
+    @Test
+    void publicSubscriptionShouldShowSourceDisplayNameSuffixedWithOwnerDisplayName() throws Exception {
+        // GIVEN: Bob has an addressbook "collected" with a displayname
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+        String sourceDisplayName = "Bob's Collected";
+
+        // Set a displayname on the source addressbook
+        execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + bob.id() + "/" + addressBook)
+            .send(TestUtil.body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+                "          <d:set>" +
+                "            <d:prop>" +
+                "              <d:displayname>" + sourceDisplayName + "</d:displayname>" +
+                "            </d:prop>" +
+                "          </d:set>" +
+                "        </d:propertyupdate>")));
+
+        // Set addressbook as publicly readable
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+
+        // WHEN: Alice subscribes to Bob's addressbook
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        // THEN: The displayname should be "<source displayname> - <owner principal displayname>"
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + alice.id())
+            .send(TestUtil.body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "        <d:propfind xmlns:d=\"DAV:\">" +
+                "          <d:prop>" +
+                "            <d:displayname/>" +
+                "          </d:prop>" +
+                "        </d:propfind>")));
+
+        String ownerDisplayName = bob.firstname() + " " + bob.lastname();
+        String expectedDisplayName = sourceDisplayName + " - " + ownerDisplayName;
+        assertThat(response.body())
+            .contains(expectedDisplayName);
     }
 }
