@@ -18,6 +18,8 @@
 
 package com.linagora.dav.sabrev4;
 
+import java.io.IOException;
+
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -39,5 +41,41 @@ public class SabreV4EmailAMQPMessageTest extends EmailAMQPMessageContract {
     @Override
     public void shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM() {
         super.shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM();
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
+    public void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee() throws IOException, InterruptedException {
+        super.shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee();
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
+    public void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithExternalAttendee() {
+        super.shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithExternalAttendee();
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
+    public void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) {
+        super.shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(partStat);
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
+    public void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithExternalAttendee(String partStat) {
+        super.shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithExternalAttendee(partStat);
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
+    public void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
+        super.shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee();
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
+    public void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee() throws InterruptedException, IOException {
+        super.shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee();
     }
 }

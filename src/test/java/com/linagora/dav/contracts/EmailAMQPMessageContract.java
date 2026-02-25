@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 import java.io.IOException;
@@ -53,6 +54,7 @@ public abstract class EmailAMQPMessageContract {
 
     public static final boolean NOT_COUNTER = false;
     public static final boolean COUNTER = true;
+    private static final String X_PUBLICLY_CREATED_HEADER = "X-PUBLICLY-CREATED:true";
 
     private final ConditionFactory calmlyAwait = Awaitility.with()
         .pollInterval(Duration.ofMillis(500))
@@ -960,9 +962,8 @@ public abstract class EmailAMQPMessageContract {
         assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/267")
     @Test
-    void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee() throws IOException, InterruptedException {
+    protected void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee() throws IOException, InterruptedException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
 
@@ -993,169 +994,28 @@ public abstract class EmailAMQPMessageContract {
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
-            END:VEVENT
-            END:VCALENDAR
-            """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", attendee.email());
-
-        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
-
-        Thread.sleep(2000);
-
-        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true))
-            .isNull();
-    }
-
-    @Disabled("https://github.com/linagora/esn-sabre/issues/267")
-    @Test
-    void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithExternalAttendee() throws IOException, InterruptedException {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
-
-        String eventUid = UUID.randomUUID().toString();
-        String calendarData = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
-            BEGIN:VTIMEZONE
-            TZID:Asia/Ho_Chi_Minh
-            BEGIN:STANDARD
-            TZOFFSETFROM:+0700
-            TZOFFSETTO:+0700
-            TZNAME:ICT
-            DTSTART:19700101T000000
-            END:STANDARD
-            END:VTIMEZONE
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:1
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
-            SUMMARY:Publicly created meeting with external
-            LOCATION:Twake Meeting Room
-            DESCRIPTION:This is a publicly created meeting with an external attendee.
-            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
-            END:VEVENT
-            END:VCALENDAR
-            """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", externalAttendeeEmail);
-
-        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
-
-        Thread.sleep(2000);
-
-        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true))
-            .isNull();
-    }
-
-    @Disabled("https://github.com/linagora/esn-sabre/issues/268")
-    @ParameterizedTest
-    @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
-    void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) throws InterruptedException, IOException {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
-
-        String eventUid = UUID.randomUUID().toString();
-
-        // GIVEN: Organizer creates event with PARTSTAT=NEEDS-ACTION and X-PUBLICLY-CREATED:true
-        String initialCalendarData = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
-            BEGIN:VTIMEZONE
-            TZID:Asia/Ho_Chi_Minh
-            BEGIN:STANDARD
-            TZOFFSETFROM:+0700
-            TZOFFSETTO:+0700
-            TZNAME:ICT
-            DTSTART:19700101T000000
-            END:STANDARD
-            END:VTIMEZONE
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:1
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
-            SUMMARY:Publicly created meeting
-            LOCATION:Twake Meeting Room
-            DESCRIPTION:This is a publicly created meeting.
-            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
-            END:VEVENT
-            END:VCALENDAR
-            """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", attendee.email());
-
-        calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
-
-        // WHEN: Organizer updates PARTSTAT to ACCEPTED or TENTATIVE
-        String updatedCalendarData = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
-            BEGIN:VTIMEZONE
-            TZID:Asia/Ho_Chi_Minh
-            BEGIN:STANDARD
-            TZOFFSETFROM:+0700
-            TZOFFSETTO:+0700
-            TZNAME:ICT
-            DTSTART:19700101T000000
-            END:STANDARD
-            END:VTIMEZONE
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:2
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
-            SUMMARY:Publicly created meeting
-            LOCATION:Twake Meeting Room
-            DESCRIPTION:This is a publicly created meeting.
-            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT={partStat};RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
+            {xPubliclyCreated}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
-            .replace("{partStat}", partStat);
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
-        calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
 
-        // THEN: A notification email should be sent to the external attendee
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        assertThat(actual).contains("\"recipientEmail\":\"{attendeeEmail}\""
-            .replace("{attendeeEmail}", attendee.email()));
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/268")
-    @ParameterizedTest
-    @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
-    void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithExternalAttendee(String partStat) throws InterruptedException, IOException {
+    @Test
+    protected void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithExternalAttendee() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
         String eventUid = UUID.randomUUID().toString();
-
-        // GIVEN: Organizer creates event with PARTSTAT=NEEDS-ACTION and X-PUBLICLY-CREATED:true
-        String initialCalendarData = """
+        String calendarData = """
             BEGIN:VCALENDAR
             VERSION:2.0
             PRODID:-//Sabre//Sabre VObject 4.1.3//EN
@@ -1181,62 +1041,24 @@ public abstract class EmailAMQPMessageContract {
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
-            END:VEVENT
-            END:VCALENDAR
-            """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", externalAttendeeEmail);
-
-        calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
-
-        // WHEN: Organizer updates PARTSTAT to ACCEPTED or TENTATIVE
-        String updatedCalendarData = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
-            BEGIN:VTIMEZONE
-            TZID:Asia/Ho_Chi_Minh
-            BEGIN:STANDARD
-            TZOFFSETFROM:+0700
-            TZOFFSETTO:+0700
-            TZNAME:ICT
-            DTSTART:19700101T000000
-            END:STANDARD
-            END:VTIMEZONE
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:2
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
-            SUMMARY:Publicly created meeting with external
-            LOCATION:Twake Meeting Room
-            DESCRIPTION:This is a publicly created meeting with an external attendee.
-            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT={partStat};RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
+            {xPubliclyCreated}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", externalAttendeeEmail)
-            .replace("{partStat}", partStat);
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
-        calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
 
-        // THEN: A notification email should be sent to the external attendee
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        assertThat(actual).contains("\"recipientEmail\":\"{attendeeEmail}\""
-            .replace("{attendeeEmail}", externalAttendeeEmail));
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/269")
-    @Test
-    void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
+    @ParameterizedTest
+    @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
+    protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
 
@@ -1269,16 +1091,21 @@ public abstract class EmailAMQPMessageContract {
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
+            {xPubliclyCreated}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", attendee.email());
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
-        // WHEN: Organizer updates PARTSTAT to DECLINED
+        calmlyAwait
+            .during(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+
+        // WHEN: Organizer updates PARTSTAT to ACCEPTED or TENTATIVE
         String updatedCalendarData = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -1303,27 +1130,42 @@ public abstract class EmailAMQPMessageContract {
             LOCATION:Twake Meeting Room
             DESCRIPTION:This is a publicly created meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT={partStat};RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
+            {xPubliclyCreated}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", attendee.email());
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{partStat}", partStat)
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
 
-        Thread.sleep(2000);
+        // THEN: A notification email should be sent to the internal attendee
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
-        // THEN: No notification email is sent to the attendee
-        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true))
-            .isNull();
+        assertThatJson(actual)
+            .whenIgnoringPaths("event", "calendarURI", "eventPath")
+            .isEqualTo("""
+                {
+                  "senderEmail": "{organizerEmail}",
+                  "recipientEmail": "{attendeeEmail}",
+                  "method": "REQUEST",
+                  "event": "ignored",
+                  "notify": true,
+                  "calendarURI": "ignored",
+                  "eventPath": "ignored"
+                }
+                """.replace("{organizerEmail}", organizer.email())
+                .replace("{attendeeEmail}", attendee.email())
+                .replace("{attendeeId}", attendee.id()));
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/269")
-    @Test
-    void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee() throws InterruptedException, IOException {
+    @ParameterizedTest
+    @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
+    protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithExternalAttendee(String partStat) {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
@@ -1356,12 +1198,205 @@ public abstract class EmailAMQPMessageContract {
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
+            {xPubliclyCreated}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", externalAttendeeEmail);
+            .replace("{attendeeEmail}", externalAttendeeEmail)
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
+
+        calmlyAwait
+            .during(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+
+        // WHEN: Organizer updates PARTSTAT to ACCEPTED or TENTATIVE
+        String updatedCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:2
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Publicly created meeting with external
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a publicly created meeting with an external attendee.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT={partStat};RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", externalAttendeeEmail)
+            .replace("{partStat}", partStat)
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+
+        // THEN: A notification email should be sent to the external attendee
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        assertThatJson(actual)
+            .whenIgnoringPaths("event", "calendarURI")
+            .isEqualTo("""
+                {
+                  "senderEmail": "{organizerEmail}",
+                  "recipientEmail": "{attendeeEmail}",
+                  "method": "REQUEST",
+                  "event": "ignored",
+                  "notify": true,
+                  "calendarURI": "ignored",
+                  "eventPath": "${json-unit.regex}^/calendars/.*$"
+                }
+                """.replace("{organizerEmail}", organizer.email())
+                .replace("{attendeeEmail}", externalAttendeeEmail));
+    }
+
+    @Test
+    protected void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Organizer creates event with PARTSTAT=NEEDS-ACTION and X-PUBLICLY-CREATED:true
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Publicly created meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a publicly created meeting.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
+
+        // WHEN: Organizer updates PARTSTAT to DECLINED
+        String updatedCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:2
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Publicly created meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a publicly created meeting.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+
+        // THEN: No notification email is sent to the attendee
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+    }
+
+    @Test
+    protected void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee() throws InterruptedException, IOException {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Organizer creates event with PARTSTAT=NEEDS-ACTION and X-PUBLICLY-CREATED:true
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Publicly created meeting with external
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a publicly created meeting with an external attendee.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", externalAttendeeEmail)
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
@@ -1392,20 +1427,20 @@ public abstract class EmailAMQPMessageContract {
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
-            X-PUBLICLY-CREATED:true
+            {xPubliclyCreated}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
-            .replace("{attendeeEmail}", externalAttendeeEmail);
+            .replace("{attendeeEmail}", externalAttendeeEmail)
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
 
-        Thread.sleep(2000);
-
         // THEN: No notification email is sent to the attendee
-        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true))
-            .isNull();
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
     private byte[] getMessageFromQueue() {
