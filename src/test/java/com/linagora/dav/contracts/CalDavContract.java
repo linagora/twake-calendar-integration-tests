@@ -555,6 +555,32 @@ public abstract class CalDavContract {
     }
 
     @Test
+    void deleteShouldNotCrashForEventWithoutOrganizer() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int createStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/no-organizer.ics")
+            .send(body(ICS_3_B.replace("ORGANIZER;CN=Julie VERRIER:mailto:[REPLACE]", "")
+                .replace("mailto:apujol@linagora.com", "mailto:" + testUser.email()))));
+
+        int deleteStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .delete()
+            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/no-organizer.ics"));
+
+        int getAfterDeleteStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "text/calendar"))
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/no-organizer.ics"));
+
+        assertThat(createStatus).isEqualTo(201);
+        assertThat(deleteStatus).isEqualTo(204);
+        assertThat(getAfterDeleteStatus).isEqualTo(404);
+    }
+
+    @Test
     void putShouldUpdateData() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
