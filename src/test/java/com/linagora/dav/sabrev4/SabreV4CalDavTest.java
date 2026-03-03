@@ -47,4 +47,9 @@ class SabreV4CalDavTest extends CalDavContract {
     @Disabled("Supported only on Sabre 4.7 as part of the new spec")
     protected void cloneShouldNotBeCreatedInAttendeeCalendarWhenOrganizerDeclineMeetingProposition() {
     }
+
+    @Override
+    @Disabled("Fixed on Sabre 4.7")
+    protected void deleteShouldNotCrashForEventWithoutOrganizer() {
+    }
 }
