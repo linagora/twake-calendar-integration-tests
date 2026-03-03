@@ -69,6 +69,12 @@ public class SabreV4EmailAMQPMessageTest extends EmailAMQPMessageContract {
 
     @Disabled("Only supported in Sabre 4.7+")
     @Override
+    public void shouldSendNotificationEmailWhenAcceptedAfterSetRecurringPubliclyCreated() {
+        super.shouldSendNotificationEmailWhenAcceptedAfterSetRecurringPubliclyCreated();
+    }
+
+    @Disabled("Only supported in Sabre 4.7+")
+    @Override
     public void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
         super.shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee();
     }

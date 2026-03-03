@@ -1270,6 +1270,79 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
+    protected void shouldSendNotificationEmailWhenAcceptedAfterSetRecurringPubliclyCreated() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        String recurrenceRule = "RRULE:FREQ=DAILY;COUNT=3";
+
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART:30250411T100000Z
+            DTEND:30250411T110000Z
+            SUMMARY:Publicly created recurring meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a publicly created recurring meeting.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
+
+        calmlyAwait
+            .during(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+
+        String recurringCalendarData = initialCalendarData
+            .replace("SEQUENCE:1", "SEQUENCE:2")
+            .replace("DTEND:30250411T110000Z", "DTEND:30250411T110000Z\n" + recurrenceRule);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, recurringCalendarData);
+
+        calmlyAwait
+            .during(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+
+        String acceptedCalendarData = recurringCalendarData
+            .replace("SEQUENCE:2", "SEQUENCE:3")
+            .replace("ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:" + organizer.email(),
+                "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:" + organizer.email());
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, acceptedCalendarData);
+
+        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+
+        assertThatJson(actual)
+            .whenIgnoringPaths("event", "calendarURI", "eventPath")
+            .isEqualTo("""
+                {
+                  "senderEmail": "{organizerEmail}",
+                  "recipientEmail": "{attendeeEmail}",
+                  "method": "REQUEST",
+                  "event": "ignored",
+                  "notify": true,
+                  "calendarURI": "ignored",
+                  "eventPath": "ignored"
+                }
+                """.replace("{organizerEmail}", organizer.email())
+                .replace("{attendeeEmail}", attendee.email()));
+    }
+
+    @Test
     protected void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
