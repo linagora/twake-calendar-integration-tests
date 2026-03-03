@@ -555,7 +555,7 @@ public abstract class CalDavContract {
     }
 
     @Test
-    void deleteShouldNotCrashForEventWithoutOrganizer() {
+    protected void deleteShouldNotCrashForEventWithoutOrganizer() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         int createStatus = executeNoContent(dockerExtension().davHttpClient()
