@@ -231,6 +231,252 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
+    protected void itipRequestWithoutOrganizerShouldStillUpdateEventInDefaultCalendar() {
+        // GIVEN Bob already has an event
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Initial Meeting Without Organizer Update
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), initialIcs);
+
+        Function<String, List<JsonNode>> bobEventsForUri = uri -> calDavClient.reportCalendarEvents(
+                bob, uri,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
+            .anySatisfy(item -> assertThat(item.toString())
+                .contains("Initial Meeting Without Organizer Update"));
+
+        // WHEN Cedric sends REQUEST update without ORGANIZER field
+        String requestWithoutOrganizer = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080500Z
+            DTSTART:20251006T090000Z
+            DTEND:20251006T100000Z
+            SUMMARY:Updated Meeting Without Organizer
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(requestWithoutOrganizer)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), requestBody).block();
+
+        // THEN Bob’s default calendar event should still be updated
+        awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("Updated Meeting Without Organizer");
+                assertThat(json).doesNotContain("Initial Meeting Without Organizer Update");
+            }));
+    }
+
+    @Test
+    protected void itipReplyWithoutOrganizerShouldStillUpdateOrganizerCalendarWithAttendeePartStat() {
+        // GIVEN Cedric created an event with Bob
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Reply Without Organizer Test
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        calDavClient.upsertCalendarEvent(cedric,
+            URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + eventUid + ".ics"),
+            organizerIcs);
+
+        Function<String, List<JsonNode>> cedricEventsForUri = uri ->
+            calDavClient.reportCalendarEvents(cedric, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String cedricDefaultCalendarUri = "/calendars/" + cedric.id() + "/" + cedric.id();
+        assertThat(cedricEventsForUri.apply(cedricDefaultCalendarUri))
+            .anySatisfy(item -> assertThat(item.toString()).contains("NEEDS-ACTION"));
+
+        // WHEN Bob sends REPLY without ORGANIZER field
+        String replyWithoutOrganizer = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080500Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Reply Without Organizer Test
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String replyBody = ITIPJsonBodyRequest.builder()
+            .ical(replyWithoutOrganizer)
+            .sender(bob.email())
+            .recipient(cedric.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + cedric.id()), replyBody).block();
+
+        // THEN Cedric’s default calendar event should still be updated with Bob's ACCEPTED status
+        awaitAtMost.untilAsserted(() -> assertThat(cedricEventsForUri.apply(cedricDefaultCalendarUri))
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThatJson(item)
+                    .inPath("data[2][0][1]")
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                              [
+                              "attendee",
+                              {
+                                "cn": "Bob",
+                                "partstat": "ACCEPTED",
+                                "schedule-status": "${json-unit.ignore}"
+                              },
+                              "cal-address",
+                              "mailto:%s"
+                            ]""".formatted(bob.email())));
+            }));
+    }
+
+    @Test
+    protected void itipCancelWithoutOrganizerShouldStillCancelEventInDefaultCalendar() {
+        // GIVEN Bob has an event from Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting To Be Cancelled Without Organizer
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String bobCalendarEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobCalendarEventUri), initialIcs);
+
+        Function<String, List<JsonNode>> bobEventsForUri = uri ->
+            calDavClient.reportCalendarEvents(bob, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
+            .anySatisfy(item -> assertThat(item.toString())
+                .contains("Meeting To Be Cancelled Without Organizer"));
+
+        // WHEN Cedric sends CANCEL without ORGANIZER field
+        String cancelWithoutOrganizer = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting To Be Cancelled Without Organizer
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelWithoutOrganizer)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), cancelBody).block();
+
+        // THEN Bob’s default calendar event should still be cancelled
+        awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
+            .filteredOn(item -> item.toString().contains(eventUid))
+            .allSatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains("CANCELLED");
+                assertThatJson(item)
+                    .inPath("data[2][0][1]")
+                    .isArray()
+                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                        .isEqualTo("""
+                              [
+                              "attendee",
+                              {
+                                "cn": "Bob",
+                                "partstat": "NEEDS-ACTION"
+                              },
+                              "cal-address",
+                              "mailto:%s"
+                            ]""".formatted(bob.email())));
+            }));
+    }
+
+    @Test
     void itipCancelShouldRemoveEventFromDefaultCalendar() {
         // GIVEN Cedric an event with Bob
         String eventUid = "event-" + UUID.randomUUID();
