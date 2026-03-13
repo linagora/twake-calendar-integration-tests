@@ -52,4 +52,10 @@ public class SabreV4ITIPRequestTest extends ITIPRequestContract {
     protected void itipCancelWithoutOrganizerShouldStillCancelEventInDefaultCalendar() {
     }
 
+    @Test
+    @Disabled("Disabled on SabreV4")
+    @Override
+    protected void shouldNotDuplicateAttendeeWhenReplyUsesUppercaseMailtoScheme() {
+    }
+
 }
