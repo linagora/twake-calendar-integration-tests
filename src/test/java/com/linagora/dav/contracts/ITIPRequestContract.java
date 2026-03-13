@@ -1220,7 +1220,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void shouldNotDuplicateAttendeeWhenReplyUsesUppercaseMailtoScheme() {
+    protected void shouldNotDuplicateAttendeeWhenReplyUsesUppercaseMailtoScheme() {
         String eventUid = "event-" + UUID.randomUUID();
         String organizerEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
 
