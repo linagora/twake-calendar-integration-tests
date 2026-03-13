@@ -27,6 +27,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -57,6 +58,10 @@ import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Parameter;
+import net.fortuna.ical4j.model.Property;
+import net.fortuna.ical4j.model.property.Attendee;
+import net.fortuna.ical4j.model.parameter.PartStat;
 
 public abstract class ITIPRequestContract {
     private static final ConditionFactory calmlyAwait = Awaitility.with()
@@ -1212,6 +1217,76 @@ public abstract class ITIPRequestContract {
         Calendar actualBobCalendar = CalendarUtil.parseIcsAndSanitize(bobCalendarEventIcs);
         assertThat(actualBobCalendar.toString())
             .contains("ATTENDEE;CN=Cedric;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED");
+    }
+
+    @Test
+    void shouldNotDuplicateAttendeeWhenReplyUsesUppercaseMailtoScheme() {
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            SUMMARY:Daily meeting
+            ORGANIZER;CN=Bob:MAILTO:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:MAILTO:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(organizerEventUri), organizerIcs);
+
+        String replyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20260320T081000Z
+            DTSTART;TZID=Europe/Paris:20260323T090000
+            DTEND;TZID=Europe/Paris:20260323T100000
+            SUMMARY:Daily meeting
+            ORGANIZER;CN=Bob:MAILTO:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=ACCEPTED:MAILTO:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), cedric.email());
+
+        String replyBody = ITIPJsonBodyRequest.builder()
+            .ical(replyIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), replyBody).block();
+
+        List<String> bobCalendarHrefs = awaitCalendarEntries(bob, "/calendars/" + bob.id() + "/" + bob.id(), 1);
+        String bobCalendarEventIcs = calDavClient.getCalendarEvent(bob, URI.create(bobCalendarHrefs.getFirst()));
+        Calendar bobCalendar = CalendarUtil.parseIcsAndSanitize(bobCalendarEventIcs);
+
+        List<Attendee> attendees = bobCalendar.getComponents().getFirst().getProperties(Property.ATTENDEE).stream()
+            .map(Attendee.class::cast)
+            .filter(attendee -> attendee.getValue().equalsIgnoreCase("MAILTO:" + cedric.email()))
+            .toList();
+
+        assertThat(attendees)
+            .as("Bob's event should keep a single attendee for Cedric")
+            .singleElement()
+            .satisfies(attendee -> {
+                assertThat(attendee.getParameter(Parameter.PARTSTAT)).isEqualTo(Optional.of(PartStat.ACCEPTED));
+                assertThat(attendee.getValue()).isEqualToIgnoringCase("MAILTO:" + cedric.email());
+            });
     }
 
     @Test
