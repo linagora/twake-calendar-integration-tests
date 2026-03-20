@@ -39,6 +39,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
@@ -2698,6 +2699,177 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
+    void resourceAdminShouldNotBeAbleToPutAfterDelegationRevoked() {
+        // GIVEN: a resource with Bob as delegated admin
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        // GIVEN: Alice invites the resource to an event
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T100000
+            SUMMARY:Design meeting
+            LOCATION:Meeting Room
+            DESCRIPTION:Initial meeting
+            ORGANIZER;CN=Alice:mailto:%s
+            ATTENDEE;CN=whiteboard;CUTYPE=RESOURCE;PARTSTAT=NEEDS-ACTION:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email(), resource.id());
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        CalendarURL resourceCalendarUrl = calDavClient.findUserCalendars(bob)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next().blockOptional()
+            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
+
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+        URI delegatedEventUri = URI.create(resourceCalendarUrl.asUri().toASCIIString() + "/" + resourceEventId + ".ics");
+
+        // sanity check: PUT works before revocation
+        DavResponse initialGetResponse = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(delegatedEventUri.toASCIIString()));
+        assertThat(initialGetResponse.status()).isEqualTo(200);
+
+        String acceptedEventIcs = initialGetResponse.body().replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+        Supplier<Integer> putAsDelegatedResourceAdmin = () -> executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .put()
+            .uri(delegatedEventUri.toASCIIString())
+            .send(body(acceptedEventIcs)));
+
+        int putBeforeRevokeStatus = putAsDelegatedResourceAdmin.get();
+        assertThat(putBeforeRevokeStatus)
+            .as("Bob is able to update delegated resource event before revocation")
+            .isEqualTo(204);
+
+        // WHEN: revoke Bob's delegated right on the resource calendar
+        revokeResourceAdmin(resource, bob, technicalToken);
+
+        // THEN: PUT on delegated resource event is no longer allowed
+        awaitAtMost.untilAsserted(() -> {
+            int putAfterRevokeStatus = putAsDelegatedResourceAdmin.get();
+
+            assertThat(putAfterRevokeStatus)
+                .as("Bob is not able to update delegated resource event after revocation")
+                .isEqualTo(404);
+        });
+    }
+
+    @Test
+    void resourceAdminShouldNotBeAbleToSendItipAfterDelegationRevoked() {
+        // GIVEN: a resource with Bob as delegated admin
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        // GIVEN: Alice invites the resource to an event
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T100000
+            SUMMARY:Design meeting
+            LOCATION:Meeting Room
+            DESCRIPTION:Initial meeting
+            ORGANIZER;CN=Alice:mailto:%s
+            ATTENDEE;CN=whiteboard;CUTYPE=RESOURCE;PARTSTAT=NEEDS-ACTION:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, alice.email(), resource.id());
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        CalendarURL resourceCalendarUrl = calDavClient.findUserCalendars(bob)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next().blockOptional()
+            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
+
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+        URI delegatedEventUri = URI.create(resourceCalendarUrl.asUri().toASCIIString() + "/" + resourceEventId + ".ics");
+
+        String counterIcal = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251027T030000Z
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251028T110000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251028T120000
+            SUMMARY:Design meeting - Proposed new time
+            ORGANIZER;CN=whiteboard:mailto:%s@open-paas.org
+            ATTENDEE;CN=Alice;ROLE=REQ-PARTICIPANT:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, resource.id(), alice.email());
+
+        String counterJsonBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcal)
+            .sender(resource.id() + "@open-paas.org")
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        // sanity check: ITIP works before revocation
+        Supplier<Integer> sendItipAsDelegatedResourceAdmin = () -> dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .headers(header -> header.add("Accept", "application/json, text/plain, */*")
+                .add("Content-Type", "application/calendar+json"))
+            .request(HttpMethod.valueOf("ITIP"))
+            .uri(delegatedEventUri.toASCIIString())
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, content) -> Mono.just(response.status().code()))
+            .block();
+
+        int itipBeforeRevokeStatus = sendItipAsDelegatedResourceAdmin.get();
+        assertThat(itipBeforeRevokeStatus)
+            .as("Bob is able to send ITIP on delegated event URI before revocation")
+            .isEqualTo(204);
+
+        // WHEN: revoke Bob's delegated right on the resource calendar
+        revokeResourceAdmin(resource, bob, technicalToken);
+
+        // THEN: ITIP via delegated resource event URI is no longer allowed
+        awaitAtMost.untilAsserted(() -> {
+            int itipAfterRevokeStatus = sendItipAsDelegatedResourceAdmin.get();
+
+            assertThat(itipAfterRevokeStatus)
+                .as("Bob is not able to send ITIP on delegated event URI after revocation")
+                .isEqualTo(404);
+        });
+    }
+
+    @Test
     protected void resourceAdminCanListEventsViaDelegatedCalendar() {
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
@@ -2758,6 +2930,47 @@ public abstract class CalDavDelegationContract {
 
         assertThat(delegationResponse.getKey())
             .as("Bob should be granted write access to the resource calendar")
+            .isIn(200, 201, 204);
+    }
+
+    private void revokeResourceAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
+        Map.Entry<Integer, String> revocationResponse = dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
+            .send(Mono.defer(() -> {
+                String payload = """
+                    {
+                      "share": {
+                        "set": [],
+                        "remove": [
+                          {
+                            "dav:href": "mailto:%s"
+                          }
+                        ]
+                      }
+                    }
+                    """.formatted(admin.email());
+                return Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)));
+            }))
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .flatMap(body -> {
+                    int status = response.status().code();
+                    if (status != 200 && status != 201 && status != 204) {
+                        return Mono.error(new RuntimeException("HTTP " + status + ": " + body));
+                    }
+                    return Mono.just(Map.entry(status, body));
+                }))
+            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1))
+                .filter(error -> StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path")))
+            .block();
+
+        assertThat(revocationResponse.getKey())
+            .as("Bob's write access on the resource calendar should be revoked")
             .isIn(200, 201, 204);
     }
 }
