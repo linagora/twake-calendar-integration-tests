@@ -780,6 +780,102 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
+    void itipCounterShouldAppearInOrganizerInbox() {
+        // GIVEN Bob creates an event and invites Alice
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting proposed by Bob
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String organizerEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(bob, URI.create(organizerEventUri), initialIcs);
+
+        // Ensure Alice has the event before she sends COUNTER
+        String aliceDefaultCalendarUri = "/calendars/" + alice.id() + "/" + alice.id();
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                    alice,
+                    aliceDefaultCalendarUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+            assertThat(aliceEvents).anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("mailto:" + alice.email());
+                assertThat(json).contains("mailto:" + bob.email());
+            });
+        });
+
+        // WHEN Alice sends an ITIP COUNTER to Bob with a proposed new time
+        String counterIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T081000Z
+            DTSTART:20251005T100000Z
+            DTEND:20251005T110000Z
+            SUMMARY:Meeting proposed by Bob - new proposal
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String counterBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        calDavClient.sendITIPRequest(alice, URI.create(bobCalendarUri), counterBody).block();
+
+        // THEN Bob's inbox should contain the COUNTER sent by Alice
+        String bobInboxUri = "/calendars/" + bob.id() + "/inbox/";
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
+                    bob,
+                    bobInboxUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+            assertThat(bobInboxItems)
+                .as("Bob should receive Alice's COUNTER proposal in inbox")
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("\"COUNTER\"");
+                    assertThat(json).contains("mailto:" + alice.email());
+                    assertThat(json).contains("mailto:" + bob.email());
+                });
+        });
+    }
+
+    @Test
     void itipShouldNotBeAllowedWhenSenderHasNoWriteAccess() throws Exception {
         // GIVEN Cedric and Bob, and Cedric has no write access to Bob’s calendars
         String eventUid = "event-" + UUID.randomUUID();
