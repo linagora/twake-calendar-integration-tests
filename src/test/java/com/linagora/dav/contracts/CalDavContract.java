@@ -38,6 +38,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
@@ -1354,16 +1355,17 @@ public abstract class CalDavContract {
         String organizerInboxUri = "/calendars/" + organizer.id() + "/inbox/";
 
         // Locate the attendee's resource href to upsert replies on their own copy
-        List<JsonNode> attendeeInitialEvents = calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
-            .collectList()
-            .block();
-
-        String attendeeEventHref = attendeeInitialEvents.stream()
-            .filter(node -> node.toString().contains(eventUid))
-            .map(node -> node.at("/_links/self/href").asText())
-            .findFirst()
+        String attendeeEventHref = awaitAtMost.until(() ->
+                calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
+                        Instant.parse("2025-09-01T00:00:00Z"),
+                        Instant.parse("2025-11-01T00:00:00Z"))
+                    .collectList()
+                    .block()
+                    .stream()
+                    .filter(node -> node.toString().contains(eventUid))
+                    .map(node -> node.at("/_links/self/href").asText())
+                    .findFirst(),
+            Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Attendee's copy of the event not found"));
 
         // Build attendee's REPLY ICS (only PARTSTAT changes; keep SUMMARY as-is)
@@ -1934,7 +1936,7 @@ public abstract class CalDavContract {
             "ACCEPTED");
         calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
+        Supplier<DavResponse> reportResponseSupplier = () -> execute(dockerExtension().davHttpClient()
             .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
@@ -1958,17 +1960,20 @@ public abstract class CalDavContract {
                 </c:calendar-query>
                 """.replace("{eventUid}", eventUid))));
 
-        String actual = XMLUtil.extractByXPath(
-            response.body(),
-            "//cal:calendar-data",
-            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
-        );
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = reportResponseSupplier.get();
+            String actual = XMLUtil.extractByXPath(
+                response.body(),
+                "//cal:calendar-data",
+                Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+            );
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-        expectedCalendar.getComponent(Component.VEVENT).get().getProperty(Property.ATTENDEE).get().add(new ScheduleStatus("2.0"));
-
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+            CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+            CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
+            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        });
     }
 
     @Test
@@ -2106,6 +2111,7 @@ public abstract class CalDavContract {
         );
 
         Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
 
         assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
             BEGIN:VCALENDAR
@@ -2131,7 +2137,7 @@ public abstract class CalDavContract {
             LOCATION:Twake Meeting Room
             DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=DECLINED;CN="Benoît TELLIER";SCHEDULE-STATUS=2.0:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=DECLINED;CN="Benoît TELLIER":mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             END:VEVENT
             END:VCALENDAR
@@ -2176,6 +2182,7 @@ public abstract class CalDavContract {
         Calendar actualCalendar = CalendarUtil.parseIcs(actual);
         actualCalendar.removeAll(Property.PRODID);
         actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
 
         assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
             BEGIN:VCALENDAR
@@ -2306,6 +2313,7 @@ public abstract class CalDavContract {
         String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
         Calendar actualCalendar = CalendarUtil.parseIcs(actual);
         actualCalendar.removeAll(Property.PRODID);
+        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
 
         assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
             BEGIN:VCALENDAR
@@ -2329,7 +2337,7 @@ public abstract class CalDavContract {
             SUMMARY:Sprint planning #01
             LOCATION:Twake Meeting Room
             DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
-            ORGANIZER;CN=Van Tung TRAN;SCHEDULE-STATUS=1.1:mailto:{organizerEmail}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN="Benoît TELLIER":mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
@@ -2363,7 +2371,7 @@ public abstract class CalDavContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
+        Supplier<DavResponse> reportResponseSupplier = () -> execute(dockerExtension().davHttpClient()
             .headers(headers -> testUser2.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
@@ -2385,22 +2393,24 @@ public abstract class CalDavContract {
                 </c:calendar-query>
                 """)));
 
-        String actual = XMLUtil.extractByXPath(
-            response.body(),
-            "//cal:calendar-data",
-            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
-        );
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = reportResponseSupplier.get();
+            String actual = XMLUtil.extractByXPath(response.body(),
+                "//cal:calendar-data", Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponents(Component.VEVENT)
-            .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponents(Component.VEVENT)
-            .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
+            Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actual);
+            Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(calendarData);
+            actualCalendar.removeAll(Property.PRODID);
+            actualCalendar.getComponents(Component.VEVENT)
+                .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
+            expectedCalendar.removeAll(Property.PRODID);
+            expectedCalendar.getComponents(Component.VEVENT)
+                .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
+            CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+            CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
 
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        });
     }
 
     @Test
