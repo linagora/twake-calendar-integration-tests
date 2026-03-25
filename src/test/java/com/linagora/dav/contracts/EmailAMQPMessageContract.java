@@ -20,34 +20,30 @@ package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.JsonUtil;
 import com.linagora.dav.OpenPaasUser;
 
 import net.fortuna.ical4j.model.Calendar;
-import net.javacrumbs.jsonunit.assertj.JsonAssertions;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import net.minidev.json.parser.ParseException;
 
 public abstract class EmailAMQPMessageContract {
@@ -78,6 +74,7 @@ public abstract class EmailAMQPMessageContract {
     void shouldReceiveNotificationEmailMessageOnEventCreation() throws ParseException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -92,15 +89,44 @@ public abstract class EmailAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
 
         String expected = """
             {
               "senderEmail": "{organizerEmail}",
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
-              "event": "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nMETHOD:REQUEST\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nDTSTAMP:30250411T022032Z\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nSUMMARY:Sprint planning #01\\r\\nLOCATION:Twake Meeting Room\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next w\\r\\n eek.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
@@ -113,23 +139,24 @@ public abstract class EmailAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
     public void shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = """
@@ -173,9 +200,10 @@ public abstract class EmailAMQPMessageContract {
             .replace("{partStat}", "NEEDS-ACTION");
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        assertThat(actual).contains("TRIGGER:-PT1D");
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThat(message.path("event").asText()).contains("TRIGGER:-PT1D")));
     }
 
     @Test
@@ -196,6 +224,7 @@ public abstract class EmailAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -207,16 +236,44 @@ public abstract class EmailAMQPMessageContract {
             "30250411T150000",
             "30250411T160000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
-
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T150000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T160000
+            SUMMARY:Sprint planning #02
+            LOCATION:Twake Meeting Room 2
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next 2 weeks.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
 
         String expected = """
             {
               "senderEmail": "{organizerEmail}",
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
-              "event": "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nMETHOD:REQUEST\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nDTSTAMP:30250411T022032Z\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T150000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T160000\\r\\nSUMMARY:Sprint planning #02\\r\\nLOCATION:Twake Meeting Room 2\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next 2\\r\\n  weeks.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
@@ -270,17 +327,17 @@ public abstract class EmailAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
@@ -299,6 +356,7 @@ public abstract class EmailAMQPMessageContract {
             "30250411T100000",
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -311,19 +369,19 @@ public abstract class EmailAMQPMessageContract {
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        JsonAssertions.assertThatJson(actual)
-            .inPath("changes")
-            .isEqualTo("""
-                {
-                  "location": {
-                    "previous": "Twake Meeting Room",
-                    "current": "Twake Meeting Room 2"
-                  }
-                }
-                """);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .inPath("changes")
+                    .isEqualTo("""
+                        {
+                          "location": {
+                            "previous": "Twake Meeting Room",
+                            "current": "Twake Meeting Room 2"
+                          }
+                        }
+                        """)));
     }
 
     @Test
@@ -342,6 +400,7 @@ public abstract class EmailAMQPMessageContract {
             "30250411T100000",
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -354,19 +413,19 @@ public abstract class EmailAMQPMessageContract {
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        JsonAssertions.assertThatJson(actual)
-            .inPath("changes")
-            .isEqualTo("""
-                {
-                  "description": {
-                    "previous": "This is a meeting to discuss the sprint planning for the next week.",
-                    "current": "This is a meeting to discuss the sprint planning for the next two weeks."
-                  }
-                }
-                """);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .inPath("changes")
+                    .isEqualTo("""
+                        {
+                          "description": {
+                            "previous": "This is a meeting to discuss the sprint planning for the next week.",
+                            "current": "This is a meeting to discuss the sprint planning for the next two weeks."
+                          }
+                        }
+                        """)));
     }
 
     @Test
@@ -385,6 +444,7 @@ public abstract class EmailAMQPMessageContract {
             "30250411T100000",
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -397,19 +457,19 @@ public abstract class EmailAMQPMessageContract {
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        JsonAssertions.assertThatJson(actual)
-            .inPath("changes")
-            .isEqualTo("""
-                {
-                  "summary": {
-                    "previous": "Sprint planning #01",
-                    "current": "Sprint planning #02"
-                  }
-                }
-                """);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .inPath("changes")
+                    .isEqualTo("""
+                        {
+                          "summary": {
+                            "previous": "Sprint planning #01",
+                            "current": "Sprint planning #02"
+                          }
+                        }
+                        """)));
     }
 
     @Test
@@ -430,18 +490,45 @@ public abstract class EmailAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         calDavClient.deleteCalendarEvent(testUser, eventUid);
-
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20250710T030002Z
+            SEQUENCE:2
+            SUMMARY:Sprint planning #01
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
 
         String expected = """
             {
               "senderEmail": "{organizerEmail}",
               "recipientEmail": "{attendeeEmail}",
               "method": "CANCEL",
-              "event": "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nMETHOD:CANCEL\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nDTSTAMP:20250710T030002Z\\r\\nSEQUENCE:2\\r\\nSUMMARY:Sprint planning #01\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
@@ -453,17 +540,17 @@ public abstract class EmailAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
@@ -484,6 +571,7 @@ public abstract class EmailAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
@@ -497,16 +585,42 @@ public abstract class EmailAMQPMessageContract {
             "ACCEPTED",
             NOT_COUNTER);
         calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
-
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20250710T041802Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
 
         String expected = """
             {
               "senderEmail": "{attendeeEmail}",
               "recipientEmail": "{organizerEmail}",
               "method": "REPLY",
-              "event": "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nMETHOD:REPLY\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nDTSTAMP:20250710T041802Z\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nSUMMARY:Sprint planning #01\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=ACCEPTED;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
@@ -518,17 +632,17 @@ public abstract class EmailAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
@@ -549,6 +663,7 @@ public abstract class EmailAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCounterCalendarData(
             eventUid,
@@ -566,20 +681,80 @@ public abstract class EmailAMQPMessageContract {
             eventUid,
             1);
         calDavClient.postCounter(testUser2, attendeeEventId, counterRequest);
-
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            METHOD:COUNTER
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T150000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T160000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next w
+             eek.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
+        String expectedOldEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next w
+             eek.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
 
         String expected = """
             {
               "senderEmail": "{attendeeEmail}",
               "recipientEmail": "{organizerEmail}",
               "method": "COUNTER",
-              "event": "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nMETHOD:COUNTER\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nDTSTAMP:30250411T022032Z\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T150000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T160000\\r\\nSUMMARY:Sprint planning #01\\r\\nLOCATION:Twake Meeting Room\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next w\\r\\n eek.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
-              "oldEvent": "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nDTSTAMP:30250411T022032Z\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nSUMMARY:Sprint planning #01\\r\\nLOCATION:Twake Meeting Room\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next w\\r\\n eek.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n"
+              "oldEvent": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -588,24 +763,28 @@ public abstract class EmailAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        Calendar actualOldCalendar = CalendarUtil.parseIcs(actualJson.getAsString("event"));
-        Calendar expectedOldCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("event"));
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
-        assertThat(actualOldCalendar).isEqualTo(expectedOldCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+
+                    Calendar actualOldCalendar = CalendarUtil.parseIcsAndSanitize(message.path("oldEvent").asText());
+                    Calendar expectedOldCalendar = CalendarUtil.parseIcsAndSanitize(expectedOldEventIcs);
+                    assertThat(actualOldCalendar).isEqualTo(expectedOldCalendar);
+                }));
     }
 
     @Test
     void shouldReceiveNotificationEmailMessageOnRecurringEventWithExdate() throws ParseException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String eventUid = UUID.randomUUID().toString();
 
@@ -638,8 +817,6 @@ public abstract class EmailAMQPMessageContract {
             .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
             .get();
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
         // --- Expected ICS extracted for readability ---
         String expectedEventIcs = """
             BEGIN:VCALENDAR
@@ -665,12 +842,13 @@ public abstract class EmailAMQPMessageContract {
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{eventUid}", eventUid);
 
-        // --- Expected JSON without event field ---
+        // --- Expected JSON ---
         String expectedJsonString = """
             {
               "senderEmail": "{organizerEmail}",
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
@@ -681,20 +859,17 @@ public abstract class EmailAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{attendeeId}", testUser2.id())
             .replace("{attendeeEventId}", attendeeEventId);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expectedJsonString);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expectedJsonString);
-
-        // Compare JSON (excluding the event field)
-        actualJson.remove("event");
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-
-        // Compare ICS separately
-        Calendar actualCalendar = CalendarUtil.parseIcs(((JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual)).getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedEventIcs);
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
@@ -731,15 +906,12 @@ public abstract class EmailAMQPMessageContract {
         String attendeeEventId = awaitAtMost
             .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
             .get();
-        getMessageFromQueue(); // ignore creation message
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         // Update the event by adding an EXDATE (exclude one occurrence)
         String updatedCalendarData = initialCalendarData.replace("SUMMARY:Weekly meeting",
             "SUMMARY:Weekly meeting\nEXDATE;TZID=Asia/Ho_Chi_Minh:30250411T090000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
-
-        // Consume queue (first is creation, second is cancellation)
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         // --- Expected CANCEL ICS ---
         String expectedCancelIcs = """
@@ -765,12 +937,12 @@ public abstract class EmailAMQPMessageContract {
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{eventUid}", eventUid);
 
-        // --- Expected JSON without event ---
         String expectedJsonString = """
             {
               "senderEmail": "{organizerEmail}",
               "recipientEmail": "{attendeeEmail}",
               "method": "CANCEL",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
@@ -781,25 +953,21 @@ public abstract class EmailAMQPMessageContract {
             .replace("{attendeeId}", testUser2.id())
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expectedJsonString);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expectedJsonString);
 
-        // Compare JSON without ICS
-        actualJson.remove("event");
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-
-        // --- Compare ICS separately ---
-        Calendar actualCalendar = CalendarUtil.parseIcs(((JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual)).getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedCancelIcs);
-
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedCancelIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnRecurringEventOccurrenceUpdate() throws ParseException {
+    void shouldReceiveNotificationEmailMessageOnRecurringEventOccurrenceUpdate() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
@@ -832,7 +1000,6 @@ public abstract class EmailAMQPMessageContract {
         String attendeeEventId = awaitAtMost
             .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
             .get();
-        getMessageFromQueue();
 
         // Override one occurrence (move from 23/09 09:00–10:00 → 24/09 14:00–15:00)
         String updatedOccurrenceData = """
@@ -869,11 +1036,8 @@ public abstract class EmailAMQPMessageContract {
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email());
 
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedOccurrenceData);
-
-        // Consume queue
-        getMessageFromQueue();
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         // --- Expected ICS for the updated occurrence ---
         String expectedEventIcs = """
@@ -905,6 +1069,7 @@ public abstract class EmailAMQPMessageContract {
               "senderEmail": "{organizerEmail}",
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
+              "event": "${json-unit.any-string}",
               "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
@@ -945,21 +1110,18 @@ public abstract class EmailAMQPMessageContract {
             .replace("{attendeeId}", testUser2.id())
             .replace("{attendeeEventId}", attendeeEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expectedJsonString);
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(messages)
+                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expectedJsonString);
 
-        // Compare JSON without ICS
-        actualJson.remove("event");
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-
-        // Compare ICS separately
-        Calendar actualCalendar = CalendarUtil.parseIcs(((JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual)).getAsString("event"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedEventIcs);
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                });
+        });
     }
 
     @Test
@@ -1104,6 +1266,7 @@ public abstract class EmailAMQPMessageContract {
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         // WHEN: Organizer updates PARTSTAT to ACCEPTED or TENTATIVE
         String updatedCalendarData = """
@@ -1142,25 +1305,25 @@ public abstract class EmailAMQPMessageContract {
             .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+        String expectedInternalAttendeeNotification = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "REQUEST",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "${json-unit.any-string}",
+              "eventPath": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email());
 
         // THEN: A notification email should be sent to the internal attendee
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        assertThatJson(actual)
-            .whenIgnoringPaths("event", "calendarURI", "eventPath")
-            .isEqualTo("""
-                {
-                  "senderEmail": "{organizerEmail}",
-                  "recipientEmail": "{attendeeEmail}",
-                  "method": "REQUEST",
-                  "event": "ignored",
-                  "notify": true,
-                  "calendarURI": "ignored",
-                  "eventPath": "ignored"
-                }
-                """.replace("{organizerEmail}", organizer.email())
-                .replace("{attendeeEmail}", attendee.email())
-                .replace("{attendeeId}", attendee.id()));
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .isEqualTo(expectedInternalAttendeeNotification)));
     }
 
     @ParameterizedTest
@@ -1211,6 +1374,7 @@ public abstract class EmailAMQPMessageContract {
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         // WHEN: Organizer updates PARTSTAT to ACCEPTED or TENTATIVE
         String updatedCalendarData = """
@@ -1249,24 +1413,25 @@ public abstract class EmailAMQPMessageContract {
             .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+        String expectedExternalAttendeeNotification = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "REQUEST",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "${json-unit.any-string}",
+              "eventPath": "${json-unit.regex}^/calendars/.*$"
+            }
+            """.replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", externalAttendeeEmail);
 
         // THEN: A notification email should be sent to the external attendee
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        assertThatJson(actual)
-            .whenIgnoringPaths("event", "calendarURI")
-            .isEqualTo("""
-                {
-                  "senderEmail": "{organizerEmail}",
-                  "recipientEmail": "{attendeeEmail}",
-                  "method": "REQUEST",
-                  "event": "ignored",
-                  "notify": true,
-                  "calendarURI": "ignored",
-                  "eventPath": "${json-unit.regex}^/calendars/.*$"
-                }
-                """.replace("{organizerEmail}", organizer.email())
-                .replace("{attendeeEmail}", externalAttendeeEmail));
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> externalAttendeeEmail.equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .isEqualTo(expectedExternalAttendeeNotification)));
     }
 
     @Test
@@ -1316,6 +1481,7 @@ public abstract class EmailAMQPMessageContract {
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         String acceptedCalendarData = recurringCalendarData
             .replace("SEQUENCE:2", "SEQUENCE:3")
@@ -1323,23 +1489,24 @@ public abstract class EmailAMQPMessageContract {
                 "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:" + organizer.email());
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, acceptedCalendarData);
+        String expectedRecurringAcceptedNotification = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "REQUEST",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "${json-unit.any-string}",
+              "eventPath": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email());
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        assertThatJson(actual)
-            .whenIgnoringPaths("event", "calendarURI", "eventPath")
-            .isEqualTo("""
-                {
-                  "senderEmail": "{organizerEmail}",
-                  "recipientEmail": "{attendeeEmail}",
-                  "method": "REQUEST",
-                  "event": "ignored",
-                  "notify": true,
-                  "calendarURI": "ignored",
-                  "eventPath": "ignored"
-                }
-                """.replace("{organizerEmail}", organizer.email())
-                .replace("{attendeeEmail}", attendee.email()));
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .isEqualTo(expectedRecurringAcceptedNotification)));
     }
 
     @Test
@@ -1516,10 +1683,8 @@ public abstract class EmailAMQPMessageContract {
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
-    private byte[] getMessageFromQueue() {
-        return awaitAtMost.atMost(Duration.ofSeconds(20))
-            .until(() -> dockerExtension().getChannel().basicGet(QUEUE_NAME, true), Objects::nonNull)
-            .getBody();
+    private BlockingQueue<JsonNode> listenToQueue() {
+        return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
     }
 
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
@@ -1532,11 +1697,11 @@ public abstract class EmailAMQPMessageContract {
     }
 
     private String generateCounterCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
-                                        String summary,
-                                        String location,
-                                        String description,
-                                        String dtstart,
-                                        String dtend) {
+                                               String summary,
+                                               String location,
+                                               String description,
+                                               String dtstart,
+                                               String dtend) {
         return generateCalendarData(eventUid, organizerEmail, attendeeEmail, summary, location, description, dtstart, dtend, "NEEDS-ACTION", COUNTER);
     }
 

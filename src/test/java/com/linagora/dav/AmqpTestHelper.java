@@ -33,7 +33,7 @@ public class AmqpTestHelper {
     /**
      * Listen to a queue and push parsed JSON messages into a BlockingQueue.
      */
-    public static BlockingQueue<JsonNode> listenToQueue(Channel channel, String queueName) throws IOException {
+    public static BlockingQueue<JsonNode> listenToQueue(Channel channel, String queueName) {
         BlockingQueue<JsonNode> messages = new LinkedBlockingQueue<>();
 
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
@@ -45,7 +45,11 @@ public class AmqpTestHelper {
             }
         };
 
-        channel.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
+        try {
+            channel.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to consume queue " + queueName, e);
+        }
         return messages;
     }
 }
