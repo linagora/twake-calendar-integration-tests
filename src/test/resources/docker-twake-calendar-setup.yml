@@ -94,5 +94,6 @@ services:
       - LDAP_USERNAME_MODE=username
       - LOG_TRACE=true
       - SABRE_IMPERSONATION_ENABLED=true
+      - AMQP_SCHEDULING_ENABLED=${AMQP_SCHEDULING_ENABLED}
     networks:
       - emaily
