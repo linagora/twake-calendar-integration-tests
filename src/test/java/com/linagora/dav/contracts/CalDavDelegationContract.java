@@ -1831,18 +1831,20 @@ public abstract class CalDavDelegationContract {
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
 
         // THEN an ITIP cancel is sent to Cedric
-        DavResponse response = calDavClient.findEventsByTime(cedric,
-            cedric.id(),
-            "inbox",
-            "20300310T000000",
-            "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = calDavClient.findEventsByTime(cedric,
+                cedric.id(),
+                "inbox",
+                "20300310T000000",
+                "20300510T000000");
+            List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
-        assertThat(result).hasSize(2);
-        assertThat(result).anySatisfy(eventData -> {
-            assertThat(eventData.uid()).isEqualTo(eventUid);
-            assertThat(eventData.method().get()).isEqualTo("CANCEL");
-            assertThat(eventData.summary().get()).isEqualTo("Sprint planning #01");
+            assertThat(result).hasSize(2);
+            assertThat(result).anySatisfy(eventData -> {
+                assertThat(eventData.uid()).isEqualTo(eventUid);
+                assertThat(eventData.method().get()).isEqualTo("CANCEL");
+                assertThat(eventData.summary().get()).isEqualTo("Sprint planning #01");
+            });
         });
     }
 
