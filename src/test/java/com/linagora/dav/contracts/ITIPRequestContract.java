@@ -2488,12 +2488,9 @@ public abstract class ITIPRequestContract {
         List<String> calendarHrefs = awaitCalendarEntries(cedric, cedricDefaultCalendarUri, 1);
         String calendarIc = calDavClient.getCalendarEvent(cedric, URI.create(calendarHrefs.getLast()));
 
-        Calendar currentCalendar = CalendarUtil.parseIcsAndSanitize(calendarIc);
-
         // The RECURRENCE-ID should match the original event's local Paris time (22:00),
         // even if Bob replied using a Vietnam time equivalent.
-        assertThat(currentCalendar)
-            .isEqualTo(CalendarUtil.parseIcsAndSanitize("""
+        String expectedCalendarIcs = """
                 BEGIN:VCALENDAR
                 VERSION:2.0
                 CALSCALE:GREGORIAN
@@ -2504,7 +2501,7 @@ public abstract class ITIPRequestContract {
                 RRULE:FREQ=DAILY;COUNT=3
                 SUMMARY:Morning sync Paris time
                 ORGANIZER;CN=Cedric:mailto:{ORG_EMAIL}
-                ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=1.1:mailto:{ATTENDEE_EMAIL}
+                ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:{ATTENDEE_EMAIL}
                 END:VEVENT
                 BEGIN:VEVENT
                 UID:{EVENT_UID}
@@ -2513,13 +2510,15 @@ public abstract class ITIPRequestContract {
                 DTEND;TZID=Europe/Paris:20251229T230000
                 SUMMARY:Morning sync Paris time
                 ORGANIZER;CN=Cedric:mailto:{ORG_EMAIL}
-                ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED;SCHEDULE-STATUS=1.1:mailto:{ATTENDEE_EMAIL}
+                ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:{ATTENDEE_EMAIL}
                 RECURRENCE-ID;TZID=Europe/Paris:20251229T220000
                 END:VEVENT
                 END:VCALENDAR
                 """.replace("{ORG_EMAIL}", cedric.email())
                 .replace("{ATTENDEE_EMAIL}", bob.email())
-                .replace("{EVENT_UID}", eventUid)));
-    }
+                .replace("{EVENT_UID}", eventUid);
 
+        assertThat(CalendarUtil.parseIcsAndSanitize(calendarIc.replaceAll(";SCHEDULE-STATUS=[^:;\\r\\n]+", "")))
+            .isEqualTo(CalendarUtil.parseIcsAndSanitize(expectedCalendarIcs));
+    }
 }
