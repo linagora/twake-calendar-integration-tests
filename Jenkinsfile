@@ -16,6 +16,7 @@ pipeline {
             steps {
                 sh 'sh pre-build.sh'
                 sh 'mvn clean install -Dapi.version=1.43'
+                sh 'mvn test -Damqp.scheduling.enabled=true -Dapi.version=1.43'
             }
             post {
                 always {
