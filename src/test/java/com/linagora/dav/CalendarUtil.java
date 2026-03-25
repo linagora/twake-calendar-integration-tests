@@ -38,6 +38,7 @@ import net.fortuna.ical4j.data.ContentHandlerContext;
 import net.fortuna.ical4j.data.ParserException;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Parameter;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.TimeZoneRegistry;
 import net.fortuna.ical4j.model.TimeZoneRegistryImpl;
@@ -102,5 +103,18 @@ public class CalendarUtil {
     public static void sanitize(Calendar calendar) {
         calendar.removeAll(Property.PRODID);
         calendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+    }
+
+    public static void removeParticipantScheduleStatus(Calendar calendar) {
+        calendar.getComponents(Component.VEVENT).forEach(vevent -> {
+            vevent.getProperties(Property.ATTENDEE)
+                .forEach(attendee -> removeParameter(attendee, Parameter.SCHEDULE_STATUS));
+            vevent.getProperties(Property.ORGANIZER)
+                .forEach(organizer -> removeParameter(organizer, Parameter.SCHEDULE_STATUS));
+        });
+    }
+
+    private static void removeParameter(Property property, String parameterName) {
+        property.getParameter(parameterName).ifPresent(property::remove);
     }
 }
