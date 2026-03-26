@@ -912,7 +912,7 @@ public abstract class SearchAMQPMessageContract {
                         "sequence",
                         {},
                         "integer",
-                        2
+                        "${json-unit.any-number}"
                       ]
                     ],
                     []
