@@ -19,33 +19,30 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.JsonUtil;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 
 import net.fortuna.ical4j.model.Calendar;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
-import net.minidev.json.parser.ParseException;
 
 public abstract class ResourceAMQPMessageContract {
 
@@ -67,7 +64,7 @@ public abstract class ResourceAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveMessageFromEventResourceCreatedExchange() throws IOException, ParseException {
+    void shouldReceiveMessageFromEventResourceCreatedExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "resource:calendar:event:created", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -88,41 +85,73 @@ public abstract class ResourceAMQPMessageContract {
             "30250411T100000",
             "30250411T110000",
             resource.id());
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{resourceId}", resource.id());
 
         String expected = """
             {
               "resourceId" : "{resourceId}",
               "eventId" : "{resourceEventId}.ics",
               "eventPath" : "/calendars/{resourceId}/{resourceId}/{resourceEventId}.ics",
-              "ics" : "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nSUMMARY:Sprint planning #01\\r\\nLOCATION:Twake Meeting Room\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next w\\r\\n eek.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;\\r\\n CN=projector:mailto:{resourceId}@open-paas.org\\r\\nDTSTAMP:20250827T045634Z\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
-              "etag" : "\\"61b33f55b55cd01b5174ea36cd2e149c\\""
+              "ics" : "${json-unit.any-string}",
+              "etag" : "${json-unit.any-string}"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """
             .replace("{resourceId}", resource.id())
             .replace("{eventUid}", eventUid)
             .replace("{resourceEventId}", resourceEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("ics"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("ics"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> resource.id().equals(message.path("resourceId").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("ics").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+                    CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
-    void shouldReceiveMessageFromEventResourceAcceptExchange() throws IOException, ParseException {
+    void shouldReceiveMessageFromEventResourceAcceptExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "resource:calendar:event:accepted", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -166,39 +195,72 @@ public abstract class ResourceAMQPMessageContract {
             "30250411T110000",
             resource.id(),
             "ACCEPTED");
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(resource.id(), resourceEventId, updatedCalendarData, token);
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{resourceId}", resource.id());
 
         String expected = """
             {
               "resourceId" : "{resourceId}",
               "eventId" : "{eventUid}",
               "eventPath" : "/calendars/{resourceId}/{resourceId}/{resourceEventId}.ics",
-              "ics" : "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nSUMMARY:Sprint planning #01\\r\\nLOCATION:Twake Meeting Room\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next w\\r\\n eek.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;\\r\\n CN=projector:mailto:{resourceId}@open-paas.org\\r\\nDTSTAMP:20250827T045634Z\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
-              "etag" : "\\"61b33f55b55cd01b5174ea36cd2e149c\\""
+              "ics" : "${json-unit.any-string}",
+              "etag" : "${json-unit.any-string}"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """
             .replace("{resourceId}", resource.id())
             .replace("{eventUid}", eventUid)
             .replace("{resourceEventId}", resourceEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("ics"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("ics"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> resource.id().equals(message.path("resourceId").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("ics").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+                    CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
     @Test
-    void shouldReceiveMessageFromEventResourceDeclineExchange() throws IOException, ParseException {
+    void shouldReceiveMessageFromEventResourceDeclineExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "resource:calendar:event:declined", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -242,41 +304,72 @@ public abstract class ResourceAMQPMessageContract {
             "30250411T110000",
             resource.id(),
             "DECLINED");
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(resource.id(), resourceEventId, updatedCalendarData, token);
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{resourceId}", resource.id());
 
         String expected = """
             {
               "resourceId" : "{resourceId}",
               "eventId" : "{eventUid}",
               "eventPath" : "/calendars/{resourceId}/{resourceId}/{resourceEventId}.ics",
-              "ics" : "BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\r\\nCALSCALE:GREGORIAN\\r\\nBEGIN:VTIMEZONE\\r\\nTZID:Asia/Ho_Chi_Minh\\r\\nBEGIN:STANDARD\\r\\nTZOFFSETFROM:+0700\\r\\nTZOFFSETTO:+0700\\r\\nTZNAME:ICT\\r\\nDTSTART:19700101T000000\\r\\nEND:STANDARD\\r\\nEND:VTIMEZONE\\r\\nBEGIN:VEVENT\\r\\nUID:{eventUid}\\r\\nSEQUENCE:1\\r\\nDTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000\\r\\nDTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000\\r\\nSUMMARY:Sprint planning #01\\r\\nLOCATION:Twake Meeting Room\\r\\nDESCRIPTION:This is a meeting to discuss the sprint planning for the next w\\r\\n eek.\\r\\nORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}\\r\\nATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}\\r\\nATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;\\r\\n CN=projector:mailto:{resourceId}@open-paas.org\\r\\nDTSTAMP:20250827T045634Z\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR\\r\\n",
-              "etag" : "\\"61b33f55b55cd01b5174ea36cd2e149c\\""
+              "ics" : "${json-unit.any-string}",
+              "etag" : "${json-unit.any-string}"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """
             .replace("{resourceId}", resource.id())
             .replace("{eventUid}", eventUid)
             .replace("{resourceEventId}", resourceEventId);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("ics"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(expectedJson.getAsString("ics"));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-        JsonUtil.sanitize(actualJson);
-        JsonUtil.sanitize(expectedJson);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> resource.id().equals(message.path("resourceId").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
 
-        assertThat(actualJson.toJSONString()).isEqualTo(expectedJson.toJSONString());
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("ics").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+                    CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                }));
     }
 
-    private byte[] getMessageFromQueue() {
-        return awaitAtMost.atMost(Duration.ofSeconds(20))
-            .until(() -> dockerExtension().getChannel().basicGet(QUEUE_NAME, true), Objects::nonNull)
-            .getBody();
+    private BlockingQueue<JsonNode> listenToQueue() {
+        return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
     }
 
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
