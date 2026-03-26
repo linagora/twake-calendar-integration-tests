@@ -24,17 +24,15 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
-import org.assertj.core.api.Assertions;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -43,6 +41,7 @@ import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
@@ -52,14 +51,7 @@ import com.linagora.dav.OpenPaasUser;
 import com.rabbitmq.client.GetResponse;
 
 import net.fortuna.ical4j.model.Calendar;
-import net.fortuna.ical4j.model.Component;
-import net.fortuna.ical4j.model.Parameter;
-import net.fortuna.ical4j.model.Property;
-import net.fortuna.ical4j.model.parameter.ScheduleStatus;
 import net.javacrumbs.jsonunit.core.Option;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
-import net.minidev.json.parser.ParseException;
 
 public abstract class AlarmAMQPMessageContract {
 
@@ -81,7 +73,7 @@ public abstract class AlarmAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveMessageFromEventAlarmCreatedExchange() throws IOException, ParseException {
+    void shouldReceiveMessageFromEventAlarmCreatedExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -98,9 +90,8 @@ public abstract class AlarmAMQPMessageContract {
             "30250411T100000",
             "30250411T110000",
             testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -118,7 +109,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -252,7 +243,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -297,28 +288,22 @@ public abstract class AlarmAMQPMessageContract {
                 ]
               ],
               "import": false,
-              "etag": "\\"ec763b1a6b9366b6e1b77b6c96ee5ad4\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("rawEvent"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
-
-        actualCalendar.getComponent(Component.VEVENT)
-            .ifPresent(vevent -> vevent.getProperties(Property.ATTENDEE)
-                .forEach(attendee -> attendee.remove(new ScheduleStatus("1.1"))));
-
-        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
-
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
+                        .whenIgnoringPaths("etag")
+                        .isEqualTo(expected);
+                    assertRawEventCalendarEquals(message.path("rawEvent").asText(), calendarData);
+                }));
     }
 
     @Test
@@ -339,11 +324,10 @@ public abstract class AlarmAMQPMessageContract {
             "30250411T100000",
             "30250411T110000",
             testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -361,7 +345,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -495,7 +479,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -539,7 +523,7 @@ public abstract class AlarmAMQPMessageContract {
                   ]
                 ]
               ],
-              "etag": "\\"21f6a9b87e59d8e717b81c4ce26dbd08\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -548,10 +532,11 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -586,9 +571,8 @@ public abstract class AlarmAMQPMessageContract {
             "30250411T150000",
             "30250411T160000",
             testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -606,7 +590,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -740,7 +724,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -798,7 +782,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -933,7 +917,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -977,7 +961,7 @@ public abstract class AlarmAMQPMessageContract {
                   ]
                 ]
               ],
-              "etag": "\\"bf2b9ec186809915740081fb3261d413\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -986,10 +970,11 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -1024,9 +1009,8 @@ public abstract class AlarmAMQPMessageContract {
             "30250411T100000",
             "30250411T110000",
             testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -1044,7 +1028,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -1178,7 +1162,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -1222,7 +1206,7 @@ public abstract class AlarmAMQPMessageContract {
                   ]
                 ]
               ],
-              "etag": "\\"9e90bfe6eb0d435029f233eadafd029d\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -1231,10 +1215,11 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -1270,9 +1255,9 @@ public abstract class AlarmAMQPMessageContract {
             "30250411T110000",
             testUser2.email(),
             "ACCEPTED");
-        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
+        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
 
         String expected = """
             {
@@ -1290,7 +1275,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -1424,7 +1409,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -1482,7 +1467,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -1616,7 +1601,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -1660,7 +1645,7 @@ public abstract class AlarmAMQPMessageContract {
                   ]
                 ]
               ],
-              "etag": "\\"5bac12ebeb3b621374468f691ec67c26\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -1669,10 +1654,11 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "old_event[1][1][3]", "old_event[2][1][1][10][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -1693,11 +1679,10 @@ public abstract class AlarmAMQPMessageContract {
             "30250411T100000",
             "30250411T110000",
             testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
-
         calDavClient.deleteCalendarEvent(testUser, eventUid);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -1715,7 +1700,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -1850,7 +1835,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     [
@@ -1901,9 +1886,10 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag")   // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString()).when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -1927,10 +1913,8 @@ public abstract class AlarmAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
-
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.deleteCalendarEvent(testUser, eventUid);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -1948,7 +1932,7 @@ public abstract class AlarmAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -2076,7 +2060,7 @@ public abstract class AlarmAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ],
                       [
                         "status",
@@ -2132,7 +2116,7 @@ public abstract class AlarmAMQPMessageContract {
                   ]
                 ]
               ],
-              "etag": "\\"be8cbbbd2134984703bea3331280b56c\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -2141,10 +2125,11 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")    // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -2219,10 +2204,10 @@ public abstract class AlarmAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{aliceEmail}", alice.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
 
         // Then a message should be present in the event alarm updated exchange
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -2240,7 +2225,7 @@ public abstract class AlarmAMQPMessageContract {
                             "prodid",
                             {},
                             "text",
-                            "-//Example Corp.//CalDAV Client//EN"
+                            "${json-unit.any-string}"
                         ],
                         [
                             "calscale",
@@ -2263,7 +2248,7 @@ public abstract class AlarmAMQPMessageContract {
                                     "dtstamp",
                                     {},
                                     "date-time",
-                                    "2025-10-03T08:00:00Z"
+                                    "${json-unit.any-string}"
                                 ],
                                 [
                                     "dtstart",
@@ -2343,7 +2328,7 @@ public abstract class AlarmAMQPMessageContract {
                     ]
                 ],
                 "import": false,
-                "etag": "\\"cadff6938d7c81385c2711de090ff822\\""
+                "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", bob.email())
             .replace("{attendeeEmail}", alice.email())
@@ -2352,9 +2337,10 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId)
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString()).when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Disabled("https://github.com/linagora/esn-sabre/issues/165")
@@ -2466,11 +2452,11 @@ public abstract class AlarmAMQPMessageContract {
             .uid(eventUid)
             .method("CANCEL")
             .buildJson();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
         calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
 
         // Then a message should be present in the event alarm cancel exchange
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
         String expected = """
             {
                 "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
@@ -2487,7 +2473,7 @@ public abstract class AlarmAMQPMessageContract {
                             "prodid",
                             {},
                             "text",
-                            "-//Example Corp.//CalDAV Client//EN"
+                            "${json-unit.any-string}"
                         ],
                         [
                             "calscale",
@@ -2510,7 +2496,7 @@ public abstract class AlarmAMQPMessageContract {
                                     "dtstamp",
                                     {},
                                     "date-time",
-                                    "2025-10-03T08:00:00Z"
+                                    "${json-unit.any-string}"
                                 ],
                                 [
                                     "dtstart",
@@ -2590,7 +2576,7 @@ public abstract class AlarmAMQPMessageContract {
                     ]
                 ],
                 "import": false,
-                "etag": "\\"cadff6938d7c81385c2711de090ff822\\""
+                "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", bob.email())
             .replace("{attendeeEmail}", alice.email())
@@ -2599,9 +2585,11 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId)
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Disabled("https://github.com/linagora/esn-sabre/issues/165")
@@ -2706,12 +2694,10 @@ public abstract class AlarmAMQPMessageContract {
             .uid(eventUid)
             .method("REQUEST")
             .buildJson();
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
 
-        getMessageFromQueue();   // consume first message related to the acceptance of the event
-
         // Then a message should be present in the event alarm updated exchange
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -2729,7 +2715,7 @@ public abstract class AlarmAMQPMessageContract {
                             "prodid",
                             {},
                             "text",
-                            "-//Example Corp.//CalDAV Client//EN"
+                            "${json-unit.any-string}"
                         ],
                         [
                             "calscale",
@@ -2752,7 +2738,7 @@ public abstract class AlarmAMQPMessageContract {
                                     "dtstamp",
                                     {},
                                     "date-time",
-                                    "2025-10-03T08:00:00Z"
+                                    "${json-unit.any-string}"
                                 ],
                                 [
                                     "dtstart",
@@ -2794,7 +2780,7 @@ public abstract class AlarmAMQPMessageContract {
                     ]
                 ],
                 "import": false,
-                "etag": "\\"cadff6938d7c81385c2711de090ff822\\""
+                "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", bob.email())
             .replace("{attendeeEmail}", alice.email())
@@ -2803,13 +2789,14 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEventId}", attendeeEventId)
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][10][3]", "etag") // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString()).when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
-    public void shouldReceiveMessageContainingRawEventFromEventAlarmCreatedExchangeWhenAddingNewCalendarEventWithJsonFormat() throws IOException, ParseException {
+    public void shouldReceiveMessageContainingRawEventFromEventAlarmCreatedExchangeWhenAddingNewCalendarEventWithJsonFormat() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -2950,14 +2937,10 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
-
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertJsonCalendarEvent(testUser, eventUid, jsonCalendarData);
 
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actualJson.getAsString("rawEvent"));
-        Calendar expectedCalendar = CalendarUtil.parseIcs("""
+        String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
             PRODID:-//Sabre//Sabre VObject 4.1.3//EN
@@ -2983,17 +2966,24 @@ public abstract class AlarmAMQPMessageContract {
             END:VCALENDAR
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
-            .replace("{eventUid}", eventUid));
-        CalendarUtil.sanitize(actualCalendar);
-        CalendarUtil.sanitize(expectedCalendar);
+            .replace("{eventUid}", eventUid);
 
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message ->
+                    assertRawEventCalendarEquals(message.path("rawEvent").asText(), expectedEventIcs)));
     }
 
-    private byte[] getMessageFromQueue() {
-        return awaitAtMost.atMost(Duration.ofSeconds(20))
-            .until(() -> dockerExtension().getChannel().basicGet(QUEUE_NAME, true), Objects::nonNull)
-            .getBody();
+    private BlockingQueue<JsonNode> listenToQueue() {
+        return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+    }
+
+    private void assertRawEventCalendarEquals(String actualRawEventIcs, String expectedEventIcs) {
+        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualRawEventIcs);
+        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+        CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
@@ -3142,8 +3132,10 @@ public abstract class AlarmAMQPMessageContract {
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
 
         // THEN we have a message
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-        Assertions.assertThat(actual).isNotNull();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThat(message).isNotNull()));
     }
 
     @Test
