@@ -35,15 +35,15 @@ pipeline {
 
         stage('Test with amqp scheduling enabled') {
             steps {
-                sh 'mvn test -Damqp.scheduling.enabled=true -Dapi.version=1.43 -Dsurefire.reportsDirectory=target/surefire-reports-amqp-scheduling'
+                sh 'mvn test -Damqp.scheduling.enabled=true -Dapi.version=1.43 -Dsurefire.reportNameSuffix=amqp-scheduling'
             }
             post {
                 always {
-                    junit(testResults: 'target/surefire-reports-amqp-scheduling/*.xml', allowEmptyResults: false)
+                    junit(testResults: '**/surefire-reports/*-amqp-scheduling.xml', allowEmptyResults: false)
                 }
                 failure {
                     archiveArtifacts artifacts: '**/target/test-run.log', fingerprint: true
-                    archiveArtifacts artifacts: 'target/surefire-reports-amqp-scheduling/*', fingerprint: true
+                    archiveArtifacts artifacts: '**/surefire-reports/*-amqp-scheduling*', fingerprint: true
                 }
             }
         }
