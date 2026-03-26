@@ -13,5 +13,5 @@ mvn clean install
 mvn test
 
 # Enable
-mvn test -Pamqp-scheduling-on
+mvn test -Damqp.scheduling.enabled=true
 ```
