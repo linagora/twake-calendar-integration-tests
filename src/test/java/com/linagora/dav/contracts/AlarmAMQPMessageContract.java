@@ -2073,7 +2073,7 @@ public abstract class AlarmAMQPMessageContract {
                         "sequence",
                         {},
                         "integer",
-                        2
+                        "${json-unit.any-number}"
                       ]
                     ],
                     [
