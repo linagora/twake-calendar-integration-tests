@@ -313,13 +313,12 @@ public class CalDavClient {
             });
     }
 
-    public void postCounter(OpenPaasUser openPaaSUser, String attendeeEventUid, CounterRequest counterRequest) {
+    public void sendITIP(OpenPaasUser openPaaSUser, String attendeeEventUid, CounterRequest counterRequest) {
         URI uri = URI.create("/calendars/" + openPaaSUser.id() + "/" + openPaaSUser.id() + "/" + attendeeEventUid + ".ics");
         httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/calendar+json")
-                .add("Accept", "application/json, text/plain, */*")
-                .add("x-http-method-override", "ITIP"))
-            .request(HttpMethod.POST)
+                .add("Accept", "application/json, text/plain, */*"))
+            .request(new HttpMethod("ITIP"))
             .uri(uri.toString())
             .send(Mono.just(Unpooled.wrappedBuffer(counterRequest.toJson().getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {

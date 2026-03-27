@@ -680,7 +680,7 @@ public abstract class EmailAMQPMessageContract {
             testUser.email(),
             eventUid,
             1);
-        calDavClient.postCounter(testUser2, attendeeEventId, counterRequest);
+        calDavClient.sendITIP(testUser2, attendeeEventId, counterRequest);
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
