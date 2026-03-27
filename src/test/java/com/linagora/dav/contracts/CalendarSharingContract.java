@@ -20,7 +20,6 @@ package com.linagora.dav.contracts;
 
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.contracts.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -29,12 +28,14 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.StreamSupport;
 
@@ -43,6 +44,8 @@ import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -73,6 +76,14 @@ import net.fortuna.ical4j.model.Property;
 public abstract class CalendarSharingContract {
 
     public static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private final ConditionFactory calmlyAwait = Awaitility.with()
+        .pollInterval(Duration.ofMillis(500))
+        .and()
+        .with()
+        .pollDelay(Duration.ofMillis(500))
+        .await();
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public abstract DockerTwakeCalendarExtension extension();
 
@@ -1422,18 +1433,21 @@ public abstract class CalendarSharingContract {
 
         // AND: Cedric should have an iTIP request in his inbox
         String cedricInboxUri = "/calendars/" + cedric.id() + "/inbox/";
-        List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(cedric, cedricInboxUri, Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
-            .collectList().block();
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(cedric, cedricInboxUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList().block();
 
-        assertThat(cedricInboxItems)
-            .anySatisfy(item -> {
-                String json = item.toString();
-                assertThat(json).contains("\"REQUEST\"");
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + cedric.email());
-                assertThat(json).contains("\"partstat\":\"NEEDS-ACTION\"");
-            });
+            assertThat(cedricInboxItems)
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains("\"REQUEST\"");
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("mailto:" + cedric.email());
+                    assertThat(json).contains("\"partstat\":\"NEEDS-ACTION\"");
+                });
+        });
     }
 
     @Test
@@ -1514,26 +1528,28 @@ public abstract class CalendarSharingContract {
 
         for (OpenPaasUser attendee : attendees) {
             String inboxUri = "/calendars/" + attendee.id() + "/inbox/";
-            List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
-                    attendee,
-                    inboxUri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
-                .collectList().block();
+            awaitAtMost.untilAsserted(() -> {
+                List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
+                        attendee,
+                        inboxUri,
+                        Instant.parse("2025-09-01T00:00:00Z"),
+                        Instant.parse("2025-11-01T00:00:00Z"))
+                    .collectList().block();
 
-            assertThat(inboxItems)
-                .anySatisfy(item -> {
-                    String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("mailto:" + attendee.email());
-                    assertThat(json).contains("Updated by Alice");
-                    assertThatJson(item)
-                        .inPath("data[1]")
-                        .isArray()
-                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
-                            .isEqualTo("""
-                                ["method", {}, "text", "REQUEST"]"""));
-                });
+                assertThat(inboxItems)
+                    .anySatisfy(item -> {
+                        String json = item.toString();
+                        assertThat(json).contains(eventUid);
+                        assertThat(json).contains("mailto:" + attendee.email());
+                        assertThat(json).contains("Updated by Alice");
+                        assertThatJson(item)
+                            .inPath("data[1]")
+                            .isArray()
+                            .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                                .isEqualTo("""
+                                    ["method", {}, "text", "REQUEST"]"""));
+                    });
+            });
         }
     }
 
@@ -1607,26 +1623,28 @@ public abstract class CalendarSharingContract {
 
         for (OpenPaasUser attendee : attendees) {
             String inboxUri = "/calendars/" + attendee.id() + "/inbox/";
-            List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
-                    attendee,
-                    inboxUri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
-                .collectList().block();
+            awaitAtMost.untilAsserted(() -> {
+                List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
+                        attendee,
+                        inboxUri,
+                        Instant.parse("2025-09-01T00:00:00Z"),
+                        Instant.parse("2025-11-01T00:00:00Z"))
+                    .collectList().block();
 
-            assertThat(inboxItems)
-                .anySatisfy(item -> {
-                    String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("mailto:" + attendee.email());
+                assertThat(inboxItems)
+                    .anySatisfy(item -> {
+                        String json = item.toString();
+                        assertThat(json).contains(eventUid);
+                        assertThat(json).contains("mailto:" + attendee.email());
 
-                    assertThatJson(item)
-                        .inPath("data[1]")
-                        .isArray()
-                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
-                            .isEqualTo("""
-                                ["method", {}, "text", "CANCEL"]"""));
-                });
+                        assertThatJson(item)
+                            .inPath("data[1]")
+                            .isArray()
+                            .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                                .isEqualTo("""
+                                    ["method", {}, "text", "CANCEL"]"""));
+                    });
+            });
         }
     }
 
@@ -1705,26 +1723,28 @@ public abstract class CalendarSharingContract {
 
         // AND: Cedric should receive an iTIP CANCEL request in his inbox
         String cedricInboxUri = "/calendars/" + cedric.id() + "/inbox/";
-        List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(
-                cedric,
-                cedricInboxUri,
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
-            .collectList().block();
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> cedricInboxItems = calDavClient.reportCalendarEvents(
+                    cedric,
+                    cedricInboxUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList().block();
 
-        assertThat(cedricInboxItems)
-            .anySatisfy(item -> {
-                String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + cedric.email());
+            assertThat(cedricInboxItems)
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("mailto:" + cedric.email());
 
-                // check it is a CANCEL method
-                assertThatJson(item.path("data").get(1))
-                    .isArray()
-                    .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
-                        .isEqualTo("""
-                            ["method", {}, "text", "CANCEL"]"""));
-            });
+                    // check it is a CANCEL method
+                    assertThatJson(item.path("data").get(1))
+                        .isArray()
+                        .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                            .isEqualTo("""
+                                ["method", {}, "text", "CANCEL"]"""));
+                });
+        });
     }
 
     @Test
