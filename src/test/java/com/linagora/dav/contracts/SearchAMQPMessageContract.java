@@ -24,11 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +35,8 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
@@ -43,9 +44,6 @@ import com.linagora.dav.OpenPaasUser;
 import com.rabbitmq.client.GetResponse;
 
 import net.javacrumbs.jsonunit.core.Option;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
-import net.minidev.json.parser.ParseException;
 
 public abstract class SearchAMQPMessageContract {
 
@@ -83,9 +81,8 @@ public abstract class SearchAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -103,7 +100,7 @@ public abstract class SearchAMQPMessageContract {
                      "prodid",
                      {},
                      "text",
-                     "-//Sabre//Sabre VObject 4.1.3//EN"
+                     "${json-unit.any-string}"
                    ]
                  ],
                  [
@@ -220,7 +217,7 @@ public abstract class SearchAMQPMessageContract {
                          "dtstamp",
                          {},
                          "date-time",
-                         "3025-04-11T02:20:32Z"
+                         "${json-unit.any-string}"
                        ]
                      ],
                      []
@@ -228,21 +225,23 @@ public abstract class SearchAMQPMessageContract {
                  ]
                ],
                "import": false,
-               "etag": "\\"310e05638467e7d20c74d637ef7329fa\\""
+               "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
+                    .isEqualTo(expected)));
     }
 
     @Test
-    void shouldReceiveMessageFromEventUpdatedExchange() throws ParseException, IOException {
+    void shouldReceiveMessageFromEventUpdatedExchange() throws IOException {
         dockerExtension().getChannel().queueDeclare(QUEUE_NAME, false, true, true, null);
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
 
@@ -270,9 +269,8 @@ public abstract class SearchAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next 2 weeks.",
             "30250411T150000",
             "30250411T160000");
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -290,7 +288,7 @@ public abstract class SearchAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ]
                 ],
                 [
@@ -407,7 +405,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     []
@@ -428,7 +426,7 @@ public abstract class SearchAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ]
                 ],
                 [
@@ -546,29 +544,26 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     []
                   ]
                 ]
               ],
-              "etag": "\\"d02e67b014b69f636f8e3180b1ae894c\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        JSONObject actualJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(actual);
-        JSONObject expectedJson = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(expected);
-        actualJson.remove("etag");
-        expectedJson.remove("etag");
-
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "old_event[1][1][3]", "old_event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -590,9 +585,8 @@ public abstract class SearchAMQPMessageContract {
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.deleteCalendarEvent(testUser, eventUid);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -610,7 +604,7 @@ public abstract class SearchAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ]
                 ],
                 [
@@ -728,7 +722,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     []
@@ -742,10 +736,11 @@ public abstract class SearchAMQPMessageContract {
             .replace("{organizerId}", testUser.id())
             .replace("{eventUid}", eventUid);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -769,9 +764,8 @@ public abstract class SearchAMQPMessageContract {
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
 
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.deleteCalendarEvent(testUser, eventUid);
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -789,7 +783,7 @@ public abstract class SearchAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -906,7 +900,7 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ],
                       [
                         "status",
@@ -925,7 +919,7 @@ public abstract class SearchAMQPMessageContract {
                   ]
                 ]
               ],
-              "etag": "\\"205c39920848af791872393bfd0e68ad\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -933,10 +927,12 @@ public abstract class SearchAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][8][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -956,11 +952,10 @@ public abstract class SearchAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
-
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
 
         String expected = """
             {
@@ -978,7 +973,7 @@ public abstract class SearchAMQPMessageContract {
                     "prodid",
                     {},
                     "text",
-                    "-//Sabre//Sabre VObject 4.1.3//EN"
+                    "${json-unit.any-string}"
                   ],
                   [
                     "calscale",
@@ -1101,14 +1096,14 @@ public abstract class SearchAMQPMessageContract {
                         "dtstamp",
                         {},
                         "date-time",
-                        "3025-04-11T02:20:32Z"
+                        "${json-unit.any-string}"
                       ]
                     ],
                     []
                   ]
                 ]
               ],
-              "etag": "\\"dde2448d7dd60033f9fc7e9ad1169f56\\""
+              "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
@@ -1116,10 +1111,12 @@ public abstract class SearchAMQPMessageContract {
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
-        assertThatJson(actual)
-            .when(Option.IGNORING_EXTRA_FIELDS)
-            .whenIgnoringPaths("event[1][1][3]", "event[2][1][1][9][3]", "etag")  // ignore prodid, dtstamp and etag
-            .isEqualTo(expected);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
+                    .isEqualTo(expected)));
     }
 
     @Test
@@ -1139,11 +1136,12 @@ public abstract class SearchAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        getMessageFromQueue();
+        awaitAtMost.untilAsserted(() -> assertThat(messages).hasSize(1));
         Thread.sleep(2000);
-        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull();
+        assertThat(messages).hasSize(1);
     }
 
     @Test
@@ -1165,17 +1163,16 @@ public abstract class SearchAMQPMessageContract {
             "30250411T110000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
+        BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.deleteCalendarEvent(testUser, eventUid);
 
-        getMessageFromQueue();
+        awaitAtMost.untilAsserted(() -> assertThat(messages).hasSize(1));
         Thread.sleep(2000);
-        assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull();
+        assertThat(messages).hasSize(1);
     }
 
-    private byte[] getMessageFromQueue() {
-        return awaitAtMost.atMost(Duration.ofSeconds(20))
-            .until(() -> dockerExtension().getChannel().basicGet(QUEUE_NAME, true), Objects::nonNull)
-            .getBody();
+    private BlockingQueue<JsonNode> listenToQueue() {
+        return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
     }
 
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
@@ -1259,12 +1256,14 @@ public abstract class SearchAMQPMessageContract {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
 
         // THEN we have a message
-        String actual = new String(getMessageFromQueue(), StandardCharsets.UTF_8);
-        assertThat(actual).isNotNull();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThat(message).isNotNull()));
     }
 
     @Test
