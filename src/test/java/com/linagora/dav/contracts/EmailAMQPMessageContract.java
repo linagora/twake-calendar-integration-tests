@@ -776,6 +776,108 @@ public abstract class EmailAMQPMessageContract {
 
                     Calendar actualOldCalendar = CalendarUtil.parseIcsAndSanitize(message.path("oldEvent").asText());
                     Calendar expectedOldCalendar = CalendarUtil.parseIcsAndSanitize(expectedOldEventIcs);
+                    CalendarUtil.removeParticipantScheduleStatus(actualOldCalendar);
+                    CalendarUtil.removeParticipantScheduleStatus(expectedOldCalendar);
+                    assertThat(actualOldCalendar).isEqualTo(expectedOldCalendar);
+                }));
+    }
+
+    @Test
+    void shouldReceiveNotificationEmailMessageOnEventCounterWithExternalRecipient() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String externalBobEmail = "bob-organizer-" + UUID.randomUUID() + "@external-domain.com";
+
+        String eventUid = UUID.randomUUID().toString();
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning with external organizer
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Initial event created by Alice with external organizer Bob.
+            ORGANIZER;CN=Bob External:mailto:{externalBobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=Bob External:mailto:{externalBobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{externalBobEmail}", externalBobEmail)
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, eventUid, initialCalendarData);
+
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        String counterCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            METHOD:COUNTER
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T032032Z
+            SEQUENCE:2
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T150000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T160000
+            SUMMARY:Sprint planning with external organizer
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Alice proposes a new time to Bob.
+            ORGANIZER;CN=Bob External:mailto:{externalBobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=Bob External:mailto:{externalBobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{externalBobEmail}", externalBobEmail)
+            .replace("{aliceEmail}", alice.email());
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            counterCalendarData,
+            alice.email(),
+            externalBobEmail,
+            eventUid,
+            2);
+        calDavClient.sendITIP(alice, eventUid, counterRequest);
+
+        String expectedEventIcs = counterCalendarData;
+        String expectedOldEventIcs = initialCalendarData;
+        String expected = """
+            {
+              "senderEmail": "{attendeeEmail}",
+              "recipientEmail": "{organizerEmail}",
+              "method": "COUNTER",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "{attendeeId}",
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{eventUid}.ics",
+              "oldEvent": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", externalBobEmail)
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{attendeeId}", alice.id())
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> externalBobEmail.equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
+
+                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
+                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+
+                    Calendar actualOldCalendar = CalendarUtil.parseIcsAndSanitize(message.path("oldEvent").asText());
+                    Calendar expectedOldCalendar = CalendarUtil.parseIcsAndSanitize(expectedOldEventIcs);
+                    CalendarUtil.removeParticipantScheduleStatus(actualOldCalendar);
+                    CalendarUtil.removeParticipantScheduleStatus(expectedOldCalendar);
                     assertThat(actualOldCalendar).isEqualTo(expectedOldCalendar);
                 }));
     }
