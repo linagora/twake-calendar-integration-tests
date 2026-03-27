@@ -1787,17 +1787,19 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, calendarData);
 
         // THEN an ITIP request is sent to Cedric
-        DavResponse response = calDavClient.findEventsByTime(cedric,
-            cedric.id(),
-            "inbox",
-            "20300310T000000",
-            "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = calDavClient.findEventsByTime(cedric,
+                cedric.id(),
+                "inbox",
+                "20300310T000000",
+                "20300510T000000");
+            List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).uid()).isEqualTo(eventUid);
-        assertThat(result.get(0).method().get()).isEqualTo("REQUEST");
-        assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning #01");
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).uid()).isEqualTo(eventUid);
+            assertThat(result.get(0).method().get()).isEqualTo("REQUEST");
+            assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning #01");
+        });
     }
 
     @Test
