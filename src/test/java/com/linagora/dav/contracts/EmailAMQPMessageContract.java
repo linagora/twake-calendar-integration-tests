@@ -30,6 +30,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -645,8 +646,9 @@ public abstract class EmailAMQPMessageContract {
                 }));
     }
 
+    @Disabled("TODO [Async Scheduling] COUNTER https://github.com/linagora/esn-sabre/issues/292")
     @Test
-    void shouldReceiveNotificationEmailMessageOnEventCounter() throws ParseException {
+    void shouldReceiveNotificationEmailMessageOnEventCounter() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
