@@ -1070,21 +1070,20 @@ public abstract class CalDavContract {
                 "END:VEVENT\r\n" +
                 "END:VCALENDAR\r\n")));
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser2::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + testUser2.id() + "/inbox"));
-
-
         assertThat(status1).isEqualTo(201);
-        assertThat(response.status()).isEqualTo(207);
-        System.out.println(XMLUtil.extractMultipleValueByXPath(response.body(),
-            "//d:multistatus/d:response/d:href", Map.of("d", "DAV:")));
-        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(),
-            "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
-        assertThat(actual).hasSize(2);
-        assertThat(actual.get(0)).isEqualTo("/calendars/" + testUser2.id() + "/inbox/");
-        assertThat(actual.get(1)).startsWith("/calendars/" + testUser2.id() + "/inbox/sabredav-").endsWith(".ics");
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = execute(dockerExtension().davHttpClient()
+                .headers(testUser2::impersonatedBasicAuth)
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri("/calendars/" + testUser2.id() + "/inbox"));
+
+            assertThat(response.status()).isEqualTo(207);
+            List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(),
+                "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+            assertThat(actual).hasSize(2);
+            assertThat(actual.get(0)).isEqualTo("/calendars/" + testUser2.id() + "/inbox/");
+            assertThat(actual.get(1)).startsWith("/calendars/" + testUser2.id() + "/inbox/sabredav-").endsWith(".ics");
+        });
     }
 
     @Test
@@ -1794,7 +1793,7 @@ public abstract class CalDavContract {
             "30250411T160000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
+        Supplier<DavResponse> reportResponseSupplier = () -> execute(dockerExtension().davHttpClient()
             .headers(headers -> testUser2.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
@@ -1818,20 +1817,23 @@ public abstract class CalDavContract {
                 </c:calendar-query>
                 """.replace("{eventUid}", eventUid))));
 
-        String actual = XMLUtil.extractByXPath(
-            response.body(),
-            "//cal:calendar-data",
-            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
-        );
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = reportResponseSupplier.get();
+            String actual = XMLUtil.extractByXPath(
+                response.body(),
+                "//cal:calendar-data",
+                Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+            );
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+            actualCalendar.removeAll(Property.PRODID);
+            actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+            expectedCalendar.removeAll(Property.PRODID);
+            expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
 
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        });
     }
 
     @Test
@@ -1865,7 +1867,7 @@ public abstract class CalDavContract {
             "30250411T160000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
+        Supplier<DavResponse> reportResponseSupplier = () -> execute(dockerExtension().davHttpClient()
             .headers(headers -> testUser2.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
@@ -1889,20 +1891,23 @@ public abstract class CalDavContract {
                 </c:calendar-query>
                 """.replace("{eventUid}", eventUid))));
 
-        String actual = XMLUtil.extractByXPath(
-            response.body(),
-            "//cal:calendar-data",
-            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
-        );
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = reportResponseSupplier.get();
+            String actual = XMLUtil.extractByXPath(
+                response.body(),
+                "//cal:calendar-data",
+                Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+            );
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+            actualCalendar.removeAll(Property.PRODID);
+            actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+            expectedCalendar.removeAll(Property.PRODID);
+            expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
 
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        });
     }
 
     @Test
@@ -2010,7 +2015,7 @@ public abstract class CalDavContract {
             "ACCEPTED");
         calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
+        Supplier<DavResponse> reportResponseSupplier = () -> execute(dockerExtension().davHttpClient()
             .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
@@ -2034,17 +2039,20 @@ public abstract class CalDavContract {
                 </c:calendar-query>
                 """.replace("{eventUid}", eventUid))));
 
-        String actual = XMLUtil.extractByXPath(
-            response.body(),
-            "//cal:calendar-data",
-            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
-        );
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = reportResponseSupplier.get();
+            String actual = XMLUtil.extractByXPath(
+                response.body(),
+                "//cal:calendar-data",
+                Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+            );
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-        expectedCalendar.getComponent(Component.VEVENT).get().getProperty(Property.ATTENDEE).get().add(new ScheduleStatus("2.0"));
+            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
+            expectedCalendar.getComponent(Component.VEVENT).get().getProperty(Property.ATTENDEE).get().add(new ScheduleStatus("2.0"));
 
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        });
     }
 
     @Test
@@ -2080,7 +2088,7 @@ public abstract class CalDavContract {
 
         calDavClient.deleteCalendarEvent(testUser2, attendeeEventId);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
+        Supplier<DavResponse> reportResponseSupplier = () -> execute(dockerExtension().davHttpClient()
             .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
@@ -2104,46 +2112,49 @@ public abstract class CalDavContract {
                 </c:calendar-query>
                 """.replace("{eventUid}", eventUid))));
 
-        String actual = XMLUtil.extractByXPath(
-            response.body(),
-            "//cal:calendar-data",
-            Map.of("cal", "urn:ietf:params:xml:ns:caldav")
-        );
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = reportResponseSupplier.get();
+            String actual = XMLUtil.extractByXPath(
+                response.body(),
+                "//cal:calendar-data",
+                Map.of("cal", "urn:ietf:params:xml:ns:caldav")
+            );
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
+            CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
 
-        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
-            CALSCALE:GREGORIAN
-            BEGIN:VTIMEZONE
-            TZID:Asia/Ho_Chi_Minh
-            BEGIN:STANDARD
-            TZOFFSETFROM:+0700
-            TZOFFSETTO:+0700
-            TZNAME:ICT
-            DTSTART:19700101T000000
-            END:STANDARD
-            END:VTIMEZONE
-            BEGIN:VEVENT
-            UID:{eventUid}
-            DTSTAMP:30250411T022032Z
-            SEQUENCE:1
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
-            SUMMARY:Sprint planning #01
-            LOCATION:Twake Meeting Room
-            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
-            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=DECLINED;CN="Benoît TELLIER":mailto:{attendeeEmail}
-            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            END:VEVENT
-            END:VCALENDAR
-            """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email()));
+            assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+                CALSCALE:GREGORIAN
+                BEGIN:VTIMEZONE
+                TZID:Asia/Ho_Chi_Minh
+                BEGIN:STANDARD
+                TZOFFSETFROM:+0700
+                TZOFFSETTO:+0700
+                TZNAME:ICT
+                DTSTART:19700101T000000
+                END:STANDARD
+                END:VTIMEZONE
+                BEGIN:VEVENT
+                UID:{eventUid}
+                DTSTAMP:30250411T022032Z
+                SEQUENCE:1
+                DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+                DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+                SUMMARY:Sprint planning #01
+                LOCATION:Twake Meeting Room
+                DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+                ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+                ATTENDEE;PARTSTAT=DECLINED;CN="Benoît TELLIER":mailto:{attendeeEmail}
+                ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+                END:VEVENT
+                END:VCALENDAR
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", testUser.email())
+                .replace("{attendeeEmail}", testUser2.email()));
+        });
     }
 
     @Test
