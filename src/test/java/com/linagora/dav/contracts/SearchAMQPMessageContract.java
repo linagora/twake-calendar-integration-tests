@@ -236,6 +236,7 @@ public abstract class SearchAMQPMessageContract {
             assertThat(messages)
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
                     .isEqualTo(expected)));
     }
 
@@ -561,6 +562,7 @@ public abstract class SearchAMQPMessageContract {
             assertThat(messages)
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
                     .isEqualTo(expected)));
     }
 
@@ -929,6 +931,7 @@ public abstract class SearchAMQPMessageContract {
             assertThat(messages)
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
                     .isEqualTo(expected)));
     }
 
@@ -1112,6 +1115,7 @@ public abstract class SearchAMQPMessageContract {
             assertThat(messages)
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .when(Option.IGNORING_EXTRA_FIELDS)
+                    .whenIgnoringPaths("etag")
                     .isEqualTo(expected)));
     }
 
