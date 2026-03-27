@@ -59,7 +59,7 @@ public abstract class EmailAMQPMessageContract {
         .with()
         .pollDelay(Duration.ofMillis(500))
         .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
 
@@ -646,7 +646,6 @@ public abstract class EmailAMQPMessageContract {
                 }));
     }
 
-    @Disabled("TODO [Async Scheduling] COUNTER https://github.com/linagora/esn-sabre/issues/292")
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCounter() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
