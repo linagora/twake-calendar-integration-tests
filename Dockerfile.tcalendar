@@ -1,4 +1,4 @@
-FROM linagora/twake-calendar-side-service:adr-0001-rc12
+FROM linagora/twake-calendar-side-service:pr-667-e3c1d640
 
 COPY src/test/resources/twake-calendar-side-service-conf/configuration.properties /root/conf/configuration.properties
 COPY src/test/resources/twake-calendar-side-service-conf/opensearch.properties /root/conf/opensearch.properties
