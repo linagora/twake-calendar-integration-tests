@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.BooleanUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
@@ -52,11 +53,20 @@ public abstract class ResourceAMQPMessageContract {
         .with()
         .pollDelay(Duration.ofMillis(500))
         .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
     
     public abstract DockerTwakeCalendarExtension dockerExtension();
+
+    // TODO ISSUE-182
+    protected String expectedResourceAcceptPartStat() {
+        return BooleanUtils.toBoolean(System.getProperty("amqp.scheduling.enabled", "false")) ? "ACCEPTED" : "TENTATIVE";
+    }
+
+    protected String expectedResourceDeclinePartStat() {
+        return BooleanUtils.toBoolean(System.getProperty("amqp.scheduling.enabled", "false")) ? "DECLINED" : "TENTATIVE";
+    }
 
     @BeforeEach
     void setUp() {
@@ -223,13 +233,14 @@ public abstract class ResourceAMQPMessageContract {
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            ATTENDEE;PARTSTAT={partStat};RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
-            .replace("{resourceId}", resource.id());
+            .replace("{resourceId}", resource.id())
+            .replace("{partStat}", expectedResourceAcceptPartStat());
 
         String expected = """
             {
@@ -332,13 +343,15 @@ public abstract class ResourceAMQPMessageContract {
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            ATTENDEE;PARTSTAT={partStat};RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
-            .replace("{resourceId}", resource.id());
+            .replace("{resourceId}", resource.id())
+            .replace("{partStat}", expectedResourceDeclinePartStat());
+
 
         String expected = """
             {

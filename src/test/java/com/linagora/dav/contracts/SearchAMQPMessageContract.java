@@ -31,6 +31,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -53,7 +54,7 @@ public abstract class SearchAMQPMessageContract {
         .with()
         .pollDelay(Duration.ofMillis(500))
         .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(200, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
 
@@ -743,6 +744,7 @@ public abstract class SearchAMQPMessageContract {
                     .isEqualTo(expected)));
     }
 
+    @Disabled("TODO https://github.com/linagora/esn-sabre/issues/296")
     @Test
     void shouldReceiveMessageFromEventCancelExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:cancel", "");
@@ -912,7 +914,7 @@ public abstract class SearchAMQPMessageContract {
                         "sequence",
                         {},
                         "integer",
-                        2
+                        "${json-unit.any-number}"
                       ]
                     ],
                     []

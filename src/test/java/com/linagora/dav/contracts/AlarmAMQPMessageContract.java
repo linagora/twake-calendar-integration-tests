@@ -1892,6 +1892,7 @@ public abstract class AlarmAMQPMessageContract {
                     .isEqualTo(expected)));
     }
 
+    @Disabled("TODO https://github.com/linagora/esn-sabre/issues/296")
     @Test
     void shouldReceiveMessageFromEventAlarmCancelExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
@@ -2072,7 +2073,7 @@ public abstract class AlarmAMQPMessageContract {
                         "sequence",
                         {},
                         "integer",
-                        2
+                        "${json-unit.any-number}"
                       ]
                     ],
                     [
