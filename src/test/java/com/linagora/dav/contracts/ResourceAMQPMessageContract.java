@@ -59,6 +59,15 @@ public abstract class ResourceAMQPMessageContract {
     
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
+    // TODO ISSUE-182
+    protected String expectedResourceAcceptPartStat() {
+        return BooleanUtils.toBoolean(System.getProperty("amqp.scheduling.enabled", "false")) ? "ACCEPTED" : "TENTATIVE";
+    }
+
+    protected String expectedResourceDeclinePartStat() {
+        return BooleanUtils.toBoolean(System.getProperty("amqp.scheduling.enabled", "false")) ? "DECLINED" : "TENTATIVE";
+    }
+
     @BeforeEach
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
@@ -231,8 +240,7 @@ public abstract class ResourceAMQPMessageContract {
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{resourceId}", resource.id())
-            .replace("{partStat}",
-                BooleanUtils.toBoolean(System.getProperty("amqp.scheduling.enabled", "false")) ? "ACCEPTED" : "TENTATIVE"); // TODO ISSUE-182
+            .replace("{partStat}", expectedResourceAcceptPartStat());
 
         String expected = """
             {
@@ -342,8 +350,7 @@ public abstract class ResourceAMQPMessageContract {
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{resourceId}", resource.id())
-            .replace("{partStat}",
-                BooleanUtils.toBoolean(System.getProperty("amqp.scheduling.enabled", "false")) ? "DECLINED" : "TENTATIVE"); // TODO ISSUE-182
+            .replace("{partStat}", expectedResourceDeclinePartStat());
 
 
         String expected = """
