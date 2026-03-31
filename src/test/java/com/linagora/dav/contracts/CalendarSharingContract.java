@@ -2035,6 +2035,90 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
+    @Test
+    void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
+        // GIVEN: a resource with alice as admin
+        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("tv-room", "Shared TV Room", alice)
+            .block();
+
+        try {
+            calDavClient.getCalendarEvent(alice, URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/event.ics"));
+        } catch (Exception ignored) {
+        }
+
+        // AND: alice is granted read-write delegation on the resource calendar
+        String token = extension().twakeCalendarProvisioningService().generateToken();
+        try {
+            // To ensure calendar directory is activated
+            calDavClient.grantDelegation(resource.id(), alice, CalDavClient.DelegationRight.READ_WRITE, token);
+        } catch (Exception ignored) {
+        }
+        calDavClient.grantDelegation(resource.id(), alice, CalDavClient.DelegationRight.READ_WRITE, token);
+
+        // AND: an event exists in the resource calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String summary = "Daily TV Room Booking";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251016T020000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20251017T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20251017T100000
+            SUMMARY:%s
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Auto-generated test event involving resource.
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s
+            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=resource:mailto:%s@open-paas.org
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary, bob.email(), bob.email(), resource.id());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: alice deletes the calendar copy created by delegation
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
+
+        // AND: Alice subscribes to the resource calendar again
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("TV Room Calendar")
+            .readOnly(false)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/";
+        String modifiedICS = calendarData.replace(summary, "Hacked by Alice!");
+
+        // THEN: the event in the resource calendar should be updated successfully by alice
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
+                Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+        calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), modifiedICS);
+
+        List<JsonNode> updatedEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
+                Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
+            .collectList().block();
+        assertThat(updatedEvents).hasSize(1);
+        String updatedEventJson = updatedEvents.getFirst().toString();
+
+        assertThat(updatedEventJson).contains("Hacked by Alice!");
+    }
+
     @Disabled("https://github.com/linagora/esn-sabre/issues/51")
     @Test
     void cannotSubscribeToResourceFromAnotherDomain() {
