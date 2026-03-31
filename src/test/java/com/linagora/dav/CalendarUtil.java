@@ -31,6 +31,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import net.fortuna.ical4j.data.CalendarBuilder;
 import net.fortuna.ical4j.data.CalendarParserFactory;
@@ -42,10 +46,12 @@ import net.fortuna.ical4j.model.Parameter;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.TimeZoneRegistry;
 import net.fortuna.ical4j.model.TimeZoneRegistryImpl;
+import net.fortuna.ical4j.model.parameter.PartStat;
 import net.fortuna.ical4j.util.CompatibilityHints;
 import net.fortuna.ical4j.util.MapTimeZoneCache;
 
 public class CalendarUtil {
+    public static final String MASTER_RECURRENCE_KEY = "master";
 
     public static class CustomizedTimeZoneRegistry extends TimeZoneRegistryImpl {
 
@@ -79,30 +85,33 @@ public class CalendarUtil {
         return parseIcs(icsContent.getBytes(StandardCharsets.UTF_8));
     }
 
-    public static Calendar parseIcsAndSanitize(String icsContent) {
-        Calendar calendar = parseIcs(icsContent);
-        sanitize(calendar);
-        return calendar;
-    }
-
     public static Calendar parseIcs(byte[] icsContent) {
         CalendarBuilder builder = new CalendarBuilder(
             CalendarParserFactory.getInstance().get(),
             new ContentHandlerContext().withSupressInvalidProperties(true),
             new CustomizedTimeZoneRegistry());
         try {
-            ByteArrayInputStream inputStream = new ByteArrayInputStream(icsContent);
-            return builder.build(inputStream);
-        } catch (IOException e) {
-            throw new RuntimeException("Error while reading calendar input", e);
-        } catch (ParserException e) {
-            throw new RuntimeException("Error while parsing ICal object", e);
+            return builder.build(new ByteArrayInputStream(icsContent));
+        } catch (IOException | ParserException e) {
+            throw new RuntimeException("Error while parsing calendar", e);
         }
     }
 
-    public static void sanitize(Calendar calendar) {
-        calendar.removeAll(Property.PRODID);
-        calendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
+    public static Calendar parseIcsAndSanitize(String icsContent) {
+        return parseIcsAndSanitize(icsContent, Property.PRODID, Property.DTSTAMP);
+    }
+
+    public static Calendar parseIcsAndSanitize(String icsContent, String... ignoredProperties) {
+        Calendar calendar = parseIcs(icsContent);
+        removeAllProperties(calendar, ignoredProperties);
+        return calendar;
+    }
+
+    public static void removeAllProperties(Calendar calendar, String... propertyNames) {
+        for (String name : propertyNames) {
+            calendar.removeAll(name);
+            calendar.getComponents().forEach(c -> c.removeAll(name));
+        }
     }
 
     public static void removeParticipantScheduleStatus(Calendar calendar) {
@@ -112,6 +121,71 @@ public class CalendarUtil {
             vevent.getProperties(Property.ORGANIZER)
                 .forEach(organizer -> removeParameter(organizer, Parameter.SCHEDULE_STATUS));
         });
+    }
+
+    public static PartStat getAttendeePartStat(String icsContent, String attendeeEmail) {
+        return getAttendeePartStat(parseIcs(icsContent), attendeeEmail);
+    }
+
+    public static PartStat getAttendeePartStat(Calendar calendar, String attendeeEmail) {
+        return findAttendeeProperties(calendar, attendeeEmail)
+            .findFirst()
+            .map(p -> partStatOf(p, attendeeEmail))
+            .orElseThrow(() -> new AssertionError("Attendee not found in calendar: " + attendeeEmail));
+    }
+
+    public static Map<String, PartStat> getRecurringAttendeePartStats(String icsContent, String attendeeEmail) {
+        return getRecurringAttendeePartStats(parseIcs(icsContent), attendeeEmail);
+    }
+
+    public static Map<String, PartStat> getRecurringAttendeePartStats(Calendar calendar, String attendeeEmail) {
+        String mailAddress = "mailto:" + attendeeEmail;
+        Map<String, PartStat> result = new LinkedHashMap<>();
+        for (Component vevent : calendar.getComponents(Component.VEVENT)) {
+            vevent.getProperties(Property.ATTENDEE).stream()
+                .filter(p -> mailAddress.equalsIgnoreCase(p.getValue()))
+                .findFirst()
+                .ifPresent(p -> {
+                    String key = vevent.getProperty(Property.RECURRENCE_ID)
+                        .map(Property::getValue)
+                        .orElse(MASTER_RECURRENCE_KEY);
+                    result.put(key, partStatOf(p, attendeeEmail));
+                });
+        }
+        if (result.isEmpty()) {
+            throw new AssertionError("Attendee not found in calendar: " + attendeeEmail);
+        }
+        return result;
+    }
+
+    public static String withAttendeePartStat(String icsContent, String attendeeEmail, PartStat partStat) {
+        Calendar calendar = parseIcs(icsContent);
+        setAttendeePartStat(calendar, attendeeEmail, partStat);
+        return calendar.toString();
+    }
+
+    public static void setAttendeePartStat(Calendar calendar, String attendeeEmail, PartStat partStat) {
+        List<Property> attendees = findAttendeeProperties(calendar, attendeeEmail).toList();
+        if (attendees.isEmpty()) {
+            throw new AssertionError("Attendee not found in calendar: " + attendeeEmail);
+        }
+        attendees.forEach(p -> {
+            removeParameter(p, Parameter.PARTSTAT);
+            p.add(partStat);
+        });
+    }
+
+    private static Stream<Property> findAttendeeProperties(Calendar calendar, String attendeeEmail) {
+        String mailAddress = "mailto:" + attendeeEmail;
+        return calendar.getComponents(Component.VEVENT).stream()
+            .flatMap(v -> v.getProperties(Property.ATTENDEE).stream())
+            .filter(p -> mailAddress.equalsIgnoreCase(p.getValue()));
+    }
+
+    private static PartStat partStatOf(Property attendee, String email) {
+        return attendee.getParameter(Parameter.PARTSTAT)
+            .map(p -> (PartStat) p)
+            .orElseThrow(() -> new AssertionError("Missing PARTSTAT for attendee " + email));
     }
 
     private static void removeParameter(Property property, String parameterName) {
