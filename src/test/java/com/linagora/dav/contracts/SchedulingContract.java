@@ -1635,6 +1635,119 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void recurringAddAttendeeOnSingleOccurrenceShouldPropagateToOtherAttendeeCalendar() {
+        // Given Bob creates a recurring series with Alice invited on the whole series
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, initialIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+
+        // When Bob updates only occurrence 2 to additionally invite Cedric
+        String updatedWithCedricOnOccurrence2Ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, updatedWithCedricOnOccurrence2Ics);
+
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+            .contains("RECURRENCE-ID:20351006T090000Z")
+            .contains("mailto:" + cedric.email()));
+
+        // Then the occurrence-level Cedric invite is propagated into Alice calendar
+        String expectedAliceIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        Calendar expectedAliceCalendar = CalendarUtil.parseIcs(expectedAliceIcs);
+
+        awaitAtMost.untilAsserted(() -> {
+            Calendar actualAliceCalendar = CalendarUtil.parseIcsAndSanitize(
+                calDavClient.getCalendarEvent(alice, aliceCalendarEventUri),
+                IGNORED_CALENDAR_PROPERTIES);
+            assertThat(actualAliceCalendar).isEqualTo(expectedAliceCalendar);
+        });
+    }
+
+    @Test
     void recurringAddAttendeeToWholeSeriesAfterCreationShouldPropagate() {
         // Given Bob creates a recurring series with Cedric only (no Alice)
         String organizerEventUid = "event-" + UUID.randomUUID();
