@@ -27,6 +27,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -2385,6 +2386,146 @@ public abstract class ITIPRequestContract {
             .contains("UID:" + eventUid)
             .contains("SUMMARY:Yahoo meeting update test")
             .contains("DESCRIPTION:Updated description from yahoo");
+    }
+
+    @Test
+    void shouldUpdateOverrideAndMasterPartstatIndependentlyOnSeparateReplies() {
+        // GIVEN Bob invites Alice to a recurring event with one override
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting with Alice
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Alice;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{ALICE_EMAIL}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260320T080000Z
+            DTSTART;TZID=Europe/Paris:20260323T100000
+            DTEND;TZID=Europe/Paris:20260323T110000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting with Alice (override)
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Bob;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Alice;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:{ALICE_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{ALICE_EMAIL}", alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create(organizerEventUri), organizerIcs);
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+
+        // WHEN Alice sends ITIP REPLY for the override with PARTSTAT=ACCEPTED
+        String overrideReplyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T090000Z
+            DTSTART;TZID=Europe/Paris:20260323T100000
+            DTEND;TZID=Europe/Paris:20260323T110000
+            RECURRENCE-ID;TZID=Europe/Paris:20260323T090000
+            SUMMARY:Daily meeting with Alice (override)
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{ALICE_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{ALICE_EMAIL}", alice.email());
+
+        String overrideReplyBody = ITIPJsonBodyRequest.builder()
+            .ical(overrideReplyIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        String aliceCalendarEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event id to be present"));
+        String aliceCalendarEventUri = "/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics";
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, URI.create(aliceCalendarEventUri)))
+            .contains("UID:" + eventUid));
+
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), overrideReplyBody).block();
+
+        // THEN only the override PARTSTAT is updated
+        awaitAtMost.untilAsserted(() -> {
+            List<String> hrefs = awaitCalendarEntries(bob, bobDefaultCalendarUri, 1);
+            String calendarIcs = calDavClient.getCalendarEvent(bob, URI.create(hrefs.getFirst()));
+            Map<String, PartStat> partStats = CalendarUtil.getRecurringAttendeePartStats(calendarIcs, alice.email());
+
+            assertThat(partStats).hasSize(2);
+            assertThat(partStats)
+                .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.NEEDS_ACTION)
+                .containsEntry("20260323T090000", PartStat.ACCEPTED);
+        });
+
+        // WHEN Alice sends ITIP REPLY for the master with PARTSTAT=TENTATIVE
+        String masterReplyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.2.2//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:{UID}
+            DTSTAMP:20260321T100000Z
+            DTSTART;TZID=Europe/Paris:20260322T090000
+            DTEND;TZID=Europe/Paris:20260322T100000
+            SUMMARY:Daily meeting with Alice
+            ORGANIZER;CN=Bob:mailto:{BOB_EMAIL}
+            ATTENDEE;CN=Alice;PARTSTAT=TENTATIVE:mailto:{ALICE_EMAIL}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{UID}", eventUid)
+            .replace("{BOB_EMAIL}", bob.email())
+            .replace("{ALICE_EMAIL}", alice.email());
+
+        String masterReplyBody = ITIPJsonBodyRequest.builder()
+            .ical(masterReplyIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), masterReplyBody).block();
+
+        // THEN only the master PARTSTAT is updated
+        awaitAtMost.untilAsserted(() -> {
+            List<String> hrefs = awaitCalendarEntries(bob, bobDefaultCalendarUri, 1);
+            String calendarIcs = calDavClient.getCalendarEvent(bob, URI.create(hrefs.getFirst()));
+            Map<String, PartStat> partStats = CalendarUtil.getRecurringAttendeePartStats(calendarIcs, alice.email());
+
+            assertThat(partStats).hasSize(2);
+            assertThat(partStats)
+                .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.TENTATIVE)
+                .containsEntry("20260323T090000", PartStat.ACCEPTED);
+        });
     }
 
     // All parameterized RECURRENCE-ID representations below correspond to the same instant as Paris 2025-12-29 22:00
