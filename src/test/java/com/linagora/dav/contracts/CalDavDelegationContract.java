@@ -1414,6 +1414,49 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
     }
 
+    @Test
+    void putCalendarEventShouldThrowErrorWhenSourceCalendarOnlyHasReadRight() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice in read-only mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+
+        String updatedCalendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Updated Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+
+        URI bobSourceCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
+
+        // WHEN Bob creates and updates the event directly in his SOURCE calendar
+        calDavClient.upsertCalendarEvent(bob, bobSourceCalendarEventUri, calendarData);
+
+        // WHEN Alice tries to update the same event directly in Bob SOURCE calendar
+        // THEN a 403 error is thrown
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, bobSourceCalendarEventUri, updatedCalendarData))
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"READ_WRITE", "ADMIN"})
     void aliceCanCreateEventsInReadOnlyDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
