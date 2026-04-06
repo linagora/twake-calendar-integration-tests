@@ -1,4 +1,4 @@
-FROM linagora/twake-calendar-side-service:branch-master
+FROM tungtv202/twake-calendar-side-service:pr-671-06042026
 
 COPY src/test/resources/twake-calendar-side-service-conf/configuration.properties /root/conf/configuration.properties
 COPY src/test/resources/twake-calendar-side-service-conf/opensearch.properties /root/conf/opensearch.properties
