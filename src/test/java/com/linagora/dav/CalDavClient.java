@@ -394,6 +394,45 @@ public class CalDavClient {
         sendDelegationRequest(user, uri, payload);
     }
 
+    public void grantDelegation(String entityId, OpenPaasUser delegatedUser, DelegationRight right, String token) {
+        grantDelegations(entityId, Map.of(delegatedUser, right), token);
+    }
+
+    public void grantDelegations(String entityId, Map<OpenPaasUser, DelegationRight> delegations, String token) {
+        String uri = "/calendars/" + entityId + "/" + entityId + ".json";
+
+        String setEntries = delegations.entrySet().stream()
+            .map(entry -> """
+                {
+                  "dav:href": "mailto:{email}",
+                  {right}
+                }
+                """.replace("{email}", entry.getKey().email())
+                .replace("{right}", entry.getValue().getValue()))
+            .collect(Collectors.joining(","));
+
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {entries}
+                ],
+                "remove": []
+              }
+            }
+            """.replace("{entries}", setEntries);
+
+        try{
+            sendDelegationRequest(uri, payload, token);
+        } catch (Exception e) {
+            if (e.getMessage().contains("Could not find node at path:")) {    // Retry once on first creation because DAV data not be provisioned yet.
+                sendDelegationRequest(uri, payload, token);
+            } else {
+                throw e;
+            }
+        }
+    }
+
     public DavResponse findEventsByTime(OpenPaasUser user, String start, String end) {
         return findEventsByTime(user, CalendarURL.from(user.id()), start, end);
     }
@@ -440,6 +479,26 @@ public class CalDavClient {
 
     private void sendDelegationRequest(OpenPaasUser user, String uri, String payload) {
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 200) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when sharing calendar '%s'
+                        %s
+                        """.formatted(response.status().code(), uri, errorBody))));
+            }).block();
+    }
+
+    private void sendDelegationRequest(String uri, String payload, String token) {
+        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
