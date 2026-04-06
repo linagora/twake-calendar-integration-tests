@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -1424,6 +1425,110 @@ public abstract class CalDavContract {
                             ]""".formatted(partstat, attendee.email())));
             });
         });
+    }
+
+    @Test
+    void attendeeShouldReceive403WhenUpdatingInvitedEventTitle() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        // GIVEN Bob(organizer) invites Alice(attendee) to eventA
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:eventA
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        String organizerEventUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(organizerEventUri), initialIcs);
+
+        // AND Alice has eventA in her agenda
+        String attendeeDefaultCalendarUri = "/calendars/" + attendee.id() + "/" + attendee.id();
+        String attendeeEventHref = awaitAtMost.until(() ->
+                Objects.requireNonNull(calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
+                            Instant.parse("2025-09-01T00:00:00Z"),
+                            Instant.parse("2025-11-01T00:00:00Z"))
+                        .collectList()
+                        .block())
+                    .stream()
+                    .filter(node -> node.toString().contains(eventUid))
+                    .map(node -> node.at("/_links/self/href").asText())
+                    .findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Attendee's copy of eventA not found"));
+
+        // WHEN Alice modifies title using normal PUT on her event copy
+        String attendeeEventIcs = calDavClient.getCalendarEvent(attendee, URI.create(attendeeEventHref));
+        String updatedByAttendeeIcs = attendeeEventIcs.replaceFirst("(?m)^SUMMARY:.*$", "SUMMARY:eventA updated by attendee");
+
+        // THEN the server answers 403
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(attendee, URI.create(attendeeEventHref), updatedByAttendeeIcs))
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
+    }
+
+    @Test
+    void attendeeShouldReceive403WhenAddingAttendeeToInvitedEvent() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser extraAttendee = dockerExtension().newTestUser();
+
+        // GIVEN Bob(organizer) invites Alice(attendee) to eventA
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:eventA
+            ORGANIZER;CN=Organizer:mailto:%s
+            ATTENDEE;CN=Attendee;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizer.email(), attendee.email());
+
+        String organizerEventUri = "/calendars/" + organizer.id() + "/" + organizer.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(organizer, URI.create(organizerEventUri), initialIcs);
+
+        // AND Alice has eventA in her agenda
+        String attendeeDefaultCalendarUri = "/calendars/" + attendee.id() + "/" + attendee.id();
+        String attendeeEventHref = awaitAtMost.until(() ->
+                Objects.requireNonNull(calDavClient.reportCalendarEvents(attendee, attendeeDefaultCalendarUri,
+                            Instant.parse("2025-09-01T00:00:00Z"),
+                            Instant.parse("2025-11-01T00:00:00Z"))
+                        .collectList()
+                        .block())
+                    .stream()
+                    .filter(node -> node.toString().contains(eventUid))
+                    .map(node -> node.at("/_links/self/href").asText())
+                    .findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Attendee's copy of eventA not found"));
+
+        // WHEN Alice adds one attendee using normal PUT on her event copy
+        String attendeeEventIcs = calDavClient.getCalendarEvent(attendee, URI.create(attendeeEventHref));
+        String updatedByAttendeeIcs = attendeeEventIcs.replace("END:VEVENT",
+            "ATTENDEE;CN=Extra attendee;PARTSTAT=NEEDS-ACTION:mailto:%s\nEND:VEVENT".formatted(extraAttendee.email()));
+
+        // THEN the server answers 403
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(attendee, URI.create(attendeeEventHref), updatedByAttendeeIcs))
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
     }
 
     @Test
