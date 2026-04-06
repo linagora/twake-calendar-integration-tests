@@ -1066,6 +1066,7 @@ public abstract class EmailAMQPMessageContract {
 
                     assertThatCalendar(message.path("event").asText())
                         .ignoringParticipantScheduleStatus()
+                        .ignoringProperties("DTEND") // https://github.com/linagora/esn-sabre/issues/305
                         .isEqualTo(expectedCancelIcs);
                 }));
     }
