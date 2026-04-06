@@ -56,6 +56,7 @@ import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
+import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarProvisioningService;
@@ -1359,6 +1360,91 @@ public abstract class CalendarSharingContract {
                 String json = eventNode.toString();
                 assertThat(json).contains(eventUid);
             });
+    }
+
+    @Test
+    void itipRequestShouldNotUpdateEventWhenSenderHasNoPermission() throws InterruptedException {
+        // GIVEN: Bob and Alice hide their default calendars
+        calDavClient.updateCalendarAcl(bob, "");
+        calDavClient.updateCalendarAcl(alice, "");
+
+        // AND: Bob creates an event inviting Alice
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialEvent = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251018T090000Z
+            DTEND:20251018T100000Z
+            SUMMARY:Bob invites Alice
+            DESCRIPTION:Initial event by Bob
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialEvent);
+
+        String aliceDefaultCalendarUri = "/calendars/" + alice.id() + "/" + alice.id() + ".json";
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                    alice,
+                    aliceDefaultCalendarUri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList().block();
+
+            assertThat(aliceEvents).anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("Bob invites Alice");
+            });
+        });
+
+        // WHEN: Cedric sends ITIP REQUEST from Cedric calendar to Alice for the same UID
+        String itipRequestIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T090000Z
+            SEQUENCE:2
+            DTSTART:20251018T100000Z
+            DTEND:20251018T110000Z
+            SUMMARY:Updated by Cedric via ITIP
+            DESCRIPTION:Changed through ITIP REQUEST from Cedric
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String itipBody = ITIPJsonBodyRequest.builder()
+            .ical(itipRequestIcs)
+            .sender(cedric.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + cedric.id()), itipBody).block();
+
+        // THEN: Alice's event should remain unchanged
+        Thread.sleep(2000);
+        String aliceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event id to be present"));
+
+        URI aliceEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceEventId + ".ics");
+        String aliceEvent = calDavClient.getCalendarEvent(alice, aliceEventUri);
+        assertThat(aliceEvent)
+            .doesNotContain("Updated by Cedric via ITIP");
     }
 
     @Test
