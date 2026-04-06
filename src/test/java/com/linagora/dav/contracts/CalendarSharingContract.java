@@ -2025,6 +2025,7 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
+    @Disabled("esn-sabre should be rebase on master")
     @Test
     protected void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
         // GIVEN: a resource with alice as admin

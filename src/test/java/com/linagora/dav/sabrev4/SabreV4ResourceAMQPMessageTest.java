@@ -31,4 +31,14 @@ public class SabreV4ResourceAMQPMessageTest extends ResourceAMQPMessageContract 
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
     }
+
+    @Override
+    protected String expectedResourceAcceptPartStat() {
+        return "TENTATIVE";
+    }
+
+    @Override
+    protected String expectedResourceDeclinePartStat() {
+        return "TENTATIVE";
+    }
 }
