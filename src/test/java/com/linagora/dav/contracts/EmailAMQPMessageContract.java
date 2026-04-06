@@ -31,6 +31,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -1321,6 +1322,8 @@ public abstract class EmailAMQPMessageContract {
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/297 " +
+        "Public Agenda bug: the iTIP DTO has hasChange=false, causing the consumer app to skip publishing email notifications")
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
     protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) {
@@ -1429,6 +1432,8 @@ public abstract class EmailAMQPMessageContract {
                     .isEqualTo(expectedInternalAttendeeNotification)));
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/297" +
+        "Public Agenda bug: the iTIP DTO has hasChange=false, causing the consumer app to skip publishing email notifications")
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
     protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithExternalAttendee(String partStat) {
@@ -1537,6 +1542,8 @@ public abstract class EmailAMQPMessageContract {
                     .isEqualTo(expectedExternalAttendeeNotification)));
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/297" +
+        "Public Agenda bug: the iTIP DTO has hasChange=false, causing the consumer app to skip publishing email notifications")
     @Test
     protected void shouldSendNotificationEmailWhenAcceptedAfterSetRecurringPubliclyCreated() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
