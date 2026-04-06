@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -989,9 +990,9 @@ public abstract class EmailAMQPMessageContract {
             UID:{eventUid}
             DTSTAMP:30250401T090000Z
             SEQUENCE:0
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T090000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T100000
-            RRULE:FREQ=WEEKLY;BYDAY=FR
+            DTSTART;TZID=Asia/Ho_Chi_Minh:21250411T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:21250411T100000
+            RRULE:FREQ=WEEKLY;BYDAY=WE
             SUMMARY:Weekly meeting
             LOCATION:Twake Meeting Room
             DESCRIPTION:Recurring test event
@@ -1012,7 +1013,7 @@ public abstract class EmailAMQPMessageContract {
 
         // Update the event by adding an EXDATE (exclude one occurrence)
         String updatedCalendarData = initialCalendarData.replace("SUMMARY:Weekly meeting",
-            "SUMMARY:Weekly meeting\nEXDATE;TZID=Asia/Ho_Chi_Minh:30250411T090000");
+            "SUMMARY:Weekly meeting\nEXDATE;TZID=Asia/Ho_Chi_Minh:21250411T090000");
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
         // --- Expected CANCEL ICS ---
@@ -1029,9 +1030,9 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:Recurring test event
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
-            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T090000
-            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T090000
-            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:30250411T090000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:21250411T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:21250411T100000
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:21250411T090000
             STATUS:CANCELLED
             END:VEVENT
             END:VCALENDAR
@@ -1062,9 +1063,9 @@ public abstract class EmailAMQPMessageContract {
                     assertThatJson(message.toString())
                         .isEqualTo(expectedJsonString);
 
-                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("event").asText());
-                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedCancelIcs);
-                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    assertThatCalendar(message.path("event").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .isEqualTo(expectedCancelIcs);
                 }));
     }
 
