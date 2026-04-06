@@ -422,7 +422,15 @@ public class CalDavClient {
             }
             """.replace("{entries}", setEntries);
 
-        sendDelegationRequest(uri, payload, token);
+        try{
+            sendDelegationRequest(uri, payload, token);
+        } catch (Exception e) {
+            if (e.getMessage().contains("Could not find node at path:")) {    // Retry once on first creation because DAV data not be provisioned yet.
+                sendDelegationRequest(uri, payload, token);
+            } else {
+                throw e;
+            }
+        }
     }
 
     public DavResponse findEventsByTime(OpenPaasUser user, String start, String end) {
