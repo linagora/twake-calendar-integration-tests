@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
@@ -317,13 +318,7 @@ public abstract class CalDavDelegationContract {
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        assertThatCalendar(actual).isEqualTo(calendarData);
     }
 
     @ParameterizedTest

@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
@@ -126,10 +127,9 @@ public abstract class SchedulingContract {
 
         // Then Cedric calendar contains an equivalent propagated event
         String actualCedricCalendarEventIcs = calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri);
-        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualCedricCalendarEventIcs, IGNORED_CALENDAR_PROPERTIES);
-        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedCedricCalendarEventIcs, IGNORED_CALENDAR_PROPERTIES);
-        assertThat(actualCalendar)
-            .isEqualTo(expectedCalendar);
+        assertThatCalendar(actualCedricCalendarEventIcs)
+            .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+            .isEqualTo(expectedCedricCalendarEventIcs);
     }
 
     @Test
@@ -188,12 +188,10 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricCalendarEventIcs);
-
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricCalendar = CalendarUtil.parseIcsAndSanitize(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri), IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricCalendarEventIcs));
     }
 
     @Test
@@ -560,14 +558,10 @@ public abstract class SchedulingContract {
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email())
             .replace("{aliceEmail}", alice.email());
-        Calendar expectedAliceCalendar = CalendarUtil.parseIcs(expectedAliceIcs);
-
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualAliceCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(alice, aliceCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualAliceCalendar).isEqualTo(expectedAliceCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedAliceIcs));
     }
 
     @Test
@@ -628,16 +622,12 @@ public abstract class SchedulingContract {
             .replace("{bobEmail}", bob.email())
             .replace("{aliceEmail}", alice.email());
 
-        Calendar expectedAliceCalendar = CalendarUtil.parseIcs(expectedAliceEventIcs);
-
         String aliceCalendarEventId = awaitFirstEventId(alice);
         URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualAliceCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(alice, aliceCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualAliceCalendar).isEqualTo(expectedAliceCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedAliceEventIcs));
     }
 
     @Test
@@ -699,13 +689,10 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricIcs);
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricIcs));
 
         // When Cedric accepts only that invited occurrence
         String cedricAcceptedEventIcs = """
@@ -756,16 +743,13 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedOrganizerCalendar = CalendarUtil.parseIcs(expectedOrganizerIcs);
         URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
 
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualOrganizerCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(bob, bobCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            CalendarUtil.removeParticipantScheduleStatus(actualOrganizerCalendar);
-            assertThat(actualOrganizerCalendar).isEqualTo(expectedOrganizerCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .ignoringParticipantScheduleStatus()
+                .isEqualTo(expectedOrganizerIcs));
     }
 
     @Test
@@ -825,13 +809,10 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricIcs);
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricIcs));
 
         // And Bob deletes only that invited occurrence by removing its override from payload
         String updatedOrganizerSeriesAfterOccRemovalIcs = """
@@ -874,14 +855,11 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCancelledInviteOccCal = CalendarUtil.parseIcs(expectedCedricCancelledInviteOccIcs);
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricCancelledInviteOccCal = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            CalendarUtil.removeParticipantScheduleStatus(actualCedricCancelledInviteOccCal);
-            assertThat(actualCedricCancelledInviteOccCal).isEqualTo(expectedCedricCancelledInviteOccCal);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .ignoringParticipantScheduleStatus()
+                .isEqualTo(expectedCedricCancelledInviteOccIcs));
     }
 
     @Test
@@ -934,14 +912,11 @@ public abstract class SchedulingContract {
 
         String cedricCalendarEventId = awaitFirstEventId(cedric);
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricEventIcs);
 
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricEventIcs));
     }
 
     @Test
@@ -1070,15 +1045,11 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricEventIcs);
-
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricEventIcs));
     }
 
     @Test
@@ -1156,14 +1127,11 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricEventIcs);
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricRecurringSeriesCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricRecurringSeriesCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricEventIcs));
     }
 
     @Test
@@ -1239,15 +1207,11 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricUpdatedCalendar = CalendarUtil.parseIcs(expectedCedricEventIcs);
-
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricUpdatedSeriesCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricUpdatedSeriesCalendar).isEqualTo(expectedCedricUpdatedCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricEventIcs));
     }
 
     @Test
@@ -1344,15 +1308,11 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricRecurringSeriesCalendar = CalendarUtil.parseIcs(expectedCedricEventIcs);
-
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricRecurringSeriesCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricRecurringSeriesCalendar).isEqualTo(expectedCedricRecurringSeriesCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricEventIcs));
     }
 
     @Test
@@ -1430,15 +1390,11 @@ public abstract class SchedulingContract {
             .replace("{organizerEventUid}", organizerEventUid)
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedCedricCalendar = CalendarUtil.parseIcs(expectedCedricRecurringSeriesEventIcs);
-
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualCedricRecurringSeriesCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualCedricRecurringSeriesCalendar).isEqualTo(expectedCedricCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricRecurringSeriesEventIcs));
     }
 
     @Test
@@ -1737,14 +1693,10 @@ public abstract class SchedulingContract {
             .replace("{bobEmail}", bob.email())
             .replace("{aliceEmail}", alice.email())
             .replace("{cedricEmail}", cedric.email());
-        Calendar expectedAliceCalendar = CalendarUtil.parseIcs(expectedAliceIcs);
-
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualAliceCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(alice, aliceCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualAliceCalendar).isEqualTo(expectedAliceCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedAliceIcs));
     }
 
     @Test
@@ -1825,14 +1777,10 @@ public abstract class SchedulingContract {
             .replace("{bobEmail}", bob.email())
             .replace("{cedricEmail}", cedric.email())
             .replace("{aliceEmail}", alice.email());
-        Calendar expectedAliceCalendar = CalendarUtil.parseIcs(expectedAliceIcs);
-
-        awaitAtMost.untilAsserted(() -> {
-            Calendar actualAliceCalendar = CalendarUtil.parseIcsAndSanitize(
-                calDavClient.getCalendarEvent(alice, aliceCalendarEventUri),
-                IGNORED_CALENDAR_PROPERTIES);
-            assertThat(actualAliceCalendar).isEqualTo(expectedAliceCalendar);
-        });
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedAliceIcs));
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {

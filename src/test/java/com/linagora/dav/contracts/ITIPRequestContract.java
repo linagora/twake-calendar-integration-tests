@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.contracts.CalendarSharingContract.MAPPER;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -1166,8 +1167,6 @@ public abstract class ITIPRequestContract {
         List<String> hrefsFromPropfind = awaitCalendarEntries(cedric, cedricInboxCollection, 1);
         String calendarInboxEventIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefsFromPropfind.getFirst()));
 
-        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(calendarInboxEventIcs);
-
         String expectedInboxIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -1195,9 +1194,8 @@ public abstract class ITIPRequestContract {
             .replace("{CEDRIC_EMAIL}", cedric.email())
             .trim();
 
-        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedInboxIcs);
-        assertThat(actualCalendar)
-            .isEqualTo(expectedCalendar);
+        assertThatCalendar(calendarInboxEventIcs)
+            .isEqualTo(expectedInboxIcs);
     }
 
     @Test
@@ -1212,7 +1210,6 @@ public abstract class ITIPRequestContract {
         List<String> hrefsFromPropfind = awaitCalendarEntries(cedric, cedricDefaultCalendar, 1);
 
         String actualEventIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefsFromPropfind.getFirst()));
-        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualEventIcs);
 
         // THEN Cedric’s calendar should contain only the invited occurrence, without recurrence rules
         String expectedCalendarIcs = """
@@ -1241,12 +1238,10 @@ public abstract class ITIPRequestContract {
             .replace("{CEDRIC_EMAIL}", cedric.email())
             .trim();
 
-        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedCalendarIcs);
-
         // Assert equality (logical content, ignoring order or minor formatting)
-        assertThat(actualCalendar)
+        assertThatCalendar(actualEventIcs)
             .as("Cedric's calendar should contain only the invited occurrence (#2), no recurrence rule")
-            .isEqualTo(expectedCalendar);
+            .isEqualTo(expectedCalendarIcs);
     }
 
     @Test
@@ -1269,7 +1264,6 @@ public abstract class ITIPRequestContract {
         String bobInbox = "/calendars/" + bob.id() + "/inbox";
         List<String> hrefsFromPropfind = awaitCalendarEntries(bob, bobInbox, 1);
         String actualInboxIcs = calDavClient.getCalendarEvent(bob, URI.create(hrefsFromPropfind.getFirst()));
-        Calendar actualReplyCalendar = CalendarUtil.parseIcsAndSanitize(actualInboxIcs);
 
         String expectedReplyIcs = """
             BEGIN:VCALENDAR
@@ -1295,10 +1289,9 @@ public abstract class ITIPRequestContract {
             .replace("{CEDRIC_EMAIL}", cedric.email())
             .trim();
 
-        Calendar expectedReplyCalendar = CalendarUtil.parseIcsAndSanitize(expectedReplyIcs);
-        assertThat(actualReplyCalendar)
+        assertThatCalendar(actualInboxIcs)
             .as("Bob's inbox should contain a single REPLY iTIP for the invited occurrence")
-            .isEqualTo(expectedReplyCalendar);
+            .isEqualTo(expectedReplyIcs);
 
         // Bob's default calendar should not duplicate events
         String bobDefaultCalendar = "/calendars/" + bob.id() + "/" + bob.id();
@@ -1617,7 +1610,6 @@ public abstract class ITIPRequestContract {
 
         URI latestInboxUri = URI.create(inboxAfterUpdate.getLast());
         String actualInboxIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
-        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualInboxIcs);
         String expectedInboxIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -1645,10 +1637,9 @@ public abstract class ITIPRequestContract {
             .replace("{CEDRIC_EMAIL}", cedric.email())
             .trim();
 
-        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedInboxIcs);
-        assertThat(actualCalendar)
+        assertThatCalendar(actualInboxIcs)
             .as("Cedric should receive a proper REQUEST for the modified invited occurrence")
-            .isEqualTo(expectedCalendar);
+            .isEqualTo(expectedInboxIcs);
 
         // AND Cedric's calendar should reflect the updated time & summary
         String cedricDefaultCalendar = "/calendars/" + cedric.id() + "/" + cedric.id();
@@ -2659,7 +2650,8 @@ public abstract class ITIPRequestContract {
                 .replace("{ATTENDEE_EMAIL}", bob.email())
                 .replace("{EVENT_UID}", eventUid);
 
-        assertThat(CalendarUtil.parseIcsAndSanitize(calendarIc.replaceAll(";SCHEDULE-STATUS=[^:;\\r\\n]+", "")))
-            .isEqualTo(CalendarUtil.parseIcsAndSanitize(expectedCalendarIcs));
+        assertThatCalendar(calendarIc)
+            .ignoringParticipantScheduleStatus()
+            .isEqualTo(expectedCalendarIcs);
     }
 }

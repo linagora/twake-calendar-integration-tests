@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
@@ -961,9 +962,7 @@ public abstract class CalDavContract {
         assertThat(response.status().code()).isEqualTo(201);
         assertThat(response2.status()).isEqualTo(200);
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(response2.body());
-        actualCalendar.removeAll(Property.PRODID);
-        Calendar expectedCalendar = CalendarUtil.parseIcs("BEGIN:VCALENDAR\n" +
+        assertThatCalendar(response2.body()).isEqualTo("BEGIN:VCALENDAR\n" +
             "VERSION:2.0\n" +
             "CALSCALE:GREGORIAN\n" +
             "X-WR-CALNAME:#default\n" +
@@ -1009,8 +1008,6 @@ public abstract class CalDavContract {
             "SEQUENCE:0\n" +
             "END:VEVENT\n" +
             "END:VCALENDAR\n");
-
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     @Test
@@ -1825,14 +1822,7 @@ public abstract class CalDavContract {
                 Map.of("cal", "urn:ietf:params:xml:ns:caldav")
             );
 
-            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-            actualCalendar.removeAll(Property.PRODID);
-            actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-            expectedCalendar.removeAll(Property.PRODID);
-            expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-
-            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThatCalendar(actual).isEqualTo(updatedCalendarData);
         });
     }
 
@@ -1899,14 +1889,7 @@ public abstract class CalDavContract {
                 Map.of("cal", "urn:ietf:params:xml:ns:caldav")
             );
 
-            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-            actualCalendar.removeAll(Property.PRODID);
-            actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-            expectedCalendar.removeAll(Property.PRODID);
-            expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-
-            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThatCalendar(actual).isEqualTo(updatedCalendarData);
         });
     }
 
@@ -1973,11 +1956,9 @@ public abstract class CalDavContract {
                 Map.of("cal", "urn:ietf:params:xml:ns:caldav")
             );
 
-            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-            CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-            CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
-            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThatCalendar(actual)
+                .ignoringParticipantScheduleStatus()
+                .isEqualTo(updatedCalendarData);
         });
     }
 
@@ -2409,18 +2390,10 @@ public abstract class CalDavContract {
             String actual = XMLUtil.extractByXPath(response.body(),
                 "//cal:calendar-data", Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
-            Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actual);
-            Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(calendarData);
-            actualCalendar.removeAll(Property.PRODID);
-            actualCalendar.getComponents(Component.VEVENT)
-                .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
-            expectedCalendar.removeAll(Property.PRODID);
-            expectedCalendar.getComponents(Component.VEVENT)
-                .forEach(calendarComponent -> calendarComponent.removeAll(Property.DTSTAMP).removeAll(Property.SEQUENCE));
-            CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-            CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
-
-            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThatCalendar(actual)
+                .ignoringProperties(Property.SEQUENCE)
+                .ignoringParticipantScheduleStatus()
+                .isEqualTo(calendarData);
         });
     }
 

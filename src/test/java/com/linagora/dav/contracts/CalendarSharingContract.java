@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
@@ -52,7 +53,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
-import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
@@ -69,9 +69,6 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
-import net.fortuna.ical4j.model.Calendar;
-import net.fortuna.ical4j.model.Component;
-import net.fortuna.ical4j.model.Property;
 
 public abstract class CalendarSharingContract {
 
@@ -326,14 +323,7 @@ public abstract class CalendarSharingContract {
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        Calendar expectedCalendar = CalendarUtil.parseIcs(calendarData);
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        expectedCalendar.removeAll(Property.PRODID);
-        expectedCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-
-        AssertionsForClassTypes.assertThat(actualCalendar).isEqualTo(expectedCalendar);
+        assertThatCalendar(actual).isEqualTo(calendarData);
     }
 
     @Test
