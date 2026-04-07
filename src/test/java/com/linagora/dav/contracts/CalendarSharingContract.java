@@ -2036,7 +2036,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
+    protected void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
         // GIVEN: a resource with alice as admin
         OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
