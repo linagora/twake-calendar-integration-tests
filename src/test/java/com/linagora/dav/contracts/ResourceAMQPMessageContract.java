@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,12 +38,10 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
-import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 
-import net.fortuna.ical4j.model.Calendar;
 
 public abstract class ResourceAMQPMessageContract {
 
@@ -142,11 +141,9 @@ public abstract class ResourceAMQPMessageContract {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
 
-                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("ics").asText());
-                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
-                    CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-                    CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
-                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    assertThatCalendar(message.path("ics").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .isEqualTo(expectedEventIcs);
                 }));
     }
 
@@ -251,11 +248,9 @@ public abstract class ResourceAMQPMessageContract {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
 
-                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("ics").asText());
-                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
-                    CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-                    CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
-                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    assertThatCalendar(message.path("ics").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .isEqualTo(expectedEventIcs);
                 }));
     }
 
@@ -360,11 +355,9 @@ public abstract class ResourceAMQPMessageContract {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
 
-                    Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(message.path("ics").asText());
-                    Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
-                    CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-                    CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
-                    assertThat(actualCalendar).isEqualTo(expectedCalendar);
+                    assertThatCalendar(message.path("ics").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .isEqualTo(expectedEventIcs);
                 }));
     }
 
