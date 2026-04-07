@@ -2035,9 +2035,8 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/654")
     @Test
-    void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
+    protected void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
         // GIVEN: a resource with alice as admin
         OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()

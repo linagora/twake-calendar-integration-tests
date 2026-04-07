@@ -20,6 +20,7 @@ package com.linagora.dav.sabrev4;
 
 
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.contracts.CalendarSharingContract;
@@ -94,5 +95,11 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     @Override
     public void nativeDeleteShouldBeReplicatedForWritePublicCalender() {
         super.nativeDeleteShouldBeReplicatedForWritePublicCalender();
+    }
+
+    @Disabled("Only support in sabre 4.7")
+    @Override
+    @Test
+    public void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
     }
 }
