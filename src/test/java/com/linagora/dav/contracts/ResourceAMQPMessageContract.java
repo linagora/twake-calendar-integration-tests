@@ -250,6 +250,7 @@ public abstract class ResourceAMQPMessageContract {
 
                     assertThatCalendar(message.path("ics").asText())
                         .ignoringParticipantScheduleStatus()
+                        .ignoringAttendeePartStat(resource.id() + "@open-paas.org") // https://github.com/linagora/twake-calendar-integration-tests/issues/182
                         .isEqualTo(expectedEventIcs);
                 }));
     }
@@ -357,6 +358,7 @@ public abstract class ResourceAMQPMessageContract {
 
                     assertThatCalendar(message.path("ics").asText())
                         .ignoringParticipantScheduleStatus()
+                        .ignoringAttendeePartStat(resource.id() + "@open-paas.org") // https://github.com/linagora/twake-calendar-integration-tests/issues/182
                         .isEqualTo(expectedEventIcs);
                 }));
     }

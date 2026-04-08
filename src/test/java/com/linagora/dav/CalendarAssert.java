@@ -59,6 +59,15 @@ public class CalendarAssert extends AbstractAssert<CalendarAssert, Calendar> {
         return this;
     }
 
+    public CalendarAssert ignoringAttendeePartStat(String attendeeEmail) {
+        transformations.add(calendar -> {
+            Calendar copy = calendar.copy();
+            CalendarUtil.removeAttendeePartStat(copy, attendeeEmail);
+            return copy;
+        });
+        return this;
+    }
+
     @Override
     public CalendarAssert isEqualTo(Object expected) {
         if (expected instanceof Calendar) {
