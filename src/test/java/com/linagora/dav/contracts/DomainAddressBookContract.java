@@ -29,11 +29,14 @@ import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.VCardContact;
 
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
@@ -69,32 +72,28 @@ public abstract class DomainAddressBookContract {
             .build();
     }
 
-    @Test
-    void regularUserCanReadDomainMemberAddressBookContactsWhenInDomain() {
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void regularUserCanReadDomainMemberAddressBookContactsWhenInDomain(VCardContact.Format format) {
         // GIVEN a domain addressbook with two contacts
         cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
 
         String firstUid = "contact-" + UUID.randomUUID();
         String secondUid = "contact-" + UUID.randomUUID();
 
-        byte[] firstVCard = """
-            BEGIN:VCARD
-            VERSION:3.0
-            FN:First Contact
-            EMAIL:first.contact@%s
-            END:VCARD
-            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
+        VCardContact firstContact = VCardContact.builder()
+            .firstName("First")
+            .lastName("Contact")
+            .email("first.contact@" + domainId)
+            .build();
+        VCardContact secondContact = VCardContact.builder()
+            .firstName("Second")
+            .lastName("Contact")
+            .email("second.contact@" + domainId)
+            .build();
 
-        byte[] secondVCard = """
-            BEGIN:VCARD
-            VERSION:3.0
-            FN:Second Contact
-            EMAIL:second.contact@%s
-            END:VCARD
-            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
-
-        cardDavClient.upsertDomainMemberContact(domainId, firstUid, firstVCard, technicalToken);
-        cardDavClient.upsertDomainMemberContact(domainId, secondUid, secondVCard, technicalToken);
+        cardDavClient.upsertDomainMemberContact(domainId, firstUid, firstContact.toBytes(format, firstUid), technicalToken);
+        cardDavClient.upsertDomainMemberContact(domainId, secondUid, secondContact.toBytes(format, secondUid), technicalToken);
 
         // WHEN a user of that domain fetches domain-members addressbook
         String response = cardDavClient.getContacts(openPaasUser, domainId, "domain-members");
@@ -107,8 +106,43 @@ public abstract class DomainAddressBookContract {
             .contains("second.contact@" + domainId);
     }
 
-    @Test
-    void adminUserCannotAddContactIntoDomainMemberAddressBook() {
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void regularUserCanReadDomainMemberAddressBookContactsInXMLFormat(VCardContact.Format format) {
+        // GIVEN a domain addressbook with two contacts
+        cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
+
+        String firstUid = "contact-" + UUID.randomUUID();
+        String secondUid = "contact-" + UUID.randomUUID();
+
+        VCardContact firstContact = VCardContact.builder()
+            .firstName("First")
+            .lastName("Contact")
+            .email("first.contact@" + domainId)
+            .build();
+        VCardContact secondContact = VCardContact.builder()
+            .firstName("Second")
+            .lastName("Contact")
+            .email("second.contact@" + domainId)
+            .build();
+
+        cardDavClient.upsertDomainMemberContact(domainId, firstUid, firstContact.toBytes(format, firstUid), technicalToken);
+        cardDavClient.upsertDomainMemberContact(domainId, secondUid, secondContact.toBytes(format, secondUid), technicalToken);
+
+        // WHEN a user of that domain fetches domain-members addressbook
+        String response = cardDavClient.getContactsXML(openPaasUser, domainId, "domain-members");
+
+        // THEN they can see both contacts
+        assertThat(response)
+            .contains("First Contact")
+            .contains("Second Contact")
+            .contains("first.contact@" + domainId)
+            .contains("second.contact@" + domainId);
+    }
+
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void adminUserCannotAddContactIntoDomainMemberAddressBook(VCardContact.Format format) {
         OpenPaasUser adminUser = extension().newTestUser();
         String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
             .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
@@ -127,18 +161,16 @@ public abstract class DomainAddressBookContract {
 
         // AND a contact vCard payload
         String vcardUid = "contact-" + UUID.randomUUID();
-        byte[] vcardPayload = """
-            BEGIN:VCARD
-            VERSION:3.0
-            FN:New Contact1
-            EMAIL:contact@%s
-            END:VCARD
-            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
+        VCardContact contact = VCardContact.builder()
+            .firstName("New")
+            .lastName("Contact1")
+            .email("contact@" + domainId)
+            .build();
 
         // WHEN an administrator tries to add a contact into the domain-members addressbook
         // THEN the server rejects the request (403)
         assertThatThrownBy(() ->
-            cardDavClient.upsertContact(adminUser, domainId, "domain-members", vcardUid, vcardPayload))
+            cardDavClient.upsertContact(adminUser, domainId, "domain-members", vcardUid, contact.toBytes(format, vcardUid)))
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("Unexpected status code: 403");
 
@@ -147,22 +179,21 @@ public abstract class DomainAddressBookContract {
             .doesNotContain("New Contact1");
     }
 
-    @Test
-    void technicalTokenCanManageDomainMemberContacts() {
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void technicalTokenCanManageDomainMemberContacts(VCardContact.Format format) {
         // GIVEN an empty domain addressbook created by the Twake Calendar service
         cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
 
         String vcardUid = "member-" + UUID.randomUUID();
-        byte[] vcardPayload = """
-            BEGIN:VCARD
-            VERSION:3.0
-            FN:Technical Contact
-            EMAIL:tech.contact@%s
-            END:VCARD
-            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
+        VCardContact contact = VCardContact.builder()
+            .firstName("Technical")
+            .lastName("Contact")
+            .email("tech.contact@" + domainId)
+            .build();
 
         // WHEN using the technical token to create a new domain member contact
-        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, vcardPayload, technicalToken);
+        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, contact.toBytes(format, vcardUid), technicalToken);
 
         // THEN the contact is visible in the addressbook
         String responseAfterCreate = cardDavClient.getContacts(openPaasUser, domainId, "domain-members");
@@ -171,14 +202,12 @@ public abstract class DomainAddressBookContract {
             .contains("tech.contact@" + domainId);
 
         // WHEN updating the same contact using the technical token
-        byte[] updatedVcardPayload = """
-            BEGIN:VCARD
-            VERSION:3.0
-            FN:Updated Contact
-            EMAIL:tech.updated@%s
-            END:VCARD
-            """.formatted(domainId).getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, updatedVcardPayload, technicalToken);
+        VCardContact updatedContact = VCardContact.builder()
+            .firstName("Updated")
+            .lastName("Contact")
+            .email("tech.updated@" + domainId)
+            .build();
+        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, updatedContact.toBytes(format, vcardUid), technicalToken);
 
         // THEN the updated value is visible
         String responseAfterUpdate = cardDavClient.getContacts(openPaasUser, domainId, "domain-members");
@@ -197,8 +226,9 @@ public abstract class DomainAddressBookContract {
             .doesNotContain("tech.updated@" + domainId);
     }
 
-    @Test
-    void domainAdministratorCanAddContactToDomainAddressBook() {
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void domainAdministratorCanAddContactToDomainAddressBook(VCardContact.Format format) {
         String domainId = extension().domainId();
         OpenPaasUser alice = extension().newTestUser();
         OpenPaasUser bob = extension().newTestUser();
@@ -220,8 +250,11 @@ public abstract class DomainAddressBookContract {
 
         // When bob adds a contact to the domain address book
         String vcardUid = "test-contact-uid";
-        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, vcardPayload);
+        VCardContact contact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Doe")
+            .build();
+        cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, contact.toBytes(format, vcardUid));
 
         String response = cardDavClient.getContacts(alice, domainId, "dab");
 
@@ -229,8 +262,9 @@ public abstract class DomainAddressBookContract {
         assertThat(response).contains("John Doe");
     }
 
-    @Test
-    void domainAdministratorCanUpdateContactInDomainAddressBook() {
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void domainAdministratorCanUpdateContactInDomainAddressBook(VCardContact.Format format) {
         String domainId = extension().domainId();
         OpenPaasUser alice = extension().newTestUser();
         OpenPaasUser bob = extension().newTestUser();
@@ -238,8 +272,11 @@ public abstract class DomainAddressBookContract {
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
         String vcardUid = "test-contact-uid";
-        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertDomainContact(domainId, vcardUid, vcardPayload, technicalToken);
+        VCardContact contact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Doe")
+            .build();
+        cardDavClient.upsertDomainContact(domainId, vcardUid, contact.toBytes(format, vcardUid), technicalToken);
 
         String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
             .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
@@ -255,8 +292,11 @@ public abstract class DomainAddressBookContract {
             .statusCode(204);
 
         // When bob update contact in the domain address book
-        byte[] updatedVcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Cole\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, updatedVcardPayload);
+        VCardContact updatedContact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Cole")
+            .build();
+        cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, updatedContact.toBytes(format, vcardUid));
 
         String response = cardDavClient.getContacts(alice, domainId, "dab");
 
@@ -273,8 +313,11 @@ public abstract class DomainAddressBookContract {
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
         String vcardUid = "test-contact-uid";
-        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertDomainContact(domainId, vcardUid, vcardPayload, technicalToken);
+        VCardContact contact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Doe")
+            .build();
+        cardDavClient.upsertDomainContact(domainId, vcardUid, contact.toVCardJsonPayload(vcardUid), technicalToken);
 
         String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
             .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
@@ -298,17 +341,21 @@ public abstract class DomainAddressBookContract {
         assertThat(response).doesNotContain("John Doe");
     }
 
-    @Test
-    void normalUserCannotAddContactToDomainAddressBook() {
+    @ParameterizedTest
+    @EnumSource(VCardContact.Format.class)
+    void normalUserCannotAddContactToDomainAddressBook(VCardContact.Format format) {
         String domainId = extension().domainId();
         OpenPaasUser bob = extension().newTestUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
         String vcardUid = "test-contact-uid";
-        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        VCardContact contact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Doe")
+            .build();
 
-        Assertions.assertThatThrownBy(() -> cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, vcardPayload))
+        Assertions.assertThatThrownBy(() -> cardDavClient.upsertContact(bob, domainId, "dab", vcardUid, contact.toBytes(format, vcardUid)))
             .hasMessageContaining("Unexpected status code: 403");
     }
 

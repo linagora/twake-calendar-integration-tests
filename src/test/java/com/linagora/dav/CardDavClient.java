@@ -74,8 +74,8 @@ public class CardDavClient {
         }
     }
 
-    private static final String CONTENT_TYPE_VCARD = "application/vcard";
-    private static final String ACCEPT_VCARD_JSON = "text/plain";
+    private static final String CONTENT_TYPE_VCARD = "application/vcard+json";
+    private static final String ACCEPT_VCARD_JSON = "application/json, text/plain, */*";
     private static final String ADDRESS_BOOK_PATH = "/addressbooks/%s/%s/%s.vcf";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -133,6 +133,39 @@ public class CardDavClient {
             .uri(uri)
             .responseSingle((response, buf) -> {
                 if (response.status().code() == 200) {
+                    return buf.asString(StandardCharsets.UTF_8);
+                }
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException(
+                        "Unexpected status code: %d when fetching contacts in address book %s for user %s\n%s"
+                            .formatted(response.status().code(), addressBookId, openPaasUser.id(), errorBody))));
+            }).block();
+    }
+
+    public String getContactsXML(OpenPaasUser openPaasUser, String baseId, String addressBookId) {
+        String payload = """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+              <D:prop>
+                <D:getetag/>
+                <C:address-data/>
+              </D:prop>
+            </C:addressbook-query>
+            """;
+        return getContactsXML(openPaasUser, baseId, addressBookId, payload);
+    }
+
+    public String getContactsXML(OpenPaasUser openPaasUser, String baseId, String addressBookId, String payload) {
+        String uri = String.format("/addressbooks/%s/%s",
+            baseId, addressBookId);
+        return client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Depth", 1))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(uri)
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, buf) -> {
+                if (response.status().code() == 207) {
                     return buf.asString(StandardCharsets.UTF_8);
                 }
                 return buf.asString(StandardCharsets.UTF_8)
