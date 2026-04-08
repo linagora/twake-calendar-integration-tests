@@ -175,6 +175,11 @@ public class CalendarUtil {
         });
     }
 
+    public static void removeAttendeePartStat(Calendar calendar, String attendeeEmail) {
+        findAttendeeProperties(calendar, attendeeEmail)
+            .forEach(attendee -> removeParameter(attendee, Parameter.PARTSTAT));
+    }
+
     private static Stream<Property> findAttendeeProperties(Calendar calendar, String attendeeEmail) {
         String mailAddress = "mailto:" + attendeeEmail;
         return calendar.getComponents(Component.VEVENT).stream()
