@@ -70,6 +70,9 @@ public abstract class DomainAddressBookContract {
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
                 .toString())
             .build();
+
+        cardDavClient.deleteAddressBook(domainId, "dab", technicalToken);
+        cardDavClient.deleteAddressBook(domainId, "domain-members", technicalToken);
     }
 
     @ParameterizedTest
@@ -396,7 +399,7 @@ public abstract class DomainAddressBookContract {
     }
 
     @Test
-    void domainAdministratorCannotSetPublicRightOfDomainAddressBook() {
+    void domainAdministratorCanSetPublicRightOfDomainAddressBook() {
         String domainId = extension().domainId();
         OpenPaasUser bob = extension().newTestUser();
 
@@ -416,44 +419,27 @@ public abstract class DomainAddressBookContract {
             .then()
             .statusCode(204);
 
-        String expected = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("contactsCount", true)
-            .queryParam("inviteStatus", 2)
-            .queryParam("personal", true)
-            .queryParam("shared", true)
-            .queryParam("subscribed", true)
-            .when()
-            .get("/addressbooks/" + domainId + ".json")
-            .then()
-            .extract()
-            .body()
-            .asString();
+        // And bob set public right on domain address book (set to read-write in this case)
+        cardDavClient.setDomainAddressBookPublicRightReadWrite(bob, domainId, "dab");
 
-        // Then bob cannot set public right on domain address book (set to read-write in this case)
-        assertThatThrownBy(() -> cardDavClient.setDomainBookPublicRight(bob, domainId, "dab"))
-            .hasMessageContaining("Unexpected status code: 501");
+        // Then any user can add the contact in the domain address book
+        OpenPaasUser alice = extension().newTestUser();
 
-        String actual = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("contactsCount", true)
-            .queryParam("inviteStatus", 2)
-            .queryParam("personal", true)
-            .queryParam("shared", true)
-            .queryParam("subscribed", true)
-            .when()
-            .get("/addressbooks/" + domainId + ".json")
-            .then()
-            .extract()
-            .body()
-            .asString();
+        String vcardUid = "test-contact-uid";
+        VCardContact contact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Doe")
+            .build();
 
-        // And the public right does not change
-        assertThat(actual).isEqualTo(expected);
+        cardDavClient.upsertContact(alice, domainId, "dab", vcardUid, contact.toBytes(VCardContact.Format.JSON, vcardUid));
+
+        String response = cardDavClient.getContacts(alice, domainId, "dab");
+
+        assertThat(response).contains("John Doe");
     }
 
     @Test
-    void domainAdministratorCannotDelegateDomainAddressBook() {
+    void domainAdministratorCanDelegateDomainAddressBook() {
         String domainId = extension().domainId();
         OpenPaasUser alice = extension().newTestUser();
         OpenPaasUser bob = extension().newTestUser();
@@ -474,40 +460,21 @@ public abstract class DomainAddressBookContract {
             .then()
             .statusCode(204);
 
-        String expected = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("contactsCount", true)
-            .queryParam("inviteStatus", 2)
-            .queryParam("personal", true)
-            .queryParam("shared", true)
-            .queryParam("subscribed", true)
-            .when()
-            .get("/addressbooks/" + domainId + ".json")
-            .then()
-            .extract()
-            .body()
-            .asString();
+        // And bob delegate domain address book (set to read-write in this case)
+        cardDavClient.grantDomainBookDelegation(bob, domainId, "dab", alice, CardDavClient.DelegationRight.READ_WRITE);
 
-        // Then bob cannot delegate domain address book (set to read-write in this case)
-        assertThatThrownBy(() -> cardDavClient.grantDomainBookDelegation(bob, domainId, "dab", alice, CardDavClient.DelegationRight.READ_WRITE))
-            .hasMessageContaining("Unexpected status code: 405");
+        // Then alice can add the contact in the domain address book
+        String vcardUid = "test-contact-uid";
+        VCardContact contact = VCardContact.builder()
+            .firstName("John")
+            .lastName("Doe")
+            .build();
 
-        String actual = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("contactsCount", true)
-            .queryParam("inviteStatus", 2)
-            .queryParam("personal", true)
-            .queryParam("shared", true)
-            .queryParam("subscribed", true)
-            .when()
-            .get("/addressbooks/" + domainId + ".json")
-            .then()
-            .extract()
-            .body()
-            .asString();
+        cardDavClient.upsertContact(alice, domainId, "dab", vcardUid, contact.toBytes(VCardContact.Format.JSON, vcardUid));
 
-        // And the delegation is not set
-        assertThat(actual).isEqualTo(expected);
+        String response = cardDavClient.getContacts(alice, domainId, "dab");
+
+        assertThat(response).contains("John Doe");
     }
 
     @Test
@@ -546,8 +513,8 @@ public abstract class DomainAddressBookContract {
             .asString();
 
         // Then bob cannot set public right on domain members address book (set to read-write in this case)
-        assertThatThrownBy(() -> cardDavClient.setDomainBookPublicRight(bob, domainId, "domain-members"))
-            .hasMessageContaining("Unexpected status code: 501");
+        assertThatThrownBy(() -> cardDavClient.setDomainAddressBookPublicRightReadWrite(bob, domainId, "domain-members"))
+            .hasMessageContaining("Unexpected status code: 405");
 
         String actual = given()
             .headers("Authorization", bob.impersonatedBasicAuth())
@@ -623,5 +590,93 @@ public abstract class DomainAddressBookContract {
 
         // And the delegation is not set
         assertThat(actual).isEqualTo(expected);
+    }
+
+    @Test
+    void shouldReturn403WhenUnauthorizedUserSetPublicRightOfDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser bob = extension().newTestUser();
+
+        // Given domain address book exists
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        // When bob set public right on domain address book
+        // Then sabre rejects the request (403)
+        assertThatThrownBy(() -> cardDavClient.setDomainAddressBookPublicRightReadWrite(bob, domainId, "dab"))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void shouldReturn400WhenDomainAdminSetEmptyPublicRightOfDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser bob = extension().newTestUser();
+
+        // Given domain address book exists
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(bob.email(), "@");
+
+        // When bob is admin of the domain
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + bob.email())
+            .then()
+            .statusCode(204);
+
+        // And bob set empty public right on domain address book
+        // Then sabre rejects the request (400)
+        String payload = """
+            {
+                "dav:group-addressbook": {
+                    "privileges": []
+                }
+            }
+            """;
+        assertThatThrownBy(() -> cardDavClient.setDomainAddressBookPublicRight(bob, domainId, "dab", payload))
+            .hasMessageContaining("Unexpected status code: 400");
+    }
+
+    @Test
+    void shouldReturn400WhenDomainAdminSetInvalidPublicRightOfDomainAddressBook() {
+        String domainId = extension().domainId();
+        OpenPaasUser bob = extension().newTestUser();
+
+        // Given domain address book exists
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(bob.email(), "@");
+
+        // When bob is admin of the domain
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + bob.email())
+            .then()
+            .statusCode(204);
+
+        // And bob set empty public right on domain address book
+        // Then sabre rejects the request (400)
+        String payload = """
+            {
+                "dav:group-addressbook": {
+                    "privileges": [
+                        "{DAV:}invalid"
+                    ]
+                }
+            }
+            """;
+        assertThatThrownBy(() -> cardDavClient.setDomainAddressBookPublicRight(bob, domainId, "dab", payload))
+            .hasMessageContaining("Unexpected status code: 400");
     }
 }
