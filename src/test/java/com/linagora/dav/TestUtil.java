@@ -18,12 +18,16 @@
 
 package com.linagora.dav;
 
-import static com.linagora.dav.contracts.ITIPRequestContract.awaitAtMost;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -32,6 +36,13 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
 public class TestUtil {
+    private static final ConditionFactory calmlyAwait = Awaitility.with()
+        .pollDelay(Duration.ofSeconds(2))
+        .pollInterval(Duration.ofSeconds(1))
+        .await();
+
+    public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
+
     public static final boolean DEBUG = true;
     public static Mono<ByteBuf> body(String body) {
         return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));

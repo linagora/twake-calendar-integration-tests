@@ -18,15 +18,16 @@
 
 package com.linagora.dav;
 
-import static com.linagora.dav.contracts.CalendarSharingContract.MAPPER;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ITIPJsonBodyRequest {
+    public static final ObjectMapper MAPPER = new ObjectMapper();
 
     public String ical;
     public String sender;
