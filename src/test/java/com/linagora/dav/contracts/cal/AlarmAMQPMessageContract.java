@@ -1,0 +1,3254 @@
+/********************************************************************
+ *  As a subpart of Twake Mail, this file is edited by Linagora.    *
+ *                                                                  *
+ *  https://twake-mail.com/                                         *
+ *  https://linagora.com                                            *
+ *                                                                  *
+ *  This file is subject to The Affero Gnu Public License           *
+ *  version 3.                                                      *
+ *                                                                  *
+ *  https://www.gnu.org/licenses/agpl-3.0.en.html                   *
+ *                                                                  *
+ *  This program is distributed in the hope that it will be         *
+ *  useful, but WITHOUT ANY WARRANTY; without even the implied      *
+ *  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR         *
+ *  PURPOSE. See the GNU Affero General Public License for          *
+ *  more details.                                                   *
+ ********************************************************************/
+
+package com.linagora.dav.contracts.cal;
+
+import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+
+import java.io.IOException;
+import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+import org.assertj.core.api.AssertionsForClassTypes;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalendarURL;
+import com.linagora.dav.CalendarUtil;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.ITIPJsonBodyRequest;
+import com.linagora.dav.OpenPaasUser;
+import com.rabbitmq.client.GetResponse;
+
+import net.fortuna.ical4j.model.Calendar;
+import net.javacrumbs.jsonunit.core.Option;
+
+public abstract class AlarmAMQPMessageContract {
+
+    private final ConditionFactory calmlyAwait = Awaitility.with()
+        .pollInterval(Duration.ofMillis(500))
+        .and()
+        .with()
+        .pollDelay(Duration.ofMillis(500))
+        .await();
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(20, TimeUnit.SECONDS);
+
+    private CalDavClient calDavClient;
+    
+    public abstract DockerTwakeCalendarExtension dockerExtension();
+
+    @BeforeEach
+    void setUp() {
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmCreatedExchange() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{organizerEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "import": false,
+              "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
+                        .whenIgnoringPaths("etag")
+                        .isEqualTo(expected);
+                    assertRawEventCalendarEquals(message.path("rawEvent").asText(), calendarData);
+                }));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmRequestExchange() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{attendeeEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{eventUid}", eventUid)
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenUpdateEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T150000",
+            "30250411T160000",
+            testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T15:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T16:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{organizerEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "import": false,
+              "old_event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER",
+                          "schedule-status": "${json-unit.ignore}"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{organizerEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{eventUid}", eventUid)
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmRequestExchangeWhenUpdateEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room 2",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{attendeeEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{eventUid}", eventUid)
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenAccept() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+
+        String updatedCalendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser2.email(),
+            "ACCEPTED");
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{attendeeEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "import": false,
+              "old_event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{attendeeEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{eventUid}", eventUid)
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmDeletedExchange() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.deleteCalendarEvent(testUser, eventUid);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        1
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER",
+                          "schedule-status": "${json-unit.ignore}"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{organizerEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "import": false
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString()).when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmCancelExchange() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            testUser.email(),
+            testUser2.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            testUser.email());
+        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.deleteCalendarEvent(testUser, eventUid);
+
+        String expected = """
+            {
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "event": [
+                "vcalendar",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "2.0"
+                  ],
+                  [
+                    "prodid",
+                    {},
+                    "text",
+                    "${json-unit.any-string}"
+                  ],
+                  [
+                    "calscale",
+                    {},
+                    "text",
+                    "GREGORIAN"
+                  ]
+                ],
+                [
+                  [
+                    "vtimezone",
+                    [
+                      [
+                        "tzid",
+                        {},
+                        "text",
+                        "Asia/Ho_Chi_Minh"
+                      ]
+                    ],
+                    [
+                      [
+                        "standard",
+                        [
+                          [
+                            "tzoffsetfrom",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzoffsetto",
+                            {},
+                            "utc-offset",
+                            "+07:00"
+                          ],
+                          [
+                            "tzname",
+                            {},
+                            "text",
+                            "ICT"
+                          ],
+                          [
+                            "dtstart",
+                            {},
+                            "date-time",
+                            "1970-01-01T00:00:00"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  [
+                    "vevent",
+                    [
+                      [
+                        "uid",
+                        {},
+                        "text",
+                        "{eventUid}"
+                      ],
+                      [
+                        "dtstart",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T10:00:00"
+                      ],
+                      [
+                        "dtend",
+                        {
+                          "tzid": "Asia/Ho_Chi_Minh"
+                        },
+                        "date-time",
+                        "3025-04-11T11:00:00"
+                      ],
+                      [
+                        "summary",
+                        {},
+                        "text",
+                        "Sprint planning #01"
+                      ],
+                      [
+                        "location",
+                        {},
+                        "text",
+                        "Twake Meeting Room"
+                      ],
+                      [
+                        "description",
+                        {},
+                        "text",
+                        "This is a meeting to discuss the sprint planning for the next week."
+                      ],
+                      [
+                        "organizer",
+                        {
+                          "cn": "Van Tung TRAN"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "NEEDS-ACTION",
+                          "cn": "Benoît TELLIER"
+                        },
+                        "cal-address",
+                        "mailto:{attendeeEmail}"
+                      ],
+                      [
+                        "attendee",
+                        {
+                          "partstat": "ACCEPTED",
+                          "rsvp": "FALSE",
+                          "role": "CHAIR",
+                          "cutype": "INDIVIDUAL"
+                        },
+                        "cal-address",
+                        "mailto:{organizerEmail}"
+                      ],
+                      [
+                        "dtstamp",
+                        {},
+                        "date-time",
+                        "${json-unit.any-string}"
+                      ],
+                      [
+                        "status",
+                        {},
+                        "text",
+                        "CANCELLED"
+                      ],
+                      [
+                        "sequence",
+                        {},
+                        "integer",
+                        2
+                      ]
+                    ],
+                    [
+                      [
+                        "valarm",
+                        [
+                          [
+                            "trigger",
+                            {},
+                            "duration",
+                            "-PT10M"
+                          ],
+                          [
+                            "action",
+                            {},
+                            "text",
+                            "EMAIL"
+                          ],
+                          [
+                            "attendee",
+                            {},
+                            "cal-address",
+                            "mailto:{attendeeEmail}"
+                          ],
+                          [
+                            "summary",
+                            {},
+                            "text",
+                            "test alarm"
+                          ],
+                          [
+                            "description",
+                            {},
+                            "text",
+                            "This is an automatic alarm sent by OpenPaas"
+                          ]
+                        ],
+                        []
+                      ]
+                    ]
+                  ]
+                ]
+              ],
+              "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{attendeeId}", testUser2.id())
+            .replace("{eventUid}", eventUid)
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeInCaseOfITIPRequest() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // Given Bob sends REQUEST ics to Alice (Alice use ITIP to save the event)
+        String eventUid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // When Alice accepts the event
+        String acceptIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
+
+        // Then a message should be present in the event alarm updated exchange
+
+        String expected = """
+            {
+                "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+                "event": [
+                    "vcalendar",
+                    [
+                        [
+                            "version",
+                            {},
+                            "text",
+                            "2.0"
+                        ],
+                        [
+                            "prodid",
+                            {},
+                            "text",
+                            "${json-unit.any-string}"
+                        ],
+                        [
+                            "calscale",
+                            {},
+                            "text",
+                            "GREGORIAN"
+                        ]
+                    ],
+                    [
+                        [
+                            "vevent",
+                            [
+                                [
+                                    "uid",
+                                    {},
+                                    "text",
+                                    "{eventUid}"
+                                ],
+                                [
+                                    "dtstamp",
+                                    {},
+                                    "date-time",
+                                    "${json-unit.any-string}"
+                                ],
+                                [
+                                    "dtstart",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T09:00:00Z"
+                                ],
+                                [
+                                    "dtend",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T10:00:00Z"
+                                ],
+                                [
+                                    "summary",
+                                    {},
+                                    "text",
+                                    "Meeting"
+                                ],
+                                [
+                                    "organizer",
+                                    {
+                                        "cn": "Bob"
+                                    },
+                                    "cal-address",
+                                    "mailto:{organizerEmail}"
+                                ],
+                                [
+                                    "attendee",
+                                    {
+                                        "cn": "Alice",
+                                        "partstat": "ACCEPTED"
+                                    },
+                                    "cal-address",
+                                    "mailto:{attendeeEmail}"
+                                ]
+                            ],
+                            [
+                                [
+                                    "valarm",
+                                    [
+                                        [
+                                            "trigger",
+                                            {},
+                                            "duration",
+                                            "-PT10M"
+                                        ],
+                                        [
+                                            "action",
+                                            {},
+                                            "text",
+                                            "EMAIL"
+                                        ],
+                                        [
+                                            "attendee",
+                                            {},
+                                            "cal-address",
+                                            "mailto:{attendeeEmail}"
+                                        ],
+                                        [
+                                            "summary",
+                                            {},
+                                            "text",
+                                            "test alarm"
+                                        ],
+                                        [
+                                            "description",
+                                            {},
+                                            "text",
+                                            "This is an automatic alarm"
+                                        ]
+                                    ],
+                                    []
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "import": false,
+                "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId)
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString()).when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
+    @Test
+    void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // Given Bob sends REQUEST ics to Alice (Alice use ITIP to save the event)
+        String eventUid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // When Alice accepts the event
+        String acceptIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
+
+        // AND Bob sends CANCEL ics to Alice (Alice use ITIP to remove the event)
+        String ics2 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest2 = ITIPJsonBodyRequest.builder()
+            .ical(ics2)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
+
+        // Then a message should be present in the event alarm cancel exchange
+        String expected = """
+            {
+                "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+                "event": [
+                    "vcalendar",
+                    [
+                        [
+                            "version",
+                            {},
+                            "text",
+                            "2.0"
+                        ],
+                        [
+                            "prodid",
+                            {},
+                            "text",
+                            "${json-unit.any-string}"
+                        ],
+                        [
+                            "calscale",
+                            {},
+                            "text",
+                            "GREGORIAN"
+                        ]
+                    ],
+                    [
+                        [
+                            "vevent",
+                            [
+                                [
+                                    "uid",
+                                    {},
+                                    "text",
+                                    "{eventUid}"
+                                ],
+                                [
+                                    "dtstamp",
+                                    {},
+                                    "date-time",
+                                    "${json-unit.any-string}"
+                                ],
+                                [
+                                    "dtstart",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T09:00:00Z"
+                                ],
+                                [
+                                    "dtend",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T10:00:00Z"
+                                ],
+                                [
+                                    "summary",
+                                    {},
+                                    "text",
+                                    "Meeting"
+                                ],
+                                [
+                                    "organizer",
+                                    {
+                                        "cn": "Bob"
+                                    },
+                                    "cal-address",
+                                    "mailto:{organizerEmail}"
+                                ],
+                                [
+                                    "attendee",
+                                    {
+                                        "cn": "Alice",
+                                        "partstat": "ACCEPTED"
+                                    },
+                                    "cal-address",
+                                    "mailto:{attendeeEmail}"
+                                ]
+                            ],
+                            [
+                                [
+                                    "valarm",
+                                    [
+                                        [
+                                            "trigger",
+                                            {},
+                                            "duration",
+                                            "-PT10M"
+                                        ],
+                                        [
+                                            "action",
+                                            {},
+                                            "text",
+                                            "EMAIL"
+                                        ],
+                                        [
+                                            "attendee",
+                                            {},
+                                            "cal-address",
+                                            "mailto:{attendeeEmail}"
+                                        ],
+                                        [
+                                            "summary",
+                                            {},
+                                            "text",
+                                            "test alarm"
+                                        ],
+                                        [
+                                            "description",
+                                            {},
+                                            "text",
+                                            "This is an automatic alarm"
+                                        ]
+                                    ],
+                                    []
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "import": false,
+                "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId)
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString())
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
+    @Test
+    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // Given Bob sends REQUEST ics to Alice (Alice use ITIP to save the event)
+        String eventUid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest).block();
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // When Alice accepts the event
+        String acceptIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{aliceEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), attendeeEventId, acceptIcs);
+
+        // AND Bob sends REQUEST ics to Alice to remove the alarm from the event (Alice use ITIP to update the event)
+        String ics2 = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        String itipRequest2 = ITIPJsonBodyRequest.builder()
+            .ical(ics2)
+            .sender(bob.email())
+            .recipient(alice.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
+
+        // Then a message should be present in the event alarm updated exchange
+
+        String expected = """
+            {
+                "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+                "event": [
+                    "vcalendar",
+                    [
+                        [
+                            "version",
+                            {},
+                            "text",
+                            "2.0"
+                        ],
+                        [
+                            "prodid",
+                            {},
+                            "text",
+                            "${json-unit.any-string}"
+                        ],
+                        [
+                            "calscale",
+                            {},
+                            "text",
+                            "GREGORIAN"
+                        ]
+                    ],
+                    [
+                        [
+                            "vevent",
+                            [
+                                [
+                                    "uid",
+                                    {},
+                                    "text",
+                                    "{eventUid}"
+                                ],
+                                [
+                                    "dtstamp",
+                                    {},
+                                    "date-time",
+                                    "${json-unit.any-string}"
+                                ],
+                                [
+                                    "dtstart",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T09:00:00Z"
+                                ],
+                                [
+                                    "dtend",
+                                    {},
+                                    "date-time",
+                                    "2025-10-05T10:00:00Z"
+                                ],
+                                [
+                                    "summary",
+                                    {},
+                                    "text",
+                                    "Meeting"
+                                ],
+                                [
+                                    "organizer",
+                                    {
+                                        "cn": "Bob"
+                                    },
+                                    "cal-address",
+                                    "mailto:{organizerEmail}"
+                                ],
+                                [
+                                    "attendee",
+                                    {
+                                        "cn": "Alice",
+                                        "partstat": "ACCEPTED"
+                                    },
+                                    "cal-address",
+                                    "mailto:{attendeeEmail}"
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "import": false,
+                "etag": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId)
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThatJson(message.toString()).when(Option.IGNORING_EXTRA_FIELDS)
+                    .isEqualTo(expected)));
+    }
+
+    @Test
+    public void shouldReceiveMessageContainingRawEventFromEventAlarmCreatedExchangeWhenAddingNewCalendarEventWithJsonFormat() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String jsonCalendarData = """
+            [
+                "vcalendar",
+                [],
+                [
+                    [
+                        "vevent",
+                        [
+                            [
+                                "uid",
+                                {},
+                                "text",
+                                "{eventUid}"
+                            ],
+                            [
+                                "sequence",
+                                {},
+                                "integer",
+                                1
+                            ],
+                            [
+                                "dtstart",
+                                {
+                                    "tzid": "Asia/Ho_Chi_Minh"
+                                },
+                                "date-time",
+                                "3025-04-11T10:00:00"
+                            ],
+                            [
+                                "dtend",
+                                {
+                                    "tzid": "Asia/Ho_Chi_Minh"
+                                },
+                                "date-time",
+                                "3025-04-11T11:00:00"
+                            ],
+                            [
+                                "summary",
+                                {},
+                                "text",
+                                "Sprint planning #01"
+                            ],
+                            [
+                                "location",
+                                {},
+                                "text",
+                                "Twake Meeting Room"
+                            ],
+                            [
+                                "description",
+                                {},
+                                "text",
+                                "This is a meeting to discuss the sprint planning for the next week."
+                            ],
+                            [
+                                "organizer",
+                                {
+                                    "cn": "Van Tung TRAN"
+                                },
+                                "cal-address",
+                                "mailto:{organizerEmail}"
+                            ],
+                            [
+                                "attendee",
+                                {
+                                    "partstat": "NEEDS-ACTION",
+                                    "cn": "Benoît TELLIER"
+                                },
+                                "cal-address",
+                                "mailto:{attendeeEmail}"
+                            ],
+                            [
+                                "attendee",
+                                {
+                                    "partstat": "ACCEPTED",
+                                    "rsvp": "FALSE",
+                                    "role": "CHAIR",
+                                    "cutype": "INDIVIDUAL"
+                                },
+                                "cal-address",
+                                "mailto:{organizerEmail}"
+                            ],
+                            [
+                                "dtstamp",
+                                {},
+                                "date-time",
+                                "3025-04-11T02:20:32Z"
+                            ]
+                        ],
+                        [
+                            [
+                                "valarm",
+                                [
+                                    [
+                                        "trigger",
+                                        {},
+                                        "duration",
+                                        "-PT10M"
+                                    ],
+                                    [
+                                        "action",
+                                        {},
+                                        "text",
+                                        "EMAIL"
+                                    ],
+                                    [
+                                        "attendee",
+                                        {},
+                                        "cal-address",
+                                        "mailto:{organizerEmail}"
+                                    ],
+                                    [
+                                        "summary",
+                                        {},
+                                        "text",
+                                        "test alarm"
+                                    ],
+                                    [
+                                        "description",
+                                        {},
+                                        "text",
+                                        "This is an automatic alarm sent by OpenPaas"
+                                    ]
+                                ],
+                                []
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerId}", testUser.id())
+            .replace("{eventUid}", eventUid);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertJsonCalendarEvent(testUser, eventUid, jsonCalendarData);
+
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next week.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{organizerEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", testUser.email())
+            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{eventUid}", eventUid);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message ->
+                    assertRawEventCalendarEquals(message.path("rawEvent").asText(), expectedEventIcs)));
+    }
+
+    private BlockingQueue<JsonNode> listenToQueue() {
+        return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+    }
+
+    private void assertRawEventCalendarEquals(String actualRawEventIcs, String expectedEventIcs) {
+        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualRawEventIcs);
+        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
+        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
+        CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
+        assertThat(actualCalendar).isEqualTo(expectedCalendar);
+    }
+
+    private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
+                                        String summary,
+                                        String location,
+                                        String description,
+                                        String dtstart,
+                                        String dtend,
+                                        String alarmAttendeeEmail) {
+        return generateCalendarData(eventUid, organizerEmail, attendeeEmail, summary, location, description, dtstart, dtend, alarmAttendeeEmail, "NEEDS-ACTION");
+    }
+
+    private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
+                                        String summary,
+                                        String location,
+                                        String description,
+                                        String dtstart,
+                                        String dtend,
+                                        String alarmAttendeeEmail,
+                                        String partStat) {
+
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{dtstart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{dtend}
+            SUMMARY:{summary}
+            LOCATION:{location}
+            DESCRIPTION:{description}
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT={partStat};CN=Benoît TELLIER:mailto:{attendeeEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{alarmAttendeeEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary)
+            .replace("{location}", location)
+            .replace("{description}", description)
+            .replace("{dtstart}", dtstart)
+            .replace("{dtend}", dtend)
+            .replace("{alarmAttendeeEmail}", alarmAttendeeEmail)
+            .replace("{partStat}", partStat);
+    }
+
+    @Test
+    void itipCancelShouldRemoveAlarm() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Cedric an event with Bob
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting To Be Cancelled
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String bobCalendarEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(bob, URI.create(bobCalendarEventUri), initialIcs);
+
+        Function<String, List<JsonNode>> bobEventsForUri = (uri) ->
+            calDavClient.reportCalendarEvents(bob, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+
+        // Ensure event is present initially
+        List<JsonNode> beforeCancel = bobEventsForUri.apply(bobDefaultCalendarUri);
+        assertThat(beforeCancel).anySatisfy(item -> {
+            String json = item.toString();
+            AssertionsForClassTypes.assertThat(json).contains(eventUid);
+            AssertionsForClassTypes.assertThat(json).contains("Meeting To Be Cancelled");
+        });
+
+        // WHEN Cedric sends an ITIP CANCEL
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting To Be Cancelled
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        String bobCalendarUri = "/calendars/" + bob.id();
+
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        // THEN we have a message
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .anySatisfy(message -> assertThat(message).isNotNull()));
+    }
+
+    @Test
+    protected void shouldNotPublishAlarmRequestForUnaffectedAttendeeWhenAnotherAttendeeUpdatesPartStat() throws Exception {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN the organizer creates an event with Bob + Alice + VALARM
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250101T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250101T100000
+            SUMMARY:Team sync
+            LOCATION:Meeting Room A
+            DESCRIPTION:Discuss weekly plan
+            ORGANIZER;CN=Cedric:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{bobEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(cedric, eventUid, calendarData);
+
+        // Ensure attendee copies are created
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(bob), Optional::isPresent);
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent);
+
+        // WHEN Bob accepts the invitation
+        String bobEventId = calDavClient.findFirstEventId(bob).get();
+
+        String acceptedIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            SEQUENCE:2
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250101T090000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250101T100000
+            SUMMARY:Team sync
+            LOCATION:Meeting Room A
+            DESCRIPTION:Discuss weekly plan
+            ORGANIZER;CN=Cedric:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT10M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{bobEmail}
+            SUMMARY:test alarm
+            DESCRIPTION:This is an automatic alarm sent by OpenPaas
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", cedric.email())
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        String testQueue = "tcalendar:event:test" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(testQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(testQueue, "calendar:event:alarm:request", "");
+
+        calDavClient.upsertCalendarEvent(bob, bobEventId, acceptedIcs);
+
+        Thread.sleep(1000);
+
+        // THEN  Alice should NOT receive alarm:request
+        GetResponse aliceMsg = dockerExtension()
+            .getChannel()
+            .basicGet(testQueue, true);
+
+        assertThat(aliceMsg)
+            .as("Unexpected alarm:request published for Alice")
+            .isNull();
+    }
+}

@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.contracts.cal.CalDavContract;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
