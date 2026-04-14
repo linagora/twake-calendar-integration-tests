@@ -40,12 +40,15 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
+import org.assertj.core.api.Assertions;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -74,6 +77,7 @@ import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.ScheduleStatus;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient.RequestSender;
 import reactor.netty.http.client.HttpClientResponse;
 
 public abstract class CalDavContract {
@@ -2591,5 +2595,120 @@ public abstract class CalDavContract {
             .replace("{dtend}", dtend)
             .replace("{partStat}", partStat)
             .replace("{resourceId}", resourceId);
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @MethodSource("unauthenticatedEndpoints")
+    void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String realUserId = testUser.id();
+        String resolvedPath = input.pathTemplate().replace("{userId}", realUserId);
+        Optional<String> resolvedPayload = input.payloadTemplate().map(payload -> payload.replace("{userId}", realUserId));
+
+        RequestSender sender = dockerExtension().davHttpClient()
+            .headers(header -> input.headers().forEach(header::add))
+            .request(HttpMethod.valueOf(input.method()));
+
+        RequestSender request = sender.uri(resolvedPath);
+        int status = resolvedPayload.map(s -> executeNoContent(request.send(body(s))))
+            .orElseGet(() -> executeNoContent(request));
+
+        Assertions.assertThat(status)
+            .as("Expected 401 for unauthenticated endpoint %s %s", input.method(), resolvedPath)
+            .isEqualTo(401);
+    }
+
+    private record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {
+        @Override
+        public String toString() {
+            return method + " " + pathTemplate;
+        }
+    }
+
+    private static Stream<AuthenticatedEndpoint> unauthenticatedEndpoints() {
+        String userId = "{userId}";
+
+        return Stream.of(
+                new AuthenticatedEndpoint("DELETE", "/calendars/" + userId + "/" + userId + "/fake-event-id.ics", Optional.empty(),
+                    Map.of()),
+
+                new AuthenticatedEndpoint("DELETE", "/calendars/" + userId + "/fake-calendar-id", Optional.empty(),
+                    Map.of()),
+
+                new AuthenticatedEndpoint("GET", "/calendars/" + userId + "/" + userId, Optional.empty(),
+                    Map.of("Accept", "text/calendar")),
+
+                new AuthenticatedEndpoint("GET", "/calendars/" + userId + "/" + userId + "/fake-event-id.ics", Optional.empty(),
+                    Map.of("Accept", "text/calendar")),
+
+                new AuthenticatedEndpoint("GET", "/calendars/" + userId + "/" + userId + "?export", Optional.empty(),
+                    Map.of("Accept", "text/calendar")),
+
+                new AuthenticatedEndpoint("ITIP", "/calendars/" + userId, Optional.of("""
+                    {"uid":"fake-itip-uid","sender":"sender@example.com","recipient":"recipient@example.com","method":"REQUEST","ical":"BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nEND:VCALENDAR"}
+                    """),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("MKCOL", "/calendars/" + userId + "/fake-calendar-id", Optional.empty(),
+                    Map.of()),
+
+                new AuthenticatedEndpoint("POST", "/calendars/freebusy", Optional.of("""
+                    {"start":"20300401T000000Z","end":"20300430T235959Z","users":["%s"]}
+                    """.formatted(userId)),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("POST", "/calendars/" + userId + "/outbox",
+                    Optional.of("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\nMETHOD:REQUEST\r\nBEGIN:VFREEBUSY\r\nUID:fake-uid\r\nDTSTART:20300401T090000Z\r\nDTEND:20300401T100000Z\r\nORGANIZER:mailto:organizer@example.com\r\nATTENDEE:mailto:attendee@example.com\r\nEND:VFREEBUSY\r\nEND:VCALENDAR"),
+                    Map.of("Content-Type", "text/calendar", "Accept", "application/xml")),
+
+                new AuthenticatedEndpoint("POST", "/calendars/" + userId + ".json", Optional.of("""
+                    {"id":"%s","dav:name":"Unauthorized calendar","apple:order":2}
+                    """.formatted(userId)),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("PROPPATCH", "/calendars/" + userId + "/" + userId + ".json", Optional.of("""
+                    {"id":"%s","dav:name":"Hacked name"}
+                    """.formatted(userId)),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("POST", "/calendars/" + userId + "/" + userId,
+                    Optional.of("<?xml version=\"1.0\" encoding=\"utf-8\" ?><d:share-resource xmlns:d=\"DAV:\"><d:sharee><d:href>mailto:someone@example.com</d:href><d:share-access><d:read /></d:share-access></d:sharee></d:share-resource>"),
+                    Map.of("Content-Type", "application/davsharing+xml", "Accept", "application/xml")),
+
+                new AuthenticatedEndpoint("POST", "/calendars/" + userId + "/" + userId + "/fake-event-id.ics", Optional.empty(),
+                    Map.of("X-Http-Method-Override", "DELETE", "Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("PROPFIND", "/principals/users/" + userId + ".json", Optional.empty(),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("PROPFIND", "/calendars/" + userId, Optional.empty(), Map.of()),
+
+                new AuthenticatedEndpoint("PROPFIND", "/calendars/" + userId + "/" + userId, Optional.empty(),
+                    Map.of()),
+
+                new AuthenticatedEndpoint("PROPFIND", "/calendars/" + userId + "/inbox", Optional.empty(),
+                    Map.of()),
+
+                new AuthenticatedEndpoint("PROPPATCH", "/calendars/" + userId + "/" + userId + ".json", Optional.of("""
+                    {"id":"%s","dav:name":"Hacked name"}
+                    """.formatted(userId)),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("PUT", "/calendars/" + userId + "/" + userId + "/fake-event-id.ics",
+                    Optional.of("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\nBEGIN:VEVENT\r\nUID:fake-event-id\r\nDTSTART:20300401T090000Z\r\nDTEND:20300401T100000Z\r\nSUMMARY:Fake Event\r\nEND:VEVENT\r\nEND:VCALENDAR"),
+                    Map.of("Content-Type", "text/calendar")),
+
+                new AuthenticatedEndpoint("REPORT", "/calendars/" + userId + "/" + userId + ".json", Optional.of("""
+                    {"match":{"start":"20300401T000000","end":"20300430T000000"}}
+                    """),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("REPORT", "/calendars/" + userId + "/" + userId, Optional.of("""
+                    <?xml version="1.0" encoding="utf-8" ?>
+                    <C:free-busy-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                      <C:time-range start="20300401T000000Z" end="20300430T000000Z"/>
+                    </C:free-busy-query>
+                    """),
+                    Map.of("Accept", "application/xml", "Content-Type", "application/xml", "Depth", "0")));
     }
 }
