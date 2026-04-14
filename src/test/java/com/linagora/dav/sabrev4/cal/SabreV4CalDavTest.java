@@ -52,4 +52,9 @@ class SabreV4CalDavTest extends CalDavContract {
     @Disabled("Fixed on Sabre 4.7")
     protected void deleteShouldNotCrashForEventWithoutOrganizer() {
     }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
+    }
 }

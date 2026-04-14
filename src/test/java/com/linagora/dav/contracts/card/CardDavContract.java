@@ -92,7 +92,7 @@ public abstract class CardDavContract {
 
     @ParameterizedTest(name = "[{index}] {0}")
     @MethodSource("unauthenticatedEndpoints")
-    void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
+    protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
         OpenPaasUser testUser = dockerExtension().newTestUser("");
         String realUserId = testUser.id();
         String resolvedPath = input.pathTemplate().replace("{userId}", realUserId);
@@ -111,7 +111,7 @@ public abstract class CardDavContract {
             .isEqualTo(401);
     }
 
-    private record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {
+    protected record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {
         @Override
         public String toString() {
             return method + " " + pathTemplate;
@@ -745,7 +745,7 @@ public abstract class CardDavContract {
     }
 
     @Test
-    void unauthenticatedProppatchShouldNotUpdateDisplayName() throws Exception {
+    protected void unauthenticatedProppatchShouldNotUpdateDisplayName() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         String originalDisplayName = "Original Address Book Name";
         String hackedDisplayName = "Hacked Address Book Name";

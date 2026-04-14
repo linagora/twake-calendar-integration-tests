@@ -1,4 +1,4 @@
-ARG SABRE_4_7_IMAGE="linagora/esn-sabre:sabre-4_7_0-06-04-2026"
+ARG SABRE_4_7_IMAGE="linagora/esn-sabre:sabre-4_7_0-14-04-2026"
 
 FROM ${SABRE_4_7_IMAGE}
 
