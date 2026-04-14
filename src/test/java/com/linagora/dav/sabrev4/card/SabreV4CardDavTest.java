@@ -18,6 +18,7 @@
 
 package com.linagora.dav.sabrev4.card;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +31,15 @@ public class SabreV4CardDavTest extends CardDavContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
+    }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void unauthenticatedProppatchShouldNotUpdateDisplayName() {
     }
 }

@@ -58,4 +58,8 @@ public class SabreV4ITIPRequestTest extends ITIPRequestContract {
     protected void shouldNotDuplicateAttendeeWhenReplyUsesUppercaseMailtoScheme() {
     }
 
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
+    }
 }

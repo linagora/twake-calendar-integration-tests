@@ -929,7 +929,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
+    protected void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
         OpenPaasUser owner = alice;
         OpenPaasUser attendee = bob;
         String uid = "unauth-itip-" + UUID.randomUUID();
