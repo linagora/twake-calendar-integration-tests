@@ -19,7 +19,9 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
+import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
@@ -57,6 +59,7 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
 import com.linagora.dav.XMLUtil;
 
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Parameter;
@@ -925,6 +928,60 @@ public abstract class ITIPRequestContract {
             .isNotEmpty();
     }
 
+    @Test
+    void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
+        OpenPaasUser owner = alice;
+        OpenPaasUser attendee = bob;
+        String uid = "unauth-itip-" + UUID.randomUUID();
+        String payload = ITIPJsonBodyRequest.builder()
+            .uid(uid)
+            .sender(attendee.email())
+            .recipient(owner.email())
+            .method("REQUEST")
+            .ical((("""
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Linagora//Security IT//EN
+                CALSCALE:GREGORIAN
+                METHOD:REQUEST
+                BEGIN:VEVENT
+                UID:%s
+                DTSTAMP:20300401T080000Z
+                DTSTART:20300402T090000Z
+                DTEND:20300402T100000Z
+                SUMMARY:Unauthorized ITIP
+                ORGANIZER:mailto:%s
+                ATTENDEE:mailto:%s
+                END:VEVENT
+                END:VCALENDAR
+                """).formatted(uid, attendee.email(), owner.email()))
+                .replace("\n", "\r\n"))
+            .buildJson();
+
+        String ownerDefaultCalendarPath = "/calendars/" + owner.id() + "/" + owner.id();
+
+        int status = executeNoContent(extension().davHttpClient()
+            .headers(headers -> headers
+                .add(HttpHeaderNames.ACCEPT, "application/json")
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .request(HttpMethod.valueOf("POST"))
+            .uri("/itip")
+            .send(body(payload)));
+
+        assertThat(status)
+            .as("Unauthenticated ITIP request to owner calendar should be rejected")
+            .isEqualTo(401);
+        Instant windowStart = Instant.parse("2030-01-01T00:00:00Z");
+        Instant windowEnd = Instant.parse("2031-01-01T00:00:00Z");
+
+        List<JsonNode> eventsAfter = calDavClient.reportCalendarEvents(owner, ownerDefaultCalendarPath, windowStart, windowEnd)
+            .collectList()
+            .block();
+
+        assertThat(eventsAfter.toString())
+            .as("Unauthorized ITIP request should not create the event with uid %s", uid)
+            .doesNotContain(uid);
+    }
 
     @Test
     void itipCancelShouldRemoveOnlyExceptionFromRecurringEvent() throws JsonProcessingException {

@@ -26,9 +26,13 @@ import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.w3c.dom.Node;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
@@ -42,6 +46,7 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
+import reactor.netty.http.client.HttpClient.RequestSender;
 import reactor.netty.http.client.HttpClientResponse;
 
 public abstract class CardDavContract {
@@ -85,14 +90,91 @@ public abstract class CardDavContract {
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
-    @Test
-    void unauthenticatedCallsShouldBeRejected() {
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks"));
+    @ParameterizedTest(name = "[{index}] {0}")
+    @MethodSource("unauthenticatedEndpoints")
+    void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
+        OpenPaasUser testUser = dockerExtension().newTestUser("");
+        String realUserId = testUser.id();
+        String resolvedPath = input.pathTemplate().replace("{userId}", realUserId);
+        Optional<String> resolvedPayload = input.payloadTemplate().map(payload -> payload.replace("{userId}", realUserId));
 
-        assertThat(response.status())
+        RequestSender sender = dockerExtension().davHttpClient()
+            .headers(h -> input.headers().forEach(h::add))
+            .request(HttpMethod.valueOf(input.method()));
+
+        RequestSender request = sender.uri(resolvedPath);
+        int status = resolvedPayload.map(s -> executeNoContent(request.send(body(s))))
+            .orElseGet(() -> executeNoContent(request));
+
+        assertThat(status)
+            .as("Expected 401 for unauthenticated endpoint %s %s", input.method(), resolvedPath)
             .isEqualTo(401);
+    }
+
+    private record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {
+        @Override
+        public String toString() {
+            return method + " " + pathTemplate;
+        }
+    }
+
+    private static Stream<AuthenticatedEndpoint> unauthenticatedEndpoints() {
+        String userId = "{userId}";
+
+        return Stream.of(
+            new AuthenticatedEndpoint("DELETE", "/addressbooks/" + userId + "/fake-book-id", Optional.empty(),
+                Map.of()),
+
+            new AuthenticatedEndpoint("DELETE", "/addressbooks/" + userId + "/contacts/fake-card-id.vcf", Optional.empty(),
+                Map.of()),
+
+            new AuthenticatedEndpoint("GET", "/addressbooks/" + userId + "/contacts/fake-card-id.vcf", Optional.empty(),
+                Map.of("Accept", "text/vcard")),
+
+            new AuthenticatedEndpoint("GET", "/addressbooks/" + userId + "/contacts?export", Optional.empty(),
+                Map.of("Accept", "text/vcard")),
+
+            new AuthenticatedEndpoint("HEAD", "/addressbooks/" + userId + "/contacts/fake-card-id.vcf", Optional.empty(),
+                Map.of()),
+
+            new AuthenticatedEndpoint("MKCOL", "/addressbooks/" + userId + "/fake-book-id", Optional.empty(),
+                Map.of()),
+
+            new AuthenticatedEndpoint("POST", "/addressbooks/" + userId + ".json", Optional.of("""
+                    {"id":"%s","dav:name":"Unauthorized Addressbook","dav:acl":["dav:read","dav:write"],"type":"user"}
+                    """.formatted(userId)),
+                Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+            new AuthenticatedEndpoint("POST", "/addressbooks/" + userId + "/collected.json", Optional.of("""
+                    {"dav:share-resource":{"dav:sharee":[{"dav:href":"mailto:someone@example.com","dav:share-access":2}]}}
+                    """),
+                Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+            new AuthenticatedEndpoint("PROPFIND", "/addressbooks", Optional.empty(), Map.of()),
+
+            new AuthenticatedEndpoint("PROPFIND", "/addressbooks/" + userId, Optional.empty(),
+                Map.of()),
+
+            new AuthenticatedEndpoint("PROPFIND", "/addressbooks/" + userId + "/contacts", Optional.empty(),
+                Map.of()),
+
+            new AuthenticatedEndpoint("PROPPATCH", "/addressbooks/" + userId + "/" + userId + ".json", Optional.of("""
+                    {"dav:name":"Hacked book"}
+                    """),
+                Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+            new AuthenticatedEndpoint("PROPPATCH", "/addressbooks/" + userId + "/contacts",
+                Optional.of("<d:propertyupdate xmlns:d=\"DAV:\"><d:set><d:prop><d:displayname>Hacked Name</d:displayname></d:prop></d:set></d:propertyupdate>"),
+                Map.of("Content-Type", "application/xml")),
+
+            new AuthenticatedEndpoint("PUT", "/addressbooks/" + userId + "/contacts/fake-card-id.vcf",
+                Optional.of("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Fake Card\r\nUID:fake-card-id\r\nEND:VCARD"),
+                Map.of("Content-Type", "text/vcard")),
+
+            new AuthenticatedEndpoint("REPORT", "/addressbooks/" + userId + "/contacts",
+                Optional.of("<card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\"><d:prop><d:getetag /></d:prop></card:addressbook-query>"),
+                Map.of("Content-Type", "application/xml", "Depth", "1"))
+        );
     }
 
     @Test
@@ -660,6 +742,72 @@ public abstract class CardDavContract {
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
             .areSimilar();
+    }
+
+    @Test
+    void unauthenticatedProppatchShouldNotUpdateDisplayName() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String originalDisplayName = "Original Address Book Name";
+        String hackedDisplayName = "Hacked Address Book Name";
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("""
+                <d:propertyupdate xmlns:d="DAV:">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>%s</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:propertyupdate>
+                """.formatted(originalDisplayName))));
+
+        String beforeDisplayName = getContactsDisplayName(testUser);
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts")
+            .send(body("""
+                <d:propertyupdate xmlns:d="DAV:">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>%s</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:propertyupdate>
+                """.formatted(hackedDisplayName))));
+
+        String afterDisplayName = getContactsDisplayName(testUser);
+
+        assertThat(status)
+            .as("Unauthenticated PROPPATCH on /addressbooks/%s/contacts should return 401", testUser.id())
+            .isEqualTo(401);
+        assertThat(afterDisplayName)
+            .as("Unauthenticated PROPPATCH must not update contacts display name")
+            .isEqualTo(beforeDisplayName);
+    }
+
+    private String getContactsDisplayName(OpenPaasUser testUser) throws Exception {
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + testUser.id())
+            .send(body("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>
+                """)));
+
+        return XMLUtil.extractByXPath(
+            response.body(),
+            "//d:response[d:href='/addressbooks/" + testUser.id() + "/contacts/']/d:propstat/d:prop/d:displayname",
+            Map.of("d", "DAV:"));
     }
 
     @Test
