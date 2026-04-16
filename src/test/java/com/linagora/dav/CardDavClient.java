@@ -248,6 +248,24 @@ public class CardDavClient {
             }).block();
     }
 
+    public void deleteAddressBook(String baseId, String addressBookId, String technicalToken) {
+        String uri = String.format("/addressbooks/%s/%s.json", baseId, addressBookId);
+        client.headers(headers -> headers.add("TwakeCalendarToken", technicalToken)
+                .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
+            .delete()
+            .uri(uri)
+            .responseSingle((response, buf) -> {
+                if (response.status().code() == 204 || response.status().code() == 404) {
+                    return Mono.empty();
+                }
+                return buf.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException(
+                        "Unexpected status code: %d when deleting address book %s with baseId %s\n%s"
+                            .formatted(response.status().code(), addressBookId, baseId, errorBody))));
+            }).block();
+    }
+
     public void grantDelegation(OpenPaasUser user, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
         grantDelegation(user, user.id(), addressBookId, delegatedUser, right);
     }
@@ -347,22 +365,22 @@ public class CardDavClient {
         sendPublicRightRequest(user, uri, payload);
     }
 
-    public void setDomainBookPublicRight(OpenPaasUser user, String baseId, String addressBookId) {
-        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
-
+    public void setDomainAddressBookPublicRightReadWrite(OpenPaasUser user, String baseId, String addressBookId) {
         String payload = """
             {
                 "dav:group-addressbook": {
                     "privileges": [
-                        "{DAV:}read",
-                        "{DAV:}write-content",
-                        "{DAV:}bind",
-                        "{DAV:}unbind"
+                        "{DAV:}write"
                     ]
                 }
             }
             """;
 
+        setDomainAddressBookPublicRight(user, baseId, addressBookId, payload);
+    }
+
+    public void setDomainAddressBookPublicRight(OpenPaasUser user, String baseId, String addressBookId, String payload) {
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
         sendPublicRightRequest(user, uri, payload);
     }
 
