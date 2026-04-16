@@ -531,6 +531,7 @@ public abstract class DomainAddressBookContract {
         assertThat(response).contains("John Doe");
     }
 
+    @Disabled("Status code is changed from 501 to 405 in https://github.com/linagora/esn-sabre/issues/310")
     @Test
     void domainAdministratorCannotSetPublicRightOfDomainMembersBook() {
         String domainId = extension().domainId();
