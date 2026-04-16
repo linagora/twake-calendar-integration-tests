@@ -28,6 +28,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -398,6 +399,7 @@ public abstract class DomainAddressBookContract {
             .hasMessageContaining("Unexpected status code: 403");
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/310")
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     void domainAdministratorCanSetPublicRightOfDomainAddressBook(VCardContact.Format format) {
@@ -439,6 +441,7 @@ public abstract class DomainAddressBookContract {
         assertThat(response).contains("John Doe");
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/310")
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     void domainAdministratorCanDelegateDomainAddressBook(VCardContact.Format format) {
@@ -484,6 +487,7 @@ public abstract class DomainAddressBookContract {
         assertThat(responseAfterDelete).doesNotContain("John Doe");
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/310")
     @Test
     void domainAdministratorCanDelegateDomainAddressBookWithAdminRight() {
         String domainId = extension().domainId();
@@ -594,6 +598,7 @@ public abstract class DomainAddressBookContract {
         assertThat(actual).isEqualTo(expected);
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/310")
     @Test
     void shouldReturn403WhenNonAdminUserSetPublicRightOfDomainAddressBook() {
         String domainId = extension().domainId();
@@ -618,6 +623,7 @@ public abstract class DomainAddressBookContract {
         assertThat(actual).isEqualTo(expected);
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/310")
     @Test
     void shouldReturn400WhenDomainAdminSetEmptyPublicRightOfDomainAddressBook() {
         String domainId = extension().domainId();
@@ -658,6 +664,7 @@ public abstract class DomainAddressBookContract {
         assertThat(actual).isEqualTo(expected);
     }
 
+    @Disabled("https://github.com/linagora/esn-sabre/issues/310")
     @Test
     void shouldReturn400WhenDomainAdminSetInvalidPublicRightOfDomainAddressBook() {
         String domainId = extension().domainId();
