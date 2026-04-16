@@ -1594,6 +1594,33 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEventsBefore).hasSize(1);
 
         String eventHref = aliceEventsBefore.getFirst().path("_links").path("self").path("href").asText();
+        List<OpenPaasUser> attendees = List.of(alice, cedric);
+
+        // AND: Initial iTIP REQUEST deliveries are completed before deleting the event
+        for (OpenPaasUser attendee : attendees) {
+            String inboxUri = "/calendars/" + attendee.id() + "/inbox/";
+            awaitAtMost.untilAsserted(() -> {
+                List<JsonNode> inboxItems = calDavClient.reportCalendarEvents(
+                        attendee,
+                        inboxUri,
+                        Instant.parse("2025-09-01T00:00:00Z"),
+                        Instant.parse("2025-11-01T00:00:00Z"))
+                    .collectList().block();
+
+                assertThat(inboxItems)
+                    .anySatisfy(item -> {
+                        String json = item.toString();
+                        assertThat(json).contains(eventUid);
+                        assertThat(json).contains("mailto:" + attendee.email());
+                        assertThatJson(item)
+                            .inPath("data[1]")
+                            .isArray()
+                            .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                                .isEqualTo("""
+                                    ["method", {}, "text", "REQUEST"]"""));
+                    });
+            });
+        }
 
         // WHEN: Alice deletes the event from her subscribed copy
         calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
@@ -1609,8 +1636,6 @@ public abstract class CalendarSharingContract {
         assertThat(bobEventsAfter).isEmpty();
 
         // AND: Both Alice and Cedric should receive an iTIP CANCEL request
-        List<OpenPaasUser> attendees = List.of(alice, cedric);
-
         for (OpenPaasUser attendee : attendees) {
             String inboxUri = "/calendars/" + attendee.id() + "/inbox/";
             awaitAtMost.untilAsserted(() -> {
