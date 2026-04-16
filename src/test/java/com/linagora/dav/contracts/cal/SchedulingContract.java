@@ -75,6 +75,7 @@ public abstract class SchedulingContract {
     private OpenPaasUser bob;
     private OpenPaasUser alice;
     private OpenPaasUser cedric;
+    private OpenPaasUser david;
 
     @BeforeEach
     void setUp() {
@@ -82,6 +83,7 @@ public abstract class SchedulingContract {
         bob = extension().newTestUser();
         alice = extension().newTestUser();
         cedric = extension().newTestUser();
+        david = extension().newTestUser();
     }
 
     @Test
@@ -791,6 +793,248 @@ public abstract class SchedulingContract {
         // And Alice local TRANSP is not reset by that attendee update
         assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.TRANSP))
             .isEqualTo(TRANSP_TRANSPARENT);
+    }
+
+    @Test
+    void attendeePUTUpdateShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialSummary = "Planning meeting";
+        String initialDescription = "Initial note from Bob";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:{summary}
+            DESCRIPTION:{description}
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{summary}", initialSummary)
+            .replace("{description}", initialDescription)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+
+        // And both attendees can already see the invited event
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .contains("SUMMARY:" + initialSummary)
+                .contains("DESCRIPTION:" + initialDescription);
+            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .contains("SUMMARY:" + initialSummary)
+                .contains("DESCRIPTION:" + initialDescription);
+        });
+
+        // When Alice updates summary and description of her own event via HTTP PUT
+        String aliceUpdatedSummary = "Alice private summary";
+        String aliceUpdatedDescription = "Alice private note";
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("SUMMARY:" + initialSummary, "SUMMARY:" + aliceUpdatedSummary)
+            .replace("DESCRIPTION:" + initialDescription, "DESCRIPTION:" + aliceUpdatedDescription);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains("SUMMARY:" + aliceUpdatedSummary)
+            .contains("DESCRIPTION:" + aliceUpdatedDescription));
+
+        // Then Bob and Cedric event does not change
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        calmlyAwait
+            .during(3, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .contains("SUMMARY:" + initialSummary)
+                    .contains("DESCRIPTION:" + initialDescription)
+                    .doesNotContain("SUMMARY:" + aliceUpdatedSummary)
+                    .doesNotContain("DESCRIPTION:" + aliceUpdatedDescription);
+
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .contains("SUMMARY:" + initialSummary)
+                    .contains("DESCRIPTION:" + initialDescription)
+                    .doesNotContain("SUMMARY:" + aliceUpdatedSummary)
+                    .doesNotContain("DESCRIPTION:" + aliceUpdatedDescription);
+            });
+    }
+
+    @Test
+    void attendeeUpdatingOrganizerParticipationShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Participation isolation check
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri), bob.email()))
+                .isEqualTo(PartStat.ACCEPTED);
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri), bob.email()))
+                .isEqualTo(PartStat.ACCEPTED);
+        });
+
+        // When Alice changes Bob PARTSTAT in her own event copy
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = CalendarUtil.withAttendeePartStat(aliceCalendarEventIcs, bob.email(), PartStat.DECLINED);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Bob and Cedric calendars keep Bob participation untouched
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri), bob.email()))
+                    .isEqualTo(PartStat.ACCEPTED);
+                assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri), bob.email()))
+                    .isEqualTo(PartStat.ACCEPTED);
+            });
+    }
+
+    @Test
+    void attendeeAddingNewAttendeeShouldNotPropagateToOthersNorInviteNewAttendee() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Add attendee isolation check
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        // When Alice tries to add David in her copy
+        String davidAttendeeLine =
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:" + david.email();
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs.replace("END:VEVENT", davidAttendeeLine + "\nEND:VEVENT");
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Bob and Cedric calendars are not updated with David, and David is not invited
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .doesNotContain("mailto:" + david.email());
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .doesNotContain("mailto:" + david.email());
+                assertThat(calDavClient.findFirstEventId(david))
+                    .isEmpty();
+            });
+    }
+
+    @Test
+    void attendeeChangingOrganizerShouldOnlyAffectAttendeeCalendar() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Organizer isolation check
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        // When Alice changes ORGANIZER in her own event
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("ORGANIZER:mailto:" + bob.email(), "ORGANIZER:mailto:" + alice.email());
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getOrganizer(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+            .isEqualTo("mailto:" + alice.email()));
+
+        // Then Bob and Cedric calendars still point to Bob as organizer
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(CalendarUtil.getOrganizer(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
+                    .isEqualTo("mailto:" + bob.email());
+                assertThat(CalendarUtil.getOrganizer(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri)))
+                    .isEqualTo("mailto:" + bob.email());
+            });
     }
 
     @Test

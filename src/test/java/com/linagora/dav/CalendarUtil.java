@@ -158,6 +158,18 @@ public class CalendarUtil {
         });
     }
 
+    public static String getOrganizer(String icsContent) {
+        return getOrganizer(parseIcs(icsContent));
+    }
+
+    public static String getOrganizer(Calendar calendar) {
+        return calendar.getComponents(Component.VEVENT).stream()
+            .flatMap(vevent -> vevent.getProperties(Property.ORGANIZER).stream())
+            .map(Property::getValue)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Organizer not found in calendar"));
+    }
+
     public static PartStat getAttendeePartStat(String icsContent, String attendeeEmail) {
         return getAttendeePartStat(parseIcs(icsContent), attendeeEmail);
     }
