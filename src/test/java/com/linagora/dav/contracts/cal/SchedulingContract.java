@@ -29,10 +29,13 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
@@ -342,7 +345,7 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    void attendeeUpdatingVALARMShouldOnlyAffectAttendeeCalendar() {
+    void attendeeUpdatingVALARMShouldNotPropagateToOrganizerAndOtherAttendees() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
         String organizerEventUid = "event-" + UUID.randomUUID();
         String organizerEventIcs = """
@@ -581,7 +584,7 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    void attendeeUpdatingTRANSPShouldOnlyAffectAttendeeCalendar() {
+    void attendeeUpdatingTRANSPShouldNotPropagateToOrganizerAndOtherAttendees() {
         // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
         String organizerEventUid = "event-" + UUID.randomUUID();
         String organizerEventIcs = """
@@ -795,12 +798,36 @@ public abstract class SchedulingContract {
             .isEqualTo(TRANSP_TRANSPARENT);
     }
 
-    @Test
-    void attendeePUTUpdateShouldNotPropagateToOrganizerAndOtherAttendees() {
+    record PropertyChange(String propertyName, String originalValue, String updatedValue) {
+        @Override
+        public String toString() {
+            return propertyName;
+        }
+
+        String originalLine() {
+            return propertyName + ":" + originalValue;
+        }
+
+        String updatedLine() {
+            return propertyName + ":" + updatedValue;
+        }
+    }
+
+    static Stream<PropertyChange> coreEventPropertyUpdates() {
+        return Stream.of(
+            new PropertyChange(Property.SUMMARY, "Shared title", "Alice local title"),
+            new PropertyChange(Property.DESCRIPTION, "Shared description", "Alice local description"),
+            new PropertyChange(Property.DTSTART, "20351005T090000Z", "20351005T093000Z"),
+            new PropertyChange(Property.DTEND, "20351005T100000Z", "20351005T120000Z"),
+            new PropertyChange(Property.CLASS, "PUBLIC", "PRIVATE"),
+            new PropertyChange(Property.LOCATION, "Room A", "Room B"));
+    }
+
+    @ParameterizedTest(name = "[{index}] attendee updating {0} should not propagate to organizer and other attendees")
+    @MethodSource("coreEventPropertyUpdates")
+    void attendeePUTUpdateShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
         // Given Bob creates an event with Alice and Cedric as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
-        String initialSummary = "Planning meeting";
-        String initialDescription = "Initial note from Bob";
         String organizerEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -810,8 +837,11 @@ public abstract class SchedulingContract {
             DTSTAMP:20351003T080000Z
             DTSTART:20351005T090000Z
             DTEND:20351005T100000Z
-            SUMMARY:{summary}
-            DESCRIPTION:{description}
+            SUMMARY:Shared title
+            DESCRIPTION:Shared description
+            CLASS:PUBLIC
+            LOCATION:Room A
+            STATUS:CONFIRMED
             ORGANIZER:mailto:{bobEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
@@ -820,8 +850,6 @@ public abstract class SchedulingContract {
             END:VCALENDAR
             """
             .replace("{organizerEventUid}", organizerEventUid)
-            .replace("{summary}", initialSummary)
-            .replace("{description}", initialDescription)
             .replace("{bobEmail}", bob.email())
             .replace("{aliceEmail}", alice.email())
             .replace("{cedricEmail}", cedric.email());
@@ -829,49 +857,38 @@ public abstract class SchedulingContract {
 
         String aliceCalendarEventId = awaitFirstEventId(alice);
         String cedricCalendarEventId = awaitFirstEventId(cedric);
-
-        // And both attendees can already see the invited event
         URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
         URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        String changedPropertyName = change.propertyName();
+        String originalPropertyValue = change.originalValue();
+        String updatedPropertyValue = change.updatedValue();
 
-        awaitAtMost.untilAsserted(() -> {
-            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
-                .contains("SUMMARY:" + initialSummary)
-                .contains("DESCRIPTION:" + initialDescription);
-            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
-                .contains("SUMMARY:" + initialSummary)
-                .contains("DESCRIPTION:" + initialDescription);
-        });
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(changedPropertyName))
+            .isEqualTo(originalPropertyValue));
 
-        // When Alice updates summary and description of her own event via HTTP PUT
-        String aliceUpdatedSummary = "Alice private summary";
-        String aliceUpdatedDescription = "Alice private note";
+        // When Alice updates property in her copy
         String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
         String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
-            .replace("SUMMARY:" + initialSummary, "SUMMARY:" + aliceUpdatedSummary)
-            .replace("DESCRIPTION:" + initialDescription, "DESCRIPTION:" + aliceUpdatedDescription);
+            .replace(change.originalLine(), change.updatedLine());
         calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
 
-        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
-            .contains("SUMMARY:" + aliceUpdatedSummary)
-            .contains("DESCRIPTION:" + aliceUpdatedDescription));
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(changedPropertyName))
+            .isEqualTo(updatedPropertyValue));
 
-        // Then Bob and Cedric event does not change
-        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        // Then Bob and Cedric calendars keep organizer values unchanged
         calmlyAwait
-            .during(3, TimeUnit.SECONDS)
+            .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
-                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
-                    .contains("SUMMARY:" + initialSummary)
-                    .contains("DESCRIPTION:" + initialDescription)
-                    .doesNotContain("SUMMARY:" + aliceUpdatedSummary)
-                    .doesNotContain("DESCRIPTION:" + aliceUpdatedDescription);
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .extractPropertyValue(changedPropertyName))
+                    .isEqualTo(originalPropertyValue);
 
-                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
-                    .contains("SUMMARY:" + initialSummary)
-                    .contains("DESCRIPTION:" + initialDescription)
-                    .doesNotContain("SUMMARY:" + aliceUpdatedSummary)
-                    .doesNotContain("DESCRIPTION:" + aliceUpdatedDescription);
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .extractPropertyValue(changedPropertyName))
+                    .isEqualTo(originalPropertyValue);
             });
     }
 
@@ -1023,16 +1040,19 @@ public abstract class SchedulingContract {
             .replace("ORGANIZER:mailto:" + bob.email(), "ORGANIZER:mailto:" + alice.email());
         calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
 
-        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getOrganizer(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(Property.ORGANIZER))
             .isEqualTo("mailto:" + alice.email()));
 
         // Then Bob and Cedric calendars still point to Bob as organizer
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
-                assertThat(CalendarUtil.getOrganizer(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .extractPropertyValue(Property.ORGANIZER))
                     .isEqualTo("mailto:" + bob.email());
-                assertThat(CalendarUtil.getOrganizer(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri)))
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .extractPropertyValue(Property.ORGANIZER))
                     .isEqualTo("mailto:" + bob.email());
             });
     }
