@@ -834,6 +834,13 @@ public abstract class SchedulingContract {
         return Stream.concat(coreEventPropertyUpdates(), recurringOnlyPropertyUpdates());
     }
 
+    static Stream<PropertyChange> recurringOverridePropertyUpdates() {
+        return Stream.of(
+            new PropertyChange(Property.SUMMARY, "Occurrence from organizer", "Alice local occurrence"),
+            new PropertyChange(Property.DTSTART, "20351006T130000Z", "20351006T133000Z"),
+            new PropertyChange(Property.DTEND, "20351006T140000Z", "20351006T160000Z"));
+    }
+
     @ParameterizedTest(name = "[{index}] attendee updating {0} should not propagate to organizer and other attendees")
     @MethodSource("coreEventPropertyUpdates")
     void attendeePUTUpdateShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
@@ -972,6 +979,272 @@ public abstract class SchedulingContract {
                 assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
                     .extractPropertyValue(changedPropertyName))
                     .isEqualTo(originalPropertyValue);
+            });
+    }
+
+    @ParameterizedTest(name = "[{index}] attendee updating existing override {0} should not propagate to organizer and other attendees")
+    @MethodSource("recurringOverridePropertyUpdates")
+    void attendeeUpdatingExistingOverrideShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
+        // Given Bob creates a recurring event with one override and invites Alice and Cedric
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:Master shared title
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            {overrideRecurrenceIdLine}
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T130000Z
+            DTEND:20351006T140000Z
+            SUMMARY:Occurrence from organizer
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{overrideRecurrenceIdLine}", overrideRecurrenceIdLine)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        String originalLine = change.originalLine();
+        String updatedLine = change.updatedLine();
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains(overrideRecurrenceIdLine)
+            .contains(originalLine));
+
+        // When Alice updates the existing override in her own copy
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace(originalLine, updatedLine);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains(overrideRecurrenceIdLine)
+            .contains(updatedLine));
+
+        // Then Bob and Cedric calendars keep organizer override unchanged
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .contains(overrideRecurrenceIdLine)
+                    .contains(originalLine)
+                    .doesNotContain(updatedLine);
+
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .contains(overrideRecurrenceIdLine)
+                    .contains(originalLine)
+                    .doesNotContain(updatedLine);
+            });
+    }
+
+    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/322")
+    @Test
+    void attendeeCreatingNewOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates a recurring master event (no override) and invites Alice and Cedric
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
+        String aliceLocalOverrideSummaryLine = "SUMMARY:Alice new local override";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:Master shared title
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .doesNotContain(overrideRecurrenceIdLine);
+            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .doesNotContain(overrideRecurrenceIdLine);
+        });
+
+        // When Alice creates a new override occurrence in her own copy
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs.replace(
+            "END:VCALENDAR",
+            """
+                BEGIN:VEVENT
+                UID:{organizerEventUid}
+                RECURRENCE-ID:20351006T090000Z
+                DTSTAMP:20351003T090000Z
+                DTSTART:20351006T150000Z
+                DTEND:20351006T160000Z
+                {aliceLocalOverrideSummaryLine}
+                ORGANIZER:mailto:{bobEmail}
+                ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+                ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+                ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+                END:VEVENT
+                END:VCALENDAR
+                """
+                .replace("{organizerEventUid}", organizerEventUid)
+                .replace("{aliceLocalOverrideSummaryLine}", aliceLocalOverrideSummaryLine)
+                .replace("{bobEmail}", bob.email())
+                .replace("{aliceEmail}", alice.email())
+                .replace("{cedricEmail}", cedric.email()));
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains(overrideRecurrenceIdLine)
+            .contains(aliceLocalOverrideSummaryLine));
+
+        // Then Bob and Cedric calendars keep no override occurrence
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .doesNotContain(overrideRecurrenceIdLine)
+                    .doesNotContain(aliceLocalOverrideSummaryLine);
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .doesNotContain(overrideRecurrenceIdLine)
+                    .doesNotContain(aliceLocalOverrideSummaryLine);
+            });
+    }
+
+    @Test
+    void attendeeRemovingExistingOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates a recurring event with one override and invites Alice and Cedric
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
+        String masterSummary = "Master shared title";
+        String organizerEventIcsWithOverride = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:{masterSummary}
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            {overrideRecurrenceIdLine}
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T130000Z
+            DTEND:20351006T140000Z
+            SUMMARY:Occurrence from organizer
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{overrideRecurrenceIdLine}", overrideRecurrenceIdLine)
+            .replace("{masterSummary}", masterSummary)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcsWithOverride);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains(overrideRecurrenceIdLine)
+            .contains("SUMMARY:Occurrence from organizer"));
+
+        // When Alice removes the existing override from her own copy
+        String aliceMasterOnlyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T100000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:{masterSummary}
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{masterSummary}", masterSummary)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceMasterOnlyIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .doesNotContain(overrideRecurrenceIdLine)
+            .doesNotContain("SUMMARY:Occurrence from organizer")
+            .contains("SUMMARY:" + masterSummary));
+
+        // Then Bob and Cedric calendars keep organizer override unchanged
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .contains(overrideRecurrenceIdLine)
+                    .contains("SUMMARY:Occurrence from organizer");
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .contains(overrideRecurrenceIdLine)
+                    .contains("SUMMARY:Occurrence from organizer");
             });
     }
 
