@@ -38,17 +38,20 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarUtil;
+import com.linagora.dav.CalendarUtil.CalendarExtractor;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
 import net.fortuna.ical4j.model.Calendar;
-import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
+import net.fortuna.ical4j.model.property.Transp;
 
 public abstract class SchedulingContract {
     private static final String ALARM_TRIGGER_15M = "-PT15M";
     private static final String ALARM_TRIGGER_5M = "-PT5M";
+    private static final String TRANSP_OPAQUE = Transp.VALUE_OPAQUE;
+    private static final String TRANSP_TRANSPARENT = Transp.VALUE_TRANSPARENT;
 
     private static final String[] IGNORED_CALENDAR_PROPERTIES = {
         Property.SEQUENCE,
@@ -573,6 +576,221 @@ public abstract class SchedulingContract {
         // And Alice local VALARM is not reset by that attendee update
         assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
             .isEqualTo(ALARM_TRIGGER_5M);
+    }
+
+    @Test
+    void attendeeUpdatingTRANSPShouldOnlyAffectAttendeeCalendar() {
+        // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:TRANSP sync isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local TRANSP update isolation
+            TRANSP:{transpOpaque}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{transpOpaque}", TRANSP_OPAQUE);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+        });
+
+        // When Alice updates TRANSP in her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("TRANSP:" + TRANSP_OPAQUE, "TRANSP:" + TRANSP_TRANSPARENT);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects updated TRANSP
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(Property.TRANSP))
+            .isEqualTo(TRANSP_TRANSPARENT));
+
+        // And Bob and Cedric calendars keep original TRANSP value
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .extractPropertyValue(Property.TRANSP))
+                    .isEqualTo(TRANSP_OPAQUE);
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .extractPropertyValue(Property.TRANSP))
+                    .isEqualTo(TRANSP_OPAQUE);
+            });
+    }
+
+    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/320")
+    @Test
+    void organizerUpdateShouldNotResetAttendeeLocalTRANSP() {
+        // Given Bob creates an event with Alice and TRANSP set to OPAQUE
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialSummary = "TRANSP reset check";
+        String updatedSummary = "TRANSP reset check - updated by Bob";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:{summary}
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee TRANSP persistence after organizer update
+            TRANSP:{transpOpaque}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{summary}", initialSummary)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{transpOpaque}", TRANSP_OPAQUE);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        Supplier<CalendarExtractor> aliceCalendarEvent = () -> CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri));
+
+        awaitAtMost.untilAsserted(() -> {
+            CalendarExtractor aliceCalendarExtractor = aliceCalendarEvent.get();
+            assertThat(aliceCalendarExtractor.extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(aliceCalendarExtractor.extractPropertyValue(Property.SUMMARY))
+                .isEqualTo(initialSummary);
+        });
+
+        // When Alice updates TRANSP in her own event copy
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("TRANSP:" + TRANSP_OPAQUE, "TRANSP:" + TRANSP_TRANSPARENT);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.TRANSP))
+            .isEqualTo(TRANSP_TRANSPARENT));
+
+        // And Bob updates event summary
+        String bobCalendarEventIcs = calDavClient.getCalendarEvent(bob, bobCalendarEventUri);
+        String bobUpdatedCalendarEventIcs = bobCalendarEventIcs
+            .replace("SUMMARY:" + initialSummary, "SUMMARY:" + updatedSummary);
+        calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, bobUpdatedCalendarEventIcs);
+
+        // Then summary is synchronized, but Alice local TRANSP is not reset by Bob update
+        awaitAtMost.untilAsserted(() -> assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.SUMMARY))
+            .isEqualTo(updatedSummary));
+
+        assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.TRANSP))
+            .isEqualTo(TRANSP_TRANSPARENT);
+    }
+
+    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/320")
+    @Test
+    void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalTRANSP() {
+        // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:PartStat and TRANSP isolation
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check TRANSP is preserved when attendee updates partstat
+            TRANSP:{transpOpaque}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{transpOpaque}", TRANSP_OPAQUE);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        Supplier<CalendarExtractor> aliceCalendarEvent = () -> CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri));
+
+        awaitAtMost.untilAsserted(() -> {
+            CalendarExtractor aliceCalendarExtractor = aliceCalendarEvent.get();
+            assertThat(aliceCalendarExtractor.extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(aliceCalendarExtractor.extractAttendeePartStat(cedric.email()))
+                .isEqualTo(PartStat.NEEDS_ACTION);
+        });
+
+        // And Alice customizes her local TRANSP
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("TRANSP:" + TRANSP_OPAQUE, "TRANSP:" + TRANSP_TRANSPARENT);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(aliceCalendarEvent.get()
+            .extractPropertyValue(Property.TRANSP))
+            .isEqualTo(TRANSP_TRANSPARENT));
+
+        // When Cedric accepts the event (updates his own PARTSTAT)
+        String cedricCalendarEventIcs = calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri);
+        String cedricAcceptedCalendarEventIcs = CalendarUtil.withAttendeePartStat(cedricCalendarEventIcs, cedric.email(), PartStat.ACCEPTED);
+        calDavClient.upsertCalendarEvent(cedric, cedricCalendarEventUri, cedricAcceptedCalendarEventIcs);
+
+        // Then Cedric PARTSTAT is synchronized to Alice
+        awaitAtMost.untilAsserted(() -> assertThat(aliceCalendarEvent.get().extractAttendeePartStat(cedric.email()))
+            .isEqualTo(PartStat.ACCEPTED));
+
+        // And Alice local TRANSP is not reset by that attendee update
+        assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.TRANSP))
+            .isEqualTo(TRANSP_TRANSPARENT);
     }
 
     @Test
@@ -2042,10 +2260,7 @@ public abstract class SchedulingContract {
     }
 
     private String readEventSummary(String icsContent) {
-        Calendar calendar = CalendarUtil.parseIcsAndSanitize(icsContent);
-        return calendar.getComponent(Component.VEVENT)
-            .flatMap(vevent -> vevent.getProperty(Property.SUMMARY))
-            .map(summary -> ((Property) summary).getValue())
-            .orElseThrow(() -> new AssertionError("Expected VEVENT summary to be present"));
+        return CalendarUtil.toExtractor(icsContent)
+            .extractPropertyValue(Property.SUMMARY);
     }
 }
