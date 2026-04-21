@@ -823,6 +823,17 @@ public abstract class SchedulingContract {
             new PropertyChange(Property.LOCATION, "Room A", "Room B"));
     }
 
+    static Stream<PropertyChange> recurringOnlyPropertyUpdates() {
+        return Stream.of(
+            new PropertyChange(Property.RRULE, "FREQ=DAILY;COUNT=5", "FREQ=DAILY;COUNT=6"),
+            new PropertyChange(Property.RDATE, "20351011T090000Z", "20351012T090000Z"),
+            new PropertyChange(Property.EXDATE, "20351007T090000Z", "20351008T090000Z"));
+    }
+
+    static Stream<PropertyChange> recurringMasterPropertyUpdates() {
+        return Stream.concat(coreEventPropertyUpdates(), recurringOnlyPropertyUpdates());
+    }
+
     @ParameterizedTest(name = "[{index}] attendee updating {0} should not propagate to organizer and other attendees")
     @MethodSource("coreEventPropertyUpdates")
     void attendeePUTUpdateShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
@@ -879,6 +890,78 @@ public abstract class SchedulingContract {
             .isEqualTo(updatedPropertyValue));
 
         // Then Bob and Cedric calendars keep organizer values unchanged
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .extractPropertyValue(changedPropertyName))
+                    .isEqualTo(originalPropertyValue);
+
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .extractPropertyValue(changedPropertyName))
+                    .isEqualTo(originalPropertyValue);
+            });
+    }
+
+    @ParameterizedTest(name = "[{index}] attendee updating recurring master {0} should not propagate to organizer and other attendees")
+    @MethodSource("recurringMasterPropertyUpdates")
+    void attendeePUTUpdateOnRecurringShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
+        // Given Bob creates a recurring master event (no overrides) with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Shared title
+            DESCRIPTION:Shared description
+            CLASS:PUBLIC
+            LOCATION:Room A
+            STATUS:CONFIRMED
+            RRULE:FREQ=DAILY;COUNT=5
+            RDATE:20351011T090000Z
+            EXDATE:20351007T090000Z
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        String changedPropertyName = change.propertyName();
+        String originalPropertyValue = change.originalValue();
+        String updatedPropertyValue = change.updatedValue();
+
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(changedPropertyName))
+            .isEqualTo(originalPropertyValue));
+
+        // When Alice updates property in her recurring master copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace(change.originalLine(), change.updatedLine());
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(changedPropertyName))
+            .isEqualTo(updatedPropertyValue));
+
+        // Then Bob and Cedric recurring master events keep organizer values unchanged
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
