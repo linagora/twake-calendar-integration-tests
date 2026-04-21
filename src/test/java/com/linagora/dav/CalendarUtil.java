@@ -70,6 +70,33 @@ public class CalendarUtil {
         }
     }
 
+    public static class CalendarExtractor {
+        private final Calendar calendar;
+
+        private CalendarExtractor(Calendar calendar) {
+            this.calendar = calendar;
+        }
+
+        public Property extractProperty(String propertyName) {
+            return calendar.getComponent(Component.VEVENT)
+                .flatMap(vevent -> vevent.getProperty(propertyName))
+                .map(property -> (Property) property)
+                .orElseThrow(() -> new AssertionError("Expected VEVENT " + propertyName + " to be present"));
+        }
+
+        public String extractPropertyValue(String propertyName) {
+            return extractProperty(propertyName).getValue();
+        }
+
+        public PartStat extractAttendeePartStat(String attendeeEmail) {
+            return CalendarUtil.getAttendeePartStat(calendar, attendeeEmail);
+        }
+
+        public Calendar asCalendar() {
+            return calendar;
+        }
+    }
+
     static {
         CompatibilityHints.setHintEnabled(CompatibilityHints.KEY_RELAXED_PARSING, true);
         CompatibilityHints.setHintEnabled(CompatibilityHints.KEY_RELAXED_UNFOLDING, true);
@@ -79,6 +106,14 @@ public class CalendarUtil {
         CompatibilityHints.setHintEnabled(CompatibilityHints.KEY_VCARD_COMPATIBILITY, true);
 
         System.setProperty("net.fortuna.ical4j.timezone.cache.impl", MapTimeZoneCache.class.getName());
+    }
+
+    public static CalendarExtractor toExtractor(String icsContent) {
+        return toExtractor(icsContent.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static CalendarExtractor toExtractor(byte[] icsContent) {
+        return new CalendarExtractor(parseIcs(icsContent));
     }
 
     public static Calendar parseIcs(String icsContent) {
