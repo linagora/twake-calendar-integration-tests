@@ -410,6 +410,7 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/319")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
@@ -499,6 +500,7 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/319")
     @Test
     void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
