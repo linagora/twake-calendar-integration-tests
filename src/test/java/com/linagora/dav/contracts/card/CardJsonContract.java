@@ -1481,6 +1481,63 @@ public abstract class CardJsonContract {
     }
 
     @Test
+    void copy() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
+            .request(HttpMethod.valueOf("COPY"))
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:Alexandre ZAPOLSKY\n" +
+                "N:ZAPOLSKY;Alexandre;;;\n" +
+                "EMAIL:zapo@lina.com\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        String response1 = given()
+            .headers("Authorization", testUser.impersonatedBasicAuth())
+            .queryParam("limit", 20)
+            .queryParam("offset", 0)
+            .queryParam("sort", "fn")
+            .queryParam("userId", testUser.id())
+            .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+        String response2 = given()
+            .headers("Authorization", testUser.impersonatedBasicAuth())
+            .queryParam("limit", 20)
+            .queryParam("offset", 0)
+            .queryParam("sort", "fn")
+            .queryParam("userId", testUser.id())
+            .when()
+            .get("/addressbooks/" + testUser.id() + "/collected.json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+        assertThat(response1).contains("abcdef.vcf");
+        assertThat(response2).contains("abcdef.vcf");
+    }
+
+    @Test
     void settingAddressBookWorldVisible() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
