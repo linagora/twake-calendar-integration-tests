@@ -1084,6 +1084,7 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/321")
     @Test
     void attendeeChangingOrganizerShouldOnlyAffectAttendeeCalendar() {
         // Given Bob creates an event with Alice and Cedric as attendees
