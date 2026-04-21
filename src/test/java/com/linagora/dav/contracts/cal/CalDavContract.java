@@ -453,6 +453,41 @@ public abstract class CalDavContract {
     }
 
     @Test
+    void mkcalendarShouldCreateCalendar() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int createStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCALENDAR"))
+            .uri("/calendars/" + testUser.id() + "/testCalendar")
+            .send(body("""
+                <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                 <D:set>
+                   <D:prop>
+                     <D:displayname>Test Calendar</D:displayname>
+                   </D:prop>
+                 </D:set>
+                </C:mkcalendar>
+                """)));
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + testUser.id()));
+
+        assertThat(createStatus).isEqualTo(201);
+        assertThat(response.status()).isEqualTo(207);
+
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        assertThat(actual).contains("/calendars/" + testUser.id() + "/testCalendar/");
+    }
+
+    @Test
     void propfindShouldListCreatedEvents() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
@@ -583,6 +618,105 @@ public abstract class CalDavContract {
         assertThat(createStatus).isEqualTo(201);
         assertThat(deleteStatus).isEqualTo(204);
         assertThat(getAfterDeleteStatus).isEqualTo(404);
+    }
+
+    @Test
+    void moveShouldTransferEventToDestinationCalendar() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/calendars/" + testUser.id() + "/testCalendar")
+            .send(body("""
+                <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                 <D:set>
+                   <D:prop>
+                     <D:resourcetype>
+                       <D:collection/>
+                       <C:calendar/>
+                     </D:resourcetype>
+                     <D:displayname>Test Calendar</D:displayname>
+                   </D:prop>
+                 </D:set>
+                </D:mkcol>
+                """)));
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_1)));
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Destination", "/calendars/" + testUser.id() + "/testCalendar/abcd.ics"))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
+
+        int sourceStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
+
+        DavResponse destinationResponse = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/testCalendar/abcd.ics"));
+
+        assertThat(sourceStatus).isEqualTo(404);
+        assertThat(destinationResponse.status()).isEqualTo(200);
+        assertThat(destinationResponse.body()).isEqualTo(ICS_1);
+    }
+
+    @Test
+    void copyShouldDuplicateEventToDestinationCalendar() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("MKCOL"))
+            .uri("/calendars/" + testUser.id() + "/testCalendar")
+            .send(body("""
+                <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                 <D:set>
+                   <D:prop>
+                     <D:resourcetype>
+                       <D:collection/>
+                       <C:calendar/>
+                     </D:resourcetype>
+                     <D:displayname>Test Calendar</D:displayname>
+                   </D:prop>
+                 </D:set>
+                </D:mkcol>
+                """)));
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics")
+            .send(body(ICS_1)));
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> testUser.impersonatedBasicAuth(headers)
+                .add("Destination", "/calendars/" + testUser.id() + "/testCalendar/abcd.ics"))
+            .request(HttpMethod.valueOf("COPY"))
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
+
+        DavResponse sourceResponse = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics"));
+
+        DavResponse destinationResponse = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/calendars/" + testUser.id() + "/testCalendar/abcd.ics"));
+
+        assertThat(sourceResponse.status()).isEqualTo(200);
+        assertThat(sourceResponse.body()).isEqualTo(ICS_1);
+        assertThat(destinationResponse.status()).isEqualTo(200);
+        assertThat(destinationResponse.body()).isEqualTo(ICS_1);
     }
 
     @Test
