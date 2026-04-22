@@ -149,10 +149,14 @@ public class CalDavClient {
     }
 
     public void upsertJsonCalendarEvent(OpenPaasUser openPaasUser, String eventId, String calendarData) {
+        upsertJsonCalendarEvent(openPaasUser, openPaasUser.id(), openPaasUser.id(), eventId, calendarData);
+    }
+
+    public void upsertJsonCalendarEvent(OpenPaasUser openPaasUser, String baseId, String calendarId, String eventId, String calendarData) {
         httpClient.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/calendar+json"))
             .put()
-            .uri("/calendars/" + openPaasUser.id() + "/" + openPaasUser.id() + "/" + eventId + ".ics")
+            .uri("/calendars/" + baseId + "/" + calendarId + "/" + eventId + ".ics")
             .send(TestUtil.body(calendarData))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201 || response.status().code() == 204) {
