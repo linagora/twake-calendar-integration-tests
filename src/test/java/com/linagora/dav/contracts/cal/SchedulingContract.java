@@ -19,8 +19,8 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
-import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.assertj.core.api.Assertions.entry;
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
 import java.time.Duration;
@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -1486,9 +1487,11 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/321")
     @Test
     void attendeeChangingOrganizerShouldOnlyAffectAttendeeCalendar() {
+        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
+            "Fixed with async scheduling");
+
         // Given Bob creates an event with Alice and Cedric as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
         String organizerEventIcs = """
