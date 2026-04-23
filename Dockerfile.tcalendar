@@ -1,4 +1,4 @@
-FROM linagora/twake-calendar-side-service:branch-master
+FROM linagora/twake-calendar-side-service:latest
 
 COPY src/test/resources/twake-calendar-side-service-conf/configuration.properties /root/conf/configuration.properties
 COPY src/test/resources/twake-calendar-side-service-conf/opensearch.properties /root/conf/opensearch.properties

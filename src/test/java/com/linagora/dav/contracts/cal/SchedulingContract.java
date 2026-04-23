@@ -26,6 +26,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -1547,6 +1548,75 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void attendeeChangingOrganizerOnRecurringShouldOnlyAffectAttendeeCalendar() {
+        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
+            "Fixed with async scheduling");
+
+        // Given Bob creates a recurring event with one override, and Alice/Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=5
+            SUMMARY:Recurring organizer isolation check
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T130000Z
+            DTEND:20351006T140000Z
+            SUMMARY:Recurring organizer isolation check - override
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        // When Alice changes organizer on both recurring master and override
+        String aliceUpdatedCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)
+            .replace("\r\n", "\n")
+            .replace("SUMMARY:Recurring organizer isolation check\nORGANIZER:mailto:" + bob.email(),
+                "SUMMARY:Recurring organizer isolation check\nORGANIZER:mailto:" + alice.email())
+            .replace("SUMMARY:Recurring organizer isolation check - override\nORGANIZER:mailto:" + bob.email(),
+                "SUMMARY:Recurring organizer isolation check - override\nORGANIZER:mailto:" + alice.email());
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Bob and Cedric calendars still point to Bob as organizer on master and override
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(organizerEmails(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
+                    .containsExactly("mailto:" + bob.email());
+                assertThat(organizerEmails(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri)))
+                    .containsExactly("mailto:" + bob.email());
+            });
+    }
+
+    @Test
     void attendeeDeletionShouldRejectAttendanceInOrganizerCalendar() {
         // Given Bob creates an event with Cedric and Alice as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -3001,6 +3071,14 @@ public abstract class SchedulingContract {
         return awaitAtMost.until(() -> calDavClient.findFirstEventId(user),
             Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Expected event id to be present"));
+    }
+
+    private Set<String> organizerEmails(String icsContent) {
+        return CalendarUtil.parseIcs(icsContent).getComponents(Component.VEVENT).stream()
+            .map(vevent -> vevent.getProperty(Property.ORGANIZER))
+            .flatMap(Optional::stream)
+            .map(Property::getValue)
+            .collect(java.util.stream.Collectors.toSet());
     }
 
     private String readFirstAlarmTrigger(String icsContent) {

@@ -33,7 +33,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 public class DockerTwakeCalendarSetup {
     private static final Logger LOGGER = LoggerFactory.getLogger(DockerTwakeCalendarSetup.class);
     private static final String AMQP_SCHEDULING_ENABLED_PROPERTY = "amqp.scheduling.enabled";
-    private static final String AMQP_SCHEDULING_ENABLED_DEFAULT = "false";
+    private static final String AMQP_SCHEDULING_ENABLED_DEFAULT = "true";
 
     public enum DockerService {
         CALENDAR_SIDE("twake-calendar-side-service", 8080),
