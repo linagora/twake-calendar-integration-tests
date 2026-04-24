@@ -24,6 +24,7 @@ import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
@@ -49,6 +50,7 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
@@ -64,8 +66,8 @@ import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Parameter;
 import net.fortuna.ical4j.model.Property;
-import net.fortuna.ical4j.model.property.Attendee;
 import net.fortuna.ical4j.model.parameter.PartStat;
+import net.fortuna.ical4j.model.property.Attendee;
 
 public abstract class ITIPRequestContract {
     private static final ConditionFactory calmlyAwait = Awaitility.with()
@@ -880,10 +882,10 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipShouldNotBeAllowedWhenSenderHasNoWriteAccess() throws Exception {
-        // GIVEN Cedric and Bob, and Cedric has no write access to Bob’s calendars
+    protected void itipREQUESTShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+        // GIVEN payload recipient is Bob but authenticated user is Alice
         String eventUid = "event-" + UUID.randomUUID();
-        String ics = """
+        String requestIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
             PRODID:-//Example Corp.//CalDAV Client//EN
@@ -894,38 +896,370 @@ public abstract class ITIPRequestContract {
             DTSTAMP:20251003T080000Z
             DTSTART:20251005T090000Z
             DTEND:20251005T100000Z
-            SUMMARY:Unauthorized Meeting
+            SUMMARY:Request with invalid auth/recipient mapping
             ORGANIZER;CN=Cedric:mailto:%s
             ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
             END:VEVENT
             END:VCALENDAR
             """.formatted(eventUid, cedric.email(), bob.email());
 
-        String body = ITIPJsonBodyRequest.builder()
-            .ical(ics)
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(requestIcs)
             .sender(cedric.email())
             .recipient(bob.email())
             .uid(eventUid)
             .method("REQUEST")
             .buildJson();
 
-        // WHEN Cedric sends an ITIP REQUEST to Bob’s calendar
-        String bobCalendarUri = "/calendars/" + bob.id();
-        calDavClient.sendITIPRequest(cedric, URI.create(bobCalendarUri), body).block();
-        Thread.sleep(1000);
+        // WHEN Alice sends REQUEST to Bob's calendar endpoint
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + bob.id()), requestBody).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
 
-        // THEN (expected in the future): should fail with permission denied or 403
-        // BUT current Sabre behavior: it still creates the event
-        // So we just assert this unexpected behavior to document it
-        List<JsonNode> events = calDavClient.reportCalendarEvents(bob, bobCalendarUri + "/" + bob.id(),
+        // THEN request is rejected and Bob's calendar remains unchanged
+        List<JsonNode> eventsAfter = calDavClient.reportCalendarEvents(bob,
+                "/calendars/" + bob.id() + "/" + bob.id(),
                 Instant.parse("2025-09-01T00:00:00Z"),
                 Instant.parse("2025-11-01T00:00:00Z"))
             .collectList()
             .block();
 
-        assertThat(events)
-            .as("Currently Sabre still allows unauthorized ITIP creation (see issue #49)")
-            .isNotEmpty();
+        assertThat(eventsAfter.toString())
+            .as("Request should be rejected and Bob's calendar should not contain uid %s", eventUid)
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    protected void itipCANCELShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+        // GIVEN Bob has an existing event but authenticated user is not the payload recipient
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Cancelable Meeting
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), initialIcs);
+
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T120000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Cancelable Meeting
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+
+        // WHEN Alice sends CANCEL targeting Bob's calendar
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + bob.id()), cancelBody).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+
+        // THEN cancellation is rejected and Bob's event is not cancelled
+        String bobEvent = calDavClient.getCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"));
+        assertThat(bobEvent)
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Cancelable Meeting")
+            .doesNotContain("STATUS:CANCELLED");
+    }
+
+    @Test
+    protected void itipREPLYShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+        // GIVEN Bob owns an event with Cedric as attendee but authenticated user is Alice
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Reply authorization check
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), cedric.email());
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), organizerIcs);
+
+        String replyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T090000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Reply authorization check
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Cedric;PARTSTAT=ACCEPTED:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), cedric.email());
+
+        String replyBody = ITIPJsonBodyRequest.builder()
+            .ical(replyIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        // WHEN Alice sends REPLY for Cedric to Bob's calendar
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + bob.id()), replyBody).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+
+        // THEN reply is rejected and attendee partstat stays unchanged
+        String bobEvent = calDavClient.getCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"));
+        assertThat(CalendarUtil.getAttendeePartStat(bobEvent, cedric.email())).isEqualTo(PartStat.NEEDS_ACTION);
+    }
+
+    @Test
+    protected void itipCOUNTERShouldFailWhenAuthenticatedUserDoesNotMatchPayloadSender() {
+        // GIVEN payload sender is Alice but authenticated user is Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Counter authorization check
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), organizerIcs);
+
+        String counterIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T081000Z
+            DTSTART:20251005T100000Z
+            DTEND:20251005T110000Z
+            SUMMARY:Counter authorization check - proposal
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String counterBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        // WHEN Cedric sends COUNTER on behalf of Alice without delegation
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + bob.id()), counterBody).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+
+        // THEN counter is rejected and Bob's inbox does not receive COUNTER
+        List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
+                bob,
+                "/calendars/" + bob.id() + "/inbox/",
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(bobInboxItems)
+            .noneSatisfy(item -> assertThat(item.toString())
+                .contains(eventUid)
+                .contains("\"COUNTER\""));
+    }
+
+    @Test
+    protected void itipCOUNTERShouldSucceedWhenAuthenticatedUserIsDelegatedByPayloadSender() {
+        // GIVEN Bob invites Alice and Alice delegated READ_WRITE rights to Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Delegated counter proposal
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), initialIcs);
+
+        calDavClient.grantDelegation(alice, alice.id(), cedric, DelegationRight.READ_WRITE);
+
+        String counterIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T081000Z
+            DTSTART:20251005T100000Z
+            DTEND:20251005T110000Z
+            SUMMARY:Delegated counter proposal - new slot
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String counterBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        // WHEN Cedric sends COUNTER on behalf of Alice
+        calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + bob.id()), counterBody).block();
+
+        // THEN Bob receives delegated COUNTER in inbox
+        awaitAtMost.untilAsserted(() -> {
+            List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
+                    bob,
+                    "/calendars/" + bob.id() + "/inbox/",
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+            assertThat(bobInboxItems)
+                .as("Bob should receive delegated COUNTER sent on behalf of Alice")
+                .anySatisfy(item -> {
+                    String json = item.toString();
+                    assertThat(json).contains(eventUid);
+                    assertThat(json).contains("\"COUNTER\"");
+                    assertThat(json).contains("mailto:" + bob.email());
+                    assertThat(json).contains("mailto:" + alice.email());
+                });
+        });
+    }
+
+    @Test
+    protected void itipCOUNTERShouldFailWhenAuthenticatedUserHasOnlyREADDelegationFromPayloadSender() {
+        // GIVEN Bob invites Alice and Alice delegated only READ rights to Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Read-only delegated counter proposal
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), initialIcs);
+        calDavClient.grantDelegation(alice, alice.id(), cedric, DelegationRight.READ);
+
+        String counterIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T081000Z
+            DTSTART:20251005T100000Z
+            DTEND:20251005T110000Z
+            SUMMARY:Read-only delegated counter proposal - new slot
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String counterBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        // WHEN Cedric sends COUNTER on behalf of Alice with READ-only delegation
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + bob.id()), counterBody).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+
+        // THEN Bob does not receive COUNTER in inbox
+        List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
+                bob,
+                "/calendars/" + bob.id() + "/inbox/",
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(bobInboxItems)
+            .noneSatisfy(item -> assertThat(item.toString())
+                .contains(eventUid)
+                .contains("\"COUNTER\""));
     }
 
     @Test
@@ -2516,7 +2850,7 @@ public abstract class ITIPRequestContract {
         awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, URI.create(aliceCalendarEventUri)))
             .contains("UID:" + eventUid));
 
-        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), overrideReplyBody).block();
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), overrideReplyBody).block();
 
         // THEN only the override PARTSTAT is updated
         awaitAtMost.untilAsserted(() -> {
@@ -2560,7 +2894,7 @@ public abstract class ITIPRequestContract {
             .method("REPLY")
             .buildJson();
 
-        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), masterReplyBody).block();
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), masterReplyBody).block();
 
         // THEN only the master PARTSTAT is updated
         awaitAtMost.untilAsserted(() -> {
