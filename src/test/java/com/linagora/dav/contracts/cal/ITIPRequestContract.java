@@ -882,7 +882,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipREQUESTShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+    protected void itipREQUESTShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
         // GIVEN payload recipient is Bob but authenticated user is Alice
         String eventUid = "event-" + UUID.randomUUID();
         String requestIcs = """
@@ -930,7 +930,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipCANCELShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+    protected void itipCANCELShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
         // GIVEN Bob has an existing event but authenticated user is not the payload recipient
         String eventUid = "event-" + UUID.randomUUID();
         String initialIcs = """
@@ -991,7 +991,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipREPLYShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+    protected void itipREPLYShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
         // GIVEN Bob owns an event with Cedric as attendee but authenticated user is Alice
         String eventUid = "event-" + UUID.randomUUID();
         String organizerIcs = """
@@ -1048,7 +1048,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipCOUNTERShouldFailWhenAuthenticatedUserDoesNotMatchPayloadSender() {
+    protected void itipCOUNTERShouldFailWhenAuthenticatedUserDoesNotMatchPayloadSender() {
         // GIVEN payload sender is Alice but authenticated user is Cedric
         String eventUid = "event-" + UUID.randomUUID();
         String organizerIcs = """
@@ -1117,7 +1117,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipCOUNTERShouldSucceedWhenAuthenticatedUserIsDelegatedByPayloadSender() {
+    protected void itipCOUNTERShouldSucceedWhenAuthenticatedUserIsDelegatedByPayloadSender() {
         // GIVEN Bob invites Alice and Alice delegated READ_WRITE rights to Cedric
         String eventUid = "event-" + UUID.randomUUID();
         String initialIcs = """
@@ -1193,7 +1193,7 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    void itipCOUNTERShouldFailWhenAuthenticatedUserHasOnlyREADDelegationFromPayloadSender() {
+    protected void itipCOUNTERShouldFailWhenAuthenticatedUserHasOnlyREADDelegationFromPayloadSender() {
         // GIVEN Bob invites Alice and Alice delegated only READ rights to Cedric
         String eventUid = "event-" + UUID.randomUUID();
         String initialIcs = """

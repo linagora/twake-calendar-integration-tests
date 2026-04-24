@@ -58,6 +58,42 @@ public class SabreV4ITIPRequestTest extends ITIPRequestContract {
     protected void shouldNotDuplicateAttendeeWhenReplyUsesUppercaseMailtoScheme() {
     }
 
+    @Test
+    @Disabled("Fixed in Sabre 4.7")
+    @Override
+    protected void itipREQUESTShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+    }
+
+    @Test
+    @Disabled("Fixed in Sabre 4.7")
+    @Override
+    protected void itipCANCELShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+    }
+
+    @Test
+    @Disabled("Fixed in Sabre 4.7")
+    @Override
+    protected void itipREPLYShouldFailWhenAuthenticatedUserDoesNotMatchPayloadRecipient() {
+    }
+
+    @Test
+    @Disabled("Fixed in Sabre 4.7")
+    @Override
+    protected void itipCOUNTERShouldFailWhenAuthenticatedUserDoesNotMatchPayloadSender() {
+    }
+
+    @Test
+    @Disabled("Fixed in Sabre 4.7")
+    @Override
+    protected void itipCOUNTERShouldSucceedWhenAuthenticatedUserIsDelegatedByPayloadSender() {
+    }
+
+    @Test
+    @Disabled("Fixed in Sabre 4.7")
+    @Override
+    protected void itipCOUNTERShouldFailWhenAuthenticatedUserHasOnlyREADDelegationFromPayloadSender() {
+    }
+
     @Disabled("Fixed on Sabre 4.7")
     @Override
     protected void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
