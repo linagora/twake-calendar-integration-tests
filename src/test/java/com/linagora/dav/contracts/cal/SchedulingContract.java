@@ -19,8 +19,8 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
-import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.assertj.core.api.Assertions.entry;
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
 import java.time.Duration;
@@ -1064,7 +1064,6 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/322")
     @Test
     void attendeeCreatingNewOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
         // Given Bob creates a recurring master event (no override) and invites Alice and Cedric
