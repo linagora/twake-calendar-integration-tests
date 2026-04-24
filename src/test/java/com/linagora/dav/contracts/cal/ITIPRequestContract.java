@@ -1193,6 +1193,76 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
+    void itipCOUNTERShouldFailWhenAuthenticatedUserHasOnlyREADDelegationFromPayloadSender() {
+        // GIVEN Bob invites Alice and Alice delegated only READ rights to Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Read-only delegated counter proposal
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), initialIcs);
+        calDavClient.grantDelegation(alice, alice.id(), cedric, DelegationRight.READ);
+
+        String counterIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T081000Z
+            DTSTART:20251005T100000Z
+            DTEND:20251005T110000Z
+            SUMMARY:Read-only delegated counter proposal - new slot
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), alice.email());
+
+        String counterBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+
+        // WHEN Cedric sends COUNTER on behalf of Alice with READ-only delegation
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + bob.id()), counterBody).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+
+        // THEN Bob does not receive COUNTER in inbox
+        List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
+                bob,
+                "/calendars/" + bob.id() + "/inbox/",
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList()
+            .block();
+
+        assertThat(bobInboxItems)
+            .noneSatisfy(item -> assertThat(item.toString())
+                .contains(eventUid)
+                .contains("\"COUNTER\""));
+    }
+
+    @Test
     protected void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
         OpenPaasUser owner = alice;
         OpenPaasUser attendee = bob;
