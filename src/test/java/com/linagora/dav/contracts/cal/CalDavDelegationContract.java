@@ -2907,7 +2907,7 @@ public abstract class CalDavDelegationContract {
 
             assertThat(itipAfterRevokeStatus)
                 .as("Bob is not able to send ITIP on delegated event URI after revocation")
-                .isEqualTo(404);
+                .isEqualTo(403);
         });
     }
 
