@@ -1066,9 +1066,11 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/322")
     @Test
     void attendeeCreatingNewOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
+        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
+            "Fixed with async scheduling");
+
         // Given Bob creates a recurring master event (no override) and invites Alice and Cedric
         String organizerEventUid = "event-" + UUID.randomUUID();
         String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
