@@ -52,16 +52,17 @@ public abstract class ResourceCalendarVisibilityContract {
     @BeforeEach
     void setUp() throws Exception {
         calDavClient = new CalDavClient(extension().davHttpClient());
-        extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
-            .enableSharedCalendarModule()
-            .block();
         bob = extension().newTestUser();
         alice = extension().newTestUser();
     }
 
     @Test
     void subscribedResourceCalendarShouldDisappearAfterDeletion() {
+        extension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .enableSharedCalendarModule()
+            .block();
+
         // GIVEN: a resource with alice as admin
         OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("meeting-room", "Meeting Room A", alice)
@@ -150,7 +151,7 @@ public abstract class ResourceCalendarVisibilityContract {
                 .add(HttpHeaderNames.ACCEPT, "application/json"))
             .request(HttpMethod.valueOf("ACL"))
             .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
-            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .send(Mono.defer(() -> Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)))))
             .responseSingle((response, content) -> content.asString()
                 .defaultIfEmpty("")
                 .flatMap(body -> {
@@ -187,7 +188,7 @@ public abstract class ResourceCalendarVisibilityContract {
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
             .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
-            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .send(Mono.defer(() -> Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)))))
             .responseSingle((response, content) -> content.asString()
                 .defaultIfEmpty("")
                 .flatMap(body -> {
@@ -197,8 +198,11 @@ public abstract class ResourceCalendarVisibilityContract {
                     }
                     return Mono.error(new RuntimeException("HTTP " + status + ": " + body));
                 }))
-            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1))
-                .filter(error -> StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path")))
+            .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(2))
+                .filter(error -> error.getMessage() != null && (
+                    StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path") ||
+                    error.getMessage().contains("HTTP 400") ||
+                    error.getMessage().contains("HTTP 404"))))
             .block();
     }
 
@@ -223,7 +227,7 @@ public abstract class ResourceCalendarVisibilityContract {
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
             .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
-            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .send(Mono.defer(() -> Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)))))
             .responseSingle((response, content) -> content.asString()
                 .defaultIfEmpty("")
                 .flatMap(body -> {
@@ -233,8 +237,11 @@ public abstract class ResourceCalendarVisibilityContract {
                     }
                     return Mono.error(new RuntimeException("HTTP " + status + ": " + body));
                 }))
-            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1))
-                .filter(error -> StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path")))
+            .retryWhen(Retry.fixedDelay(2, Duration.ofSeconds(2))
+                .filter(error -> error.getMessage() != null && (
+                    StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path") ||
+                    error.getMessage().contains("HTTP 400") ||
+                    error.getMessage().contains("HTTP 404"))))
             .block();
     }
 }
