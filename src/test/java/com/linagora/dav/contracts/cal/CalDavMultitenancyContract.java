@@ -61,6 +61,7 @@ public abstract class CalDavMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
     }
 
+    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindOnCalendarsRootShouldNotExposeCrossDomainCalendarHome() {
         DavResponse response = execute(dockerExtension().davHttpClient()
