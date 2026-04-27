@@ -61,6 +61,24 @@ public abstract class CalDavMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
     }
 
+    @Test
+    void propfindOnCalendarsRootShouldNotExposeCrossDomainCalendarHome() {
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Depth", "1")
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/")
+            .send(body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:current-user-principal/>
+                  </d:prop>
+                </d:propfind>""")));
+
+        assertThat(response.body()).doesNotContain(john.id());
+    }
+
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void propfindShouldReturn403ForCrossDomainUser() {
