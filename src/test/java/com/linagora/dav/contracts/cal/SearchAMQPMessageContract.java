@@ -1251,19 +1251,23 @@ public abstract class SearchAMQPMessageContract {
             .method("REQUEST")
             .buildJson();
 
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
 
-        // THEN we have a message
+        String expectedPrefix = "/calendars/" + bob.id() + "/" + bob.id() + "/";
+
+        // THEN we have a search indexing message targeting Bob's default calendar.
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .anySatisfy(message -> assertThat(message).isNotNull()));
+                .anySatisfy(message -> {
+                    String eventPath = message.path("eventPath").asText();
+                    assertThat(eventPath).startsWith(expectedPrefix);
+                    assertThat(eventPath).endsWith(".ics");
+                    assertThat(message.path("rawEvent").asText()).contains("UID:" + eventUid);
+                }));
     }
 
     @Test
