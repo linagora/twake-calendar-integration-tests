@@ -1217,7 +1217,7 @@ public abstract class SearchAMQPMessageContract {
     }
 
     @Test
-    void itipRequestShouldResultInEventInDefaultCalendar() throws Exception {
+    protected void itipRequestShouldResultInEventInDefaultCalendar() throws Exception {
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
