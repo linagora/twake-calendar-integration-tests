@@ -231,7 +231,11 @@ public class CardDavClient {
     }
 
     public void deleteAddressBook(OpenPaasUser openPaasUser, String addressBookId) {
-        String uri = String.format("/addressbooks/%s/%s.json", openPaasUser.id(), addressBookId);
+        deleteAddressBook(openPaasUser, openPaasUser.id(), addressBookId);
+    }
+
+    public void deleteAddressBook(OpenPaasUser openPaasUser, String baseId, String addressBookId) {
+        String uri = String.format("/addressbooks/%s/%s.json", baseId, addressBookId);
         client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
             .delete()
