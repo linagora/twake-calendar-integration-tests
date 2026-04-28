@@ -47,4 +47,11 @@ public class SabreV4SearchAMQPMessageTest extends SearchAMQPMessageContract {
     protected void shouldReceiveOnlyOneMessageFromEventRequestExchange()  {
 
     }
+
+    @Disabled("Fixed in 4.7.0")
+    @Override
+    @Test
+    protected void itipRequestShouldResultInEventInDefaultCalendar() {
+
+    }
 }
