@@ -2246,8 +2246,6 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    @Disabled("https://github.com/linagora/esn-sabre/issues/300 " +
-        "Expected EXDATE in attendee calendar for occurrence-2 removal, but server response omits EXDATE")
     void recurringRemoveAttendeeFromOccurrence2ShouldPropagate() {
         // Given Bob creates a recurring series with Cedric as attendee
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -2983,6 +2981,381 @@ public abstract class SchedulingContract {
             assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
                 .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
                 .isEqualTo(expectedAliceIcs));
+    }
+
+    @Test
+    void recurringRemoveAttendeeOnSingleOccurrenceShouldPropagateToOtherAttendeeCalendar() {
+        // Given Bob creates a recurring series with Alice and Cedric invited on the whole series
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, initialIcs);
+
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+
+        // When Bob updates only occurrence 2 to remove Alice
+        String updatedWithoutAliceOnOccurrence2Ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, updatedWithoutAliceOnOccurrence2Ics);
+
+        // Then Cedric calendar keeps the series and receives occurrence-2 override without Alice
+        String expectedCedricIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricIcs));
+    }
+
+    @Test
+    void recurringRemoveAttendeeFromOccurrenceAndThenReinviteShouldRestoreOccurrence() {
+        // Given Bob creates a recurring series with Alice invited on the whole series
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, initialIcs);
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+
+        // When Bob removes Alice from occurrence 2
+        String removeAliceOnOccurrence2Ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, removeAliceOnOccurrence2Ics);
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains("EXDATE:20351006T090000Z"));
+
+        // And Bob re-invites Alice to occurrence 2
+        String reinviteAliceOnOccurrence2Ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T100000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting (Alice Reinvited)
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, reinviteAliceOnOccurrence2Ics);
+
+        // Then Alice calendar restores occurrence 2 (no EXDATE and an explicit override)
+        String expectedAliceIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Recurring Meeting (Alice Reinvited)
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedAliceIcs));
+    }
+
+    @Test
+    void recurringRemoveAttendeeFromOccurrenceShouldNotAffectOtherOverrides() {
+        // Given Bob creates a recurring series with Cedric invited and two overrides
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Occurrence 2
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351007T090000Z
+            DTSTAMP:20351003T090000Z
+            DTSTART:20351007T140000Z
+            DTEND:20351007T150000Z
+            SUMMARY:Occurrence 3 moved
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, initialIcs);
+
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+
+        // When Bob removes Cedric from occurrence 2 only
+        String updatedWithoutCedricOnOccurrence2Ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351003T100000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Occurrence 2
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351007T090000Z
+            DTSTAMP:20351003T100000Z
+            DTSTART:20351007T140000Z
+            DTEND:20351007T150000Z
+            SUMMARY:Occurrence 3 moved
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, updatedWithoutCedricOnOccurrence2Ics);
+
+        // Then Cedric loses occurrence 2, but occurrence 3 override stays unchanged
+        String expectedCedricIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            EXDATE:20351006T090000Z
+            SUMMARY:Recurring Meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351007T090000Z
+            DTSTART:20351007T140000Z
+            DTEND:20351007T150000Z
+            SUMMARY:Occurrence 3 moved
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{cedricEmail}", cedric.email());
+        awaitAtMost.untilAsserted(() ->
+            assertThatCalendar(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
+                .isEqualTo(expectedCedricIcs));
     }
 
     @Test
