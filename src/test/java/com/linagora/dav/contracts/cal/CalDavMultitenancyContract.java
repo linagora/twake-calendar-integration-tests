@@ -93,6 +93,19 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
+    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
+    @Test
+    void propfindCalendarShouldReturn403ForCrossDomainUser() {
+        calDavClient.updateCalendarAcl(john, "{DAV:}write");
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + john.id() + "/" + john.id()));
+
+        assertThat(status).isEqualTo(403);
+    }
+
     @Test
     void mkcolShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
