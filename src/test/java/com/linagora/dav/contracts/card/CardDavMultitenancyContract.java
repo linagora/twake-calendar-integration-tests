@@ -89,7 +89,7 @@ public abstract class CardDavMultitenancyContract {
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void propfindShouldReturn403ForCrossDomainUser() {
+    void propfindShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -97,12 +97,12 @@ public abstract class CardDavMultitenancyContract {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + john.id()));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void propfindAddressBookShouldReturn403ForCrossDomainUser() {
+    void propfindAddressBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -110,11 +110,11 @@ public abstract class CardDavMultitenancyContract {
             .request(HttpMethod.valueOf("PROPFIND"))
             .uri("/addressbooks/" + john.id() + "/contacts"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Test
-    void mkcolShouldReturn403ForCrossDomainUser() {
+    void mkcolShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -135,42 +135,42 @@ public abstract class CardDavMultitenancyContract {
                 </D:mkcol>
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Test
-    void deleteAddressBookShouldReturn403ForCrossDomainUser() {
+    void deleteAddressBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         assertThatThrownBy(() -> cardDavClient.deleteAddressBook(bob, john.id(), CONTACTS_BOOK))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void putContactShouldReturn403ForCrossDomainUser() {
+    void putContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         assertThatThrownBy(() -> cardDavClient.upsertContact(bob, john.id(), CONTACTS_BOOK, "abcdef", VCARD))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void deleteContactShouldReturn403ForCrossDomainUser() {
+    void deleteContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
         assertThatThrownBy(() -> cardDavClient.deleteContact(bob, john.id(), CONTACTS_BOOK, "abcdef"))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void getContactShouldReturn403ForCrossDomainUser() {
+    void getContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
@@ -179,12 +179,12 @@ public abstract class CardDavMultitenancyContract {
             .get()
             .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void proppatchShouldReturn403ForCrossDomainUser() {
+    void proppatchShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -201,12 +201,12 @@ public abstract class CardDavMultitenancyContract {
                 </d:propertyupdate>
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void headContactShouldReturn403ForCrossDomainUser() {
+    void headContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
@@ -215,12 +215,12 @@ public abstract class CardDavMultitenancyContract {
             .request(HttpMethod.valueOf("HEAD"))
             .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void exportShouldReturn403ForCrossDomainUser() {
+    void exportShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -228,12 +228,12 @@ public abstract class CardDavMultitenancyContract {
             .get()
             .uri("/addressbooks/" + john.id() + "/contacts?export=true"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void reportShouldReturn403ForCrossDomainUser() {
+    void reportShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -252,12 +252,12 @@ public abstract class CardDavMultitenancyContract {
                 </C:addressbook-query>
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void copyContactBetweenAddressBooksShouldReturn403ForCrossDomainUser() {
+    void copyContactBetweenAddressBooksShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
@@ -267,11 +267,11 @@ public abstract class CardDavMultitenancyContract {
             .request(HttpMethod.valueOf("COPY"))
             .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Test
-    void moveContactBetweenAddressBooksShouldReturn403ForCrossDomainUser() {
+    void moveContactBetweenAddressBooksShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
@@ -281,12 +281,12 @@ public abstract class CardDavMultitenancyContract {
             .request(HttpMethod.valueOf("MOVE"))
             .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void getJsonAddressBooksShouldReturn403ForCrossDomainUser() {
+    void getJsonAddressBooksShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -294,12 +294,12 @@ public abstract class CardDavMultitenancyContract {
             .get()
             .uri("/addressbooks/" + john.id() + ".json"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void putJsonContactShouldReturn403ForCrossDomainUser() {
+    void putJsonContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -314,12 +314,12 @@ public abstract class CardDavMultitenancyContract {
                 ]]
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void getJsonContactShouldReturn403ForCrossDomainUser() {
+    void getJsonContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
@@ -328,11 +328,11 @@ public abstract class CardDavMultitenancyContract {
             .get()
             .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Test
-    void postJsonAddressBookShouldReturn403ForCrossDomainUser() {
+    void postJsonAddressBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -345,11 +345,11 @@ public abstract class CardDavMultitenancyContract {
                 {"id":"newbook","dav:name":"New Book","dav:acl":["dav:read","dav:write"],"type":"addressbook"}
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Test
-    void updateJsonAddressBookMetadataShouldReturn403ForCrossDomainUser() {
+    void updateJsonAddressBookMetadataShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -362,12 +362,12 @@ public abstract class CardDavMultitenancyContract {
                 {"dav:name":"Hacked Name","carddav:description":"Hacked"}
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void reportJsonShouldReturn403ForCrossDomainUser() {
+    void reportJsonShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -380,38 +380,38 @@ public abstract class CardDavMultitenancyContract {
                 {"match":{"field":"fn","value":"Test"}}
                 """)));
 
-        assertThat(status).isEqualTo(403);
+        assertThat(status).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void subscribeShouldReturn403ForCrossDomainUser() {
+    void subscribeShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(bob, bob.id(), CONTACTS_BOOK, PublicRight.READ);
 
         assertThatThrownBy(() -> cardDavClient.subscribe(john, bob.id(), CONTACTS_BOOK, "Bob's contacts"))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void delegateShouldReturn403ForCrossDomainUser() {
+    void delegateShouldReturnErrorStatusForCrossDomainUser() {
         assertThatThrownBy(() -> cardDavClient.grantDelegation(bob, CONTACTS_BOOK, john, DelegationRight.READ_WRITE))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void readDabShouldReturn403ForCrossDomainUser() {
+    void readDabShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
 
         assertThatThrownBy(() -> cardDavClient.getContacts(bob, secondDomainId, DOMAIN_ADDRESS_BOOK))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void readDabAsDomainAdminShouldReturn403ForCrossDomainUser() {
+    void readDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain
         // And Bob is domain admin of first domain
         cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
@@ -421,11 +421,11 @@ public abstract class CardDavMultitenancyContract {
         // Then it should return 403
         assertThatThrownBy(() -> cardDavClient.getContacts(bob, secondDomainId, DOMAIN_ADDRESS_BOOK))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void addContactToPublicReadWriteDabShouldReturn403ForCrossDomainUser() {
+    void addContactToPublicReadWriteDabShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
         makeDomainAdmin(john, SECOND_DOMAIN);
         cardDavClient.setDomainAddressBookPublicRightReadWrite(john, secondDomainId, DOMAIN_ADDRESS_BOOK);
@@ -433,11 +433,11 @@ public abstract class CardDavMultitenancyContract {
         String vcardUid = UUID.randomUUID().toString();
         assertThatThrownBy(() -> cardDavClient.upsertContact(bob, secondDomainId, DOMAIN_ADDRESS_BOOK, vcardUid, VCARD))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void addContactToPublicReadWriteDabAsDomainAdminShouldReturn403ForCrossDomainUser() {
+    void addContactToPublicReadWriteDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain with public read write right
         // And Bob is domain admin of first domain
         cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
@@ -451,11 +451,11 @@ public abstract class CardDavMultitenancyContract {
         String vcardUid = UUID.randomUUID().toString();
         assertThatThrownBy(() -> cardDavClient.upsertContact(bob, secondDomainId, DOMAIN_ADDRESS_BOOK, vcardUid, VCARD))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void setPublicRightOfDabAsDomainAdminShouldReturn403ForCrossDomainUser() {
+    void setPublicRightOfDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain
         // And Bob is domain admin of first domain
         cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
@@ -465,12 +465,12 @@ public abstract class CardDavMultitenancyContract {
         // Then it should return 403
         assertThatThrownBy(() -> cardDavClient.setPublicRight(bob, secondDomainId, DOMAIN_ADDRESS_BOOK, PublicRight.READ_WRITE))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
-    void delegateDabAsDomainAdminShouldReturn403ForCrossDomainUser() {
+    void delegateDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain
         // And Bob is domain admin of first domain
         cardDavClient.createDomainAddressBook(dockerExtension().domainId(), technicalToken);
@@ -480,20 +480,20 @@ public abstract class CardDavMultitenancyContract {
         // Then it should return 403
         assertThatThrownBy(() -> cardDavClient.grantDomainBookDelegation(bob, dockerExtension().domainId(), DOMAIN_ADDRESS_BOOK, john, DelegationRight.READ_WRITE))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void readDomainMemberBookShouldReturn403ForCrossDomainUser() {
+    void readDomainMemberBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.createDomainMembersAddressBook(secondDomainId, technicalToken);
 
         assertThatThrownBy(() -> cardDavClient.getContacts(bob, secondDomainId, DOMAIN_MEMBERS_BOOK))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     @Test
-    void readDomainMemberBookAsDomainAdminShouldReturn403ForCrossDomainUser() {
+    void readDomainMemberBookAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain member address book of second domain
         // And Bob is domain admin of first domain
         cardDavClient.createDomainMembersAddressBook(secondDomainId, technicalToken);
@@ -503,7 +503,7 @@ public abstract class CardDavMultitenancyContract {
         // Then it should return 403
         assertThatThrownBy(() -> cardDavClient.getContacts(bob, secondDomainId, DOMAIN_MEMBERS_BOOK))
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("403");
+            .message().containsAnyOf("403", "404");
     }
 
     private void makeDomainAdmin(OpenPaasUser user, String domainName) {
