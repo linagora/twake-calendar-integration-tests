@@ -5,7 +5,12 @@
 docker build --pull -t sabre-v4-it -f Dockerfile.sabre4 .
 if [ -n "$1" ]; then
   echo "Using custom SABRE_4_7_IMAGE: $1"
-  docker build --pull --build-arg SABRE_4_7_IMAGE="$1" -t sabre-v4-7-it -f Dockerfile.sabre4_7 .
+  if [ "$1" = "esn_sabre_test" ]; then
+    echo "Using local image '$1', building without --pull"
+    docker build --build-arg SABRE_4_7_IMAGE="$1" -t sabre-v4-7-it -f Dockerfile.sabre4_7 .
+  else
+    docker build --pull --build-arg SABRE_4_7_IMAGE="$1" -t sabre-v4-7-it -f Dockerfile.sabre4_7 .
+  fi
 else
   echo "Using default SABRE_4_7_IMAGE from Dockerfile"
   docker build --pull -t sabre-v4-7-it -f Dockerfile.sabre4_7 .
