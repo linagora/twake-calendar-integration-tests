@@ -1207,6 +1207,105 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
+    void shouldNotSendNotificationEmailWhenImportSingleEvent() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        String futureDtStart = "30250411T100000";
+        String futureDtEnd = "30250411T110000";
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Imported meeting",
+            "Twake Meeting Room",
+            "This event is imported.",
+            futureDtStart,
+            futureDtEnd);
+
+        calDavClient.importCalendarEvent(organizer, eventUid, calendarData);
+
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+    }
+
+    @Test
+    void shouldNotSendNotificationEmailWhenCreateSingleEventWithPastDtStart() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        String pastDtStart = "20200101T100000";
+        String pastDtEnd = "20200101T110000";
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Past single meeting",
+            "Twake Meeting Room",
+            "This event starts in the past.",
+            pastDtStart,
+            pastDtEnd);
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
+
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+    }
+
+    @Test
+    void shouldNotSendNotificationEmailWhenCreateRecurringEventWithPastDtStartAndAllOccurrencesInPast() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        String pastDtStart = "20200101T100000";
+        String pastDtEnd = "20200101T110000";
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20200101T000000Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:{pastDtStart}
+            DTEND;TZID=Asia/Ho_Chi_Minh:{pastDtEnd}
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Past recurring meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:All occurrences are in the past.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{pastDtStart}", pastDtStart)
+            .replace("{pastDtEnd}", pastDtEnd)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email());
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
+
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+    }
+
+    @Test
     protected void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee() throws IOException, InterruptedException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();

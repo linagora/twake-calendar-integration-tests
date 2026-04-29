@@ -130,6 +130,29 @@ public class CalDavClient {
             }).block();
     }
 
+    public void importCalendarEvent(OpenPaasUser user, String eventUid, String calendarData) {
+        URI calendarURI = URI.create("/calendars/" + user.id() + "/" + user.id() + "/" + eventUid + ".ics?import");
+        importCalendarEvent(user, calendarURI, calendarData);
+    }
+
+    public void importCalendarEvent(OpenPaasUser userRequest, URI calendarURI, String calendarData) {
+        httpClient.headers(headers -> userRequest.impersonatedBasicAuth(headers).add("Content-Type", "text/plain"))
+            .put()
+            .uri(calendarURI.toString())
+            .send(TestUtil.body(calendarData))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 201 || response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when importing calendar object
+                        %s
+                        """.formatted(response.status().code(), responseBody))));
+            }).block();
+    }
+
     public void upsertCalendarEvent(String entityId, String eventId, String calendarData, String token) {
         httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
             .put()
