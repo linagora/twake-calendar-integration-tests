@@ -1765,6 +1765,184 @@ public abstract class EmailAMQPMessageContract {
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
+    @Test
+    void shouldReceiveNotificationEmailMessageWhenRecurringOverrideInstanceStartTimeIsUpdated() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            RRULE:FREQ=WEEKLY;COUNT=3
+            SUMMARY:Recurring sprint planning
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring event for sprint planning.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email());
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(attendee), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        String updatedCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            RRULE:FREQ=WEEKLY;COUNT=3
+            SUMMARY:Recurring sprint planning
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring event for sprint planning.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:2
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:30250418T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250418T150000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250418T160000
+            SUMMARY:Recurring sprint planning
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring event for sprint planning.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email());
+
+        calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
+
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:2
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:30250418T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250418T150000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250418T160000
+            SUMMARY:Recurring sprint planning
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Recurring event for sprint planning.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{eventUid}", eventUid);
+
+        String expectedJsonString = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "REQUEST",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "{organizerId}",
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
+              "changes": {
+                "dtstart": {
+                  "previous": {
+                    "isAllDay": false,
+                    "date": "3025-04-18 10:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Asia/Ho_Chi_Minh"
+                  },
+                  "current": {
+                    "isAllDay": false,
+                    "date": "3025-04-18 15:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Asia/Ho_Chi_Minh"
+                  }
+                },
+                "dtend": {
+                  "previous": {
+                    "isAllDay": false,
+                    "date": "3025-04-18 11:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Asia/Ho_Chi_Minh"
+                  },
+                  "current": {
+                    "isAllDay": false,
+                    "date": "3025-04-18 16:00:00.000000",
+                    "timezone_type": 3,
+                    "timezone": "Asia/Ho_Chi_Minh"
+                  }
+                }
+              }
+            }
+            """.replace("{organizerEmail}", organizer.email())
+            .replace("{attendeeEmail}", attendee.email())
+            .replace("{organizerId}", organizer.id())
+            .replace("{attendeeId}", attendee.id())
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()) && message.has("changes"))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expectedJsonString);
+
+                    assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
+                }));
+    }
+
     private BlockingQueue<JsonNode> listenToQueue() {
         return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
     }
