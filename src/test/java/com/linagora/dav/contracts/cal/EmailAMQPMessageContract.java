@@ -1063,10 +1063,10 @@ public abstract class EmailAMQPMessageContract {
             VERSION:2.0
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250920T090000Z
+            DTSTAMP:20270918T090000Z
             SEQUENCE:0
-            DTSTART;TZID=Europe/Paris:30250923T090000
-            DTEND;TZID=Europe/Paris:30250923T100000
+            DTSTART;TZID=Europe/Paris:20270921T090000
+            DTEND;TZID=Europe/Paris:20270921T100000
             RRULE:FREQ=WEEKLY;BYDAY=TU
             SUMMARY:Weekly meeting
             LOCATION:Paris office
@@ -1085,16 +1085,16 @@ public abstract class EmailAMQPMessageContract {
             .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
             .get();
 
-        // Override one occurrence (move from 23/09 09:00–10:00 → 24/09 14:00–15:00)
+        // Override one occurrence (move from 21/09 09:00–10:00 → 22/09 14:00–15:00)
         String updatedOccurrenceData = """
             BEGIN:VCALENDAR
             VERSION:2.0
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250920T090000Z
+            DTSTAMP:20270918T090000Z
             SEQUENCE:1
-            DTSTART;TZID=Europe/Paris:30250923T090000
-            DTEND;TZID=Europe/Paris:30250923T100000
+            DTSTART;TZID=Europe/Paris:20270921T090000
+            DTEND;TZID=Europe/Paris:20270921T100000
             RRULE:FREQ=WEEKLY;BYDAY=TU
             SUMMARY:Weekly meeting
             LOCATION:Paris office
@@ -1104,11 +1104,11 @@ public abstract class EmailAMQPMessageContract {
             END:VEVENT
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250920T090000Z
+            DTSTAMP:20270918T090000Z
             SEQUENCE:1
-            DTSTART;TZID=Europe/Paris:30250924T140000
-            DTEND;TZID=Europe/Paris:30250924T150000
-            RECURRENCE-ID;TZID=Europe/Paris:30250923T090000
+            DTSTART;TZID=Europe/Paris:20270922T140000
+            DTEND;TZID=Europe/Paris:20270922T150000
+            RECURRENCE-ID;TZID=Europe/Paris:20270921T090000
             SUMMARY:Weekly meeting
             LOCATION:Paris office
             DESCRIPTION:Recurring test event
@@ -1131,11 +1131,11 @@ public abstract class EmailAMQPMessageContract {
             METHOD:REQUEST
             BEGIN:VEVENT
             UID:{eventUid}
-            DTSTAMP:30250920T090000Z
+            DTSTAMP:20270918T090000Z
             SEQUENCE:1
-            DTSTART;TZID=Europe/Paris:30250924T140000
-            DTEND;TZID=Europe/Paris:30250924T150000
-            RECURRENCE-ID;TZID=Europe/Paris:30250923T090000
+            DTSTART;TZID=Europe/Paris:20270922T140000
+            DTEND;TZID=Europe/Paris:20270922T150000
+            RECURRENCE-ID;TZID=Europe/Paris:20270921T090000
             SUMMARY:Weekly meeting
             LOCATION:Paris office
             DESCRIPTION:Recurring test event
@@ -1161,13 +1161,13 @@ public abstract class EmailAMQPMessageContract {
                 "dtstart": {
                   "previous": {
                     "isAllDay": false,
-                    "date": "3025-09-23 09:00:00.000000",
+                    "date": "2027-09-21 09:00:00.000000",
                     "timezone_type": 3,
                     "timezone": "Europe/Paris"
                   },
                   "current": {
                     "isAllDay": false,
-                    "date": "3025-09-24 14:00:00.000000",
+                    "date": "2027-09-22 14:00:00.000000",
                     "timezone_type": 3,
                     "timezone": "Europe/Paris"
                   }
@@ -1175,13 +1175,13 @@ public abstract class EmailAMQPMessageContract {
                 "dtend": {
                   "previous": {
                     "isAllDay": false,
-                    "date": "3025-09-23 10:00:00.000000",
+                    "date": "2027-09-21 10:00:00.000000",
                     "timezone_type": 3,
                     "timezone": "Europe/Paris"
                   },
                   "current": {
                     "isAllDay": false,
-                    "date": "3025-09-24 15:00:00.000000",
+                    "date": "2027-09-22 15:00:00.000000",
                     "timezone_type": 3,
                     "timezone": "Europe/Paris"
                   }
