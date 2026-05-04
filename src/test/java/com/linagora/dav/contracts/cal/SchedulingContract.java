@@ -2246,7 +2246,6 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    @Disabled("Fixed, need a new image, https://github.com/linagora/esn-sabre/issues/300")
     void recurringRemoveAttendeeFromOccurrence2ShouldPropagate() {
         // Given Bob creates a recurring series with Cedric as attendee
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -2985,7 +2984,6 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    @Disabled("Fixed, need a new image, https://github.com/linagora/esn-sabre/issues/300")
     void recurringRemoveAttendeeOnSingleOccurrenceShouldPropagateToOtherAttendeeCalendar() {
         // Given Bob creates a recurring series with Alice and Cedric invited on the whole series
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -3092,7 +3090,6 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    @Disabled("Fixed, need a new image, https://github.com/linagora/esn-sabre/issues/300")
     void recurringRemoveAttendeeFromOccurrenceAndThenReinviteShouldRestoreOccurrence() {
         // Given Bob creates a recurring series with Alice invited on the whole series
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -3229,7 +3226,6 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    @Disabled("Fixed, need a new image, https://github.com/linagora/esn-sabre/issues/300")
     void recurringRemoveAttendeeFromOccurrenceShouldNotAffectOtherOverrides() {
         // Given Bob creates a recurring series with Cedric invited and two overrides
         String organizerEventUid = "event-" + UUID.randomUUID();
