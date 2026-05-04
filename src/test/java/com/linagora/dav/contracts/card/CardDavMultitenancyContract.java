@@ -32,7 +32,6 @@ import java.util.UUID;
 
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -81,7 +80,6 @@ public abstract class CardDavMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void propfindOnAddressBooksRootShouldNotExposeCrossDomainAddressBookHome() {
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -92,7 +90,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(response.body()).doesNotContain(john.id());
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void propfindShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -105,7 +102,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void propfindAddressBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -152,7 +148,6 @@ public abstract class CardDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void putContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -162,7 +157,6 @@ public abstract class CardDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void deleteContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -173,7 +167,6 @@ public abstract class CardDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void getContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -187,7 +180,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void proppatchShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -209,7 +201,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void headContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -223,7 +214,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void exportShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -236,7 +226,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void reportShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -260,7 +249,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void copyContactBetweenAddressBooksShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -289,7 +277,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void getJsonAddressBooksShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -302,7 +289,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void putJsonContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -322,7 +308,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void getJsonContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -370,7 +355,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void reportJsonShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
@@ -388,7 +372,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void subscribeShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(bob, bob.id(), CONTACTS_BOOK, PublicRight.READ);
@@ -398,7 +381,6 @@ public abstract class CardDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void delegateShouldReturnErrorStatusForCrossDomainUser() {
         assertThatThrownBy(() -> cardDavClient.grantDelegation(bob, CONTACTS_BOOK, john, DelegationRight.READ_WRITE))
@@ -473,7 +455,6 @@ public abstract class CardDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void delegateDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain

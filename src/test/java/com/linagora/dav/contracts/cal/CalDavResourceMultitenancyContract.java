@@ -31,7 +31,6 @@ import java.util.UUID;
 
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CalDavClient;
@@ -89,7 +88,6 @@ public abstract class CalDavResourceMultitenancyContract {
         secondDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken(secondDomainId);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindResourceCalendarHomeShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -100,7 +98,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindResourceCalendarShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -111,7 +108,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void getEventFromResourceCalendarShouldReturn403ForCrossDomainUser() {
         String eventUid = UUID.randomUUID().toString();
@@ -151,7 +147,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void reportResourceCalendarShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -167,7 +162,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void getJsonCalendarListShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -198,7 +192,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .statusCode(403);
     }
 
-    @Disabled("Currently returns 404")
     @Test
     void getJsonEventShouldReturn403Or404ForCrossDomainUser() {
         String eventUid = UUID.randomUUID().toString();
