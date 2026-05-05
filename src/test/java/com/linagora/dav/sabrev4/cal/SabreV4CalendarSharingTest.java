@@ -130,4 +130,9 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     @Override
     protected void subscribedResourceCalendarShouldOnlyAdvertiseReadPrivileges() {
     }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/51")
+    @Override
+    public void cannotSubscribeToResourceFromAnotherDomain() {
+    }
 }
