@@ -35,7 +35,6 @@ import java.util.function.Function;
 
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -1865,9 +1864,8 @@ public abstract class AlarmAMQPMessageContract {
                     .isEqualTo(expected)));
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
     @Test
-    void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
+    public void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -2114,9 +2112,8 @@ public abstract class AlarmAMQPMessageContract {
                     .isEqualTo(expected)));
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
     @Test
-    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
+    public void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
