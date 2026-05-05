@@ -102,4 +102,9 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     @Test
     public void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
     }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/51")
+    @Override
+    public void cannotSubscribeToResourceFromAnotherDomain() {
+    }
 }
