@@ -40,6 +40,8 @@ import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.junit.jupiter.api.Assumptions;
+
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
@@ -1866,6 +1868,8 @@ public abstract class AlarmAMQPMessageContract {
 
     @Test
     public void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
+        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
+            "Requires amqp scheduling enabled");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -2114,6 +2118,8 @@ public abstract class AlarmAMQPMessageContract {
 
     @Test
     public void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
+        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
+            "Requires amqp scheduling enabled");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
