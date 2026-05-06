@@ -20,15 +20,20 @@ package com.linagora.dav.contracts;
 
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
+import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -48,6 +53,37 @@ public abstract class PrincipalMultitenancyContract {
         bob = dockerExtension().newTestUser();
         john = dockerExtension().twakeCalendarProvisioningService()
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
+    }
+
+    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
+    @Test
+    void jwtAuthenticatedBobCannotPropfindCrossDomainPrincipal() {
+        // Given Bob is authenticated with a JWT token
+        String jwt = generateJwtFor(bob);
+        Function<OpenPaasUser, DavResponse> propfindPrincipal = user -> execute(dockerExtension().davHttpClient()
+                .headers(headers -> headers.add("Authorization", "Bearer " + jwt)
+                    .add("Depth", "0")
+                    .add("Content-Type", "application/xml"))
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri("/principals/users/" + user.id())
+                .send(body("""
+                    <d:propfind xmlns:d="DAV:">
+                      <d:prop>
+                        <d:current-user-principal/>
+                      </d:prop>
+                    </d:propfind>""")));
+
+        // When Bob does PROPFIND on his own principal
+        DavResponse bobPrincipalResponse = propfindPrincipal.apply(bob);
+
+        // Then JWT authentication succeeds
+        assertThat(bobPrincipalResponse.status()).isEqualTo(207);
+
+        // When Bob does PROPFIND on John's cross-domain principal
+        DavResponse johnPrincipalResponse = propfindPrincipal.apply(john);
+
+        // Then cross-domain principal access is rejected
+        assertThat(johnPrincipalResponse.status()).isIn(403, 404);
     }
 
     @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
@@ -106,4 +142,22 @@ public abstract class PrincipalMultitenancyContract {
 
         assertThat(status).isEqualTo(403);
     }
+
+    private String generateJwtFor(OpenPaasUser user) {
+        String quotedJwt = given().log().all()
+            .baseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
+                .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE, "http")
+                .toString())
+            .auth().preemptive().basic(user.email(), user.password())
+            .when()
+            .post("/api/jwt/generate").prettyPeek()
+        .then()
+            .statusCode(SC_OK)
+            .extract()
+            .body()
+            .asString();
+
+        return quotedJwt.substring(1, quotedJwt.length() - 1);
+    }
+
 }
