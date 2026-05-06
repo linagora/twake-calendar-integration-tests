@@ -113,7 +113,6 @@ public abstract class PrincipalMultitenancyContract {
             .isEmpty();
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void jwtAuthenticatedBobCannotPropfindCrossDomainPrincipal() {
         // Given Bob is authenticated with a JWT token
@@ -144,7 +143,6 @@ public abstract class PrincipalMultitenancyContract {
         assertThat(johnPrincipalResponse.status()).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindOnCrossDomainPrincipalShouldReturn403() {
         int status = execute(dockerExtension().davHttpClient()
