@@ -34,6 +34,7 @@ import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import net.fortuna.ical4j.data.CalendarBuilder;
@@ -42,6 +43,7 @@ import net.fortuna.ical4j.data.ContentHandlerContext;
 import net.fortuna.ical4j.data.ParserException;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.ComponentContainer;
 import net.fortuna.ical4j.model.Parameter;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.TimeZoneRegistry;
@@ -88,12 +90,49 @@ public class CalendarUtil {
             return extractProperty(propertyName).getValue();
         }
 
+        public Component extractEventComponent(Optional<String> recurrenceId) {
+            return calendar.getComponents(Component.VEVENT).stream()
+                .filter(vevent -> matchesRecurrenceId(vevent, recurrenceId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected VEVENT to be present for recurrence " + recurrenceId));
+        }
+
+        public Property extractEventProperty(Optional<String> recurrenceId, String propertyName) {
+            Component eventComponent = extractEventComponent(recurrenceId);
+            return findProperty(eventComponent, propertyName)
+                .orElseThrow(() -> new AssertionError("Expected " + propertyName + " to be present for recurrence " + recurrenceId));
+        }
+
+        public String extractEventPropertyValue(Optional<String> recurrenceId, String propertyName) {
+            return extractEventProperty(recurrenceId, propertyName).getValue();
+        }
+
         public PartStat extractAttendeePartStat(String attendeeEmail) {
             return CalendarUtil.getAttendeePartStat(calendar, attendeeEmail);
         }
 
         public Calendar asCalendar() {
             return calendar;
+        }
+
+        private static boolean matchesRecurrenceId(Component eventComponent, Optional<String> recurrenceId) {
+            return eventComponent.getProperty(Property.RECURRENCE_ID)
+                .map(Property::getValue)
+                .equals(recurrenceId);
+        }
+
+        private static Optional<Property> findProperty(Component component, String propertyName) {
+            return component.getProperty(propertyName)
+                .or(() -> findSubComponentProperty(component, propertyName));
+        }
+
+        private static Optional<Property> findSubComponentProperty(Component component, String propertyName) {
+            if (!(component instanceof ComponentContainer<?> componentContainer)) {
+                return Optional.empty();
+            }
+            return componentContainer.getComponentList().getAll().stream()
+                .flatMap(subComponent -> subComponent.getProperty(propertyName).stream())
+                .findFirst();
         }
     }
 

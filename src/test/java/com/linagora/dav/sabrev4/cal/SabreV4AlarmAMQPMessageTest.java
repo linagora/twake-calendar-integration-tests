@@ -48,8 +48,4 @@ public class SabreV4AlarmAMQPMessageTest extends AlarmAMQPMessageContract {
     public void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
-    @Override
-    public void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
-    }
 }
