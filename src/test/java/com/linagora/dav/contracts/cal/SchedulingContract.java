@@ -51,6 +51,7 @@ import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
+import net.fortuna.ical4j.model.property.Clazz;
 import net.fortuna.ical4j.model.property.Transp;
 
 public abstract class SchedulingContract {
@@ -58,6 +59,8 @@ public abstract class SchedulingContract {
     private static final String ALARM_TRIGGER_5M = "-PT5M";
     private static final String TRANSP_OPAQUE = Transp.VALUE_OPAQUE;
     private static final String TRANSP_TRANSPARENT = Transp.VALUE_TRANSPARENT;
+    private static final String CLASS_PUBLIC = Clazz.VALUE_PUBLIC;
+    private static final String CLASS_PRIVATE = Clazz.VALUE_PRIVATE;
 
     private static final String[] IGNORED_CALENDAR_PROPERTIES = {
         Property.SEQUENCE,
@@ -421,7 +424,7 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/319")
+    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
@@ -511,7 +514,7 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/319")
+    @Disabled("Waiting for new image esn-sabre")
     @Test
     void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
@@ -660,7 +663,7 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/320")
+    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalTRANSP() {
         // Given Bob creates an event with Alice and TRANSP set to OPAQUE
@@ -730,7 +733,76 @@ public abstract class SchedulingContract {
             .isEqualTo(TRANSP_TRANSPARENT);
     }
 
-    @Disabled("esn-sabre issue https://github.com/linagora/esn-sabre/issues/320")
+    @Disabled("Waiting for new image esn-sabre")
+    @Test
+    void organizerUpdateShouldNotResetAttendeeLocalCLASS() {
+        // Given Bob creates an event with Alice and CLASS set to PUBLIC
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String initialSummary = "CLASS reset check";
+        String updatedSummary = "CLASS reset check - updated by Bob";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:{summary}
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee CLASS persistence after organizer update
+            CLASS:{classPublic}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{summary}", initialSummary)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{classPublic}", CLASS_PUBLIC);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        Supplier<CalendarExtractor> aliceCalendarEvent = () -> CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri));
+        Supplier<CalendarExtractor> bobCalendarEvent = () -> CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri));
+
+        awaitAtMost.untilAsserted(() -> {
+            CalendarExtractor aliceCalendarExtractor = aliceCalendarEvent.get();
+            assertThat(aliceCalendarExtractor.extractPropertyValue(Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+            assertThat(aliceCalendarExtractor.extractPropertyValue(Property.SUMMARY))
+                .isEqualTo(initialSummary);
+        });
+
+        // When Alice updates CLASS in her own event copy
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("CLASS:" + CLASS_PUBLIC, "CLASS:" + CLASS_PRIVATE);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+          // And Bob updates event summary
+        String bobUpdatedCalendarEventIcs = calDavClient.getCalendarEvent(bob, bobCalendarEventUri)
+            .replace("SUMMARY:" + initialSummary, "SUMMARY:" + updatedSummary);
+        calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, bobUpdatedCalendarEventIcs);
+
+        // Then summary is synchronized, but Alice local CLASS is not reset by Bob update
+        awaitAtMost.untilAsserted(() -> assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.SUMMARY))
+            .isEqualTo(updatedSummary));
+
+        assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.CLASS))
+            .isEqualTo(CLASS_PRIVATE);
+        assertThat(bobCalendarEvent.get().extractPropertyValue(Property.CLASS))
+            .isEqualTo(CLASS_PUBLIC);
+    }
+
+    @Disabled("Waiting for new image esn-sabre")
     @Test
     void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalTRANSP() {
         // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
@@ -799,6 +871,287 @@ public abstract class SchedulingContract {
         // And Alice local TRANSP is not reset by that attendee update
         assertThat(aliceCalendarEvent.get().extractPropertyValue(Property.TRANSP))
             .isEqualTo(TRANSP_TRANSPARENT);
+    }
+
+    @Disabled("Waiting for new image esn-sabre")
+    @Test
+    void organizerUpdateShouldNotResetAttendeeLocalVALARMOnRecurringMasterAndOverride() {
+        // Given Bob creates a recurring event with one override and different organizer alarms
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String overrideRecurrenceId = "30250102T090000Z";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring alarm master
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT15M
+            ACTION:DISPLAY
+            DESCRIPTION:Master organizer alarm
+            END:VALARM
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:{overrideRecurrenceId}
+            SEQUENCE:1
+            DTSTART:30250102T130000Z
+            DTEND:30250102T140000Z
+            SUMMARY:Recurring alarm override
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT30M
+            ACTION:DISPLAY
+            DESCRIPTION:Override organizer alarm
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{overrideRecurrenceId}", overrideRecurrenceId)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        // And Alice customizes both the master alarm and the override alarm differently
+        String aliceUpdatedCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)
+            .replace("TRIGGER:-PT15M", "TRIGGER:-PT5M")
+            .replace("TRIGGER:-PT30M", "TRIGGER:-PT10M");
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.TRIGGER))
+                .isEqualTo("-PT5M");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.TRIGGER))
+                .isEqualTo("-PT10M");
+        });
+
+        // When Bob updates both the master and override summaries
+        String bobCalendarEventIcs = calDavClient.getCalendarEvent(bob, bobCalendarEventUri);
+        String bobUpdatedCalendarEventIcs = bobCalendarEventIcs
+            .replace("SUMMARY:Recurring alarm master", "SUMMARY:Recurring alarm master updated")
+            .replace("SUMMARY:Recurring alarm override", "SUMMARY:Recurring alarm override updated");
+        calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, bobUpdatedCalendarEventIcs);
+
+        // Then summaries are synchronized, but each local alarm remains attached to its VEVENT
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.SUMMARY))
+                .isEqualTo("Recurring alarm master updated");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.SUMMARY))
+                .isEqualTo("Recurring alarm override updated");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.TRIGGER))
+                .isEqualTo("-PT5M");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.TRIGGER))
+                .isEqualTo("-PT10M");
+        });
+    }
+
+    @Disabled("Waiting for new image esn-sabre")
+    @Test
+    void organizerUpdateShouldNotResetAttendeeLocalTRANSPOnRecurringMasterAndOverride() {
+        // Given Bob creates a recurring event with one override and different organizer TRANSP values
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String overrideRecurrenceId = "30250102T090000Z";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring TRANSP master
+            TRANSP:{transpOpaque}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:{overrideRecurrenceId}
+            SEQUENCE:1
+            DTSTART:30250102T130000Z
+            DTEND:30250102T140000Z
+            SUMMARY:Recurring TRANSP override
+            TRANSP:{transpTransparent}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{overrideRecurrenceId}", overrideRecurrenceId)
+            .replace("{transpOpaque}", TRANSP_OPAQUE)
+            .replace("{transpTransparent}", TRANSP_TRANSPARENT)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.TRANSP))
+                .isEqualTo(TRANSP_TRANSPARENT);
+        });
+
+        // And Alice customizes master and override TRANSP to opposite values
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("TRANSP:" + TRANSP_OPAQUE, "TRANSP:MASTER_LOCAL_TRANSPARENT")
+            .replace("TRANSP:" + TRANSP_TRANSPARENT, "TRANSP:OVERRIDE_LOCAL_OPAQUE")
+            .replace("TRANSP:MASTER_LOCAL_TRANSPARENT", "TRANSP:" + TRANSP_TRANSPARENT)
+            .replace("TRANSP:OVERRIDE_LOCAL_OPAQUE", "TRANSP:" + TRANSP_OPAQUE);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // When Bob updates both the master and override summaries
+        String bobCalendarEventIcs = calDavClient.getCalendarEvent(bob, bobCalendarEventUri);
+        String bobUpdatedCalendarEventIcs = bobCalendarEventIcs
+            .replace("SUMMARY:Recurring TRANSP master", "SUMMARY:Recurring TRANSP master updated")
+            .replace("SUMMARY:Recurring TRANSP override", "SUMMARY:Recurring TRANSP override updated");
+        calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, bobUpdatedCalendarEventIcs);
+
+        // Then summaries are synchronized, but each local TRANSP remains attached to its VEVENT
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.SUMMARY))
+                .isEqualTo("Recurring TRANSP master updated");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.SUMMARY))
+                .isEqualTo("Recurring TRANSP override updated");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.TRANSP))
+                .isEqualTo(TRANSP_TRANSPARENT);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+        });
+    }
+
+    @Disabled("Waiting for new image esn-sabre")
+    @Test
+    void organizerUpdateShouldNotResetAttendeeLocalCLASSOnRecurringMasterAndOverride() {
+        // Given Bob creates a recurring event with one override and different organizer CLASS values
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String overrideRecurrenceId = "30250102T090000Z";
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring CLASS master
+            CLASS:{classPublic}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:{overrideRecurrenceId}
+            SEQUENCE:1
+            DTSTART:30250102T130000Z
+            DTEND:30250102T140000Z
+            SUMMARY:Recurring CLASS override
+            CLASS:{classPrivate}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{overrideRecurrenceId}", overrideRecurrenceId)
+            .replace("{classPublic}", CLASS_PUBLIC)
+            .replace("{classPrivate}", CLASS_PRIVATE)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.CLASS))
+                .isEqualTo(CLASS_PRIVATE);
+        });
+
+        // And Alice customizes master and override CLASS to opposite values
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("CLASS:" + CLASS_PUBLIC, "CLASS:MASTER_LOCAL_PRIVATE")
+            .replace("CLASS:" + CLASS_PRIVATE, "CLASS:OVERRIDE_LOCAL_PUBLIC")
+            .replace("CLASS:MASTER_LOCAL_PRIVATE", "CLASS:" + CLASS_PRIVATE)
+            .replace("CLASS:OVERRIDE_LOCAL_PUBLIC", "CLASS:" + CLASS_PUBLIC);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.CLASS))
+                .isEqualTo(CLASS_PRIVATE);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+        });
+
+        // When Bob updates both the master and override summaries
+        String bobCalendarEventIcs = calDavClient.getCalendarEvent(bob, bobCalendarEventUri);
+        String bobUpdatedCalendarEventIcs = bobCalendarEventIcs
+            .replace("SUMMARY:Recurring CLASS master", "SUMMARY:Recurring CLASS master updated")
+            .replace("SUMMARY:Recurring CLASS override", "SUMMARY:Recurring CLASS override updated");
+        calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, bobUpdatedCalendarEventIcs);
+
+        // Then summaries are synchronized, but each local CLASS remains attached to its VEVENT
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEvent = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            CalendarExtractor aliceEventExtractor = CalendarUtil.toExtractor(aliceEvent);
+
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.SUMMARY))
+                .isEqualTo("Recurring CLASS master updated");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.SUMMARY))
+                .isEqualTo("Recurring CLASS override updated");
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.empty(), Property.CLASS))
+                .isEqualTo(CLASS_PRIVATE);
+            assertThat(aliceEventExtractor.extractEventPropertyValue(Optional.of(overrideRecurrenceId), Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+        });
     }
 
     record PropertyChange(String propertyName, String originalValue, String updatedValue) {
