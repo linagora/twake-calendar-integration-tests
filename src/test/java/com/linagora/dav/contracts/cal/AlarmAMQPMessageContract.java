@@ -35,12 +35,13 @@ import java.util.function.Function;
 
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.junit.jupiter.api.Assumptions;
+
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
@@ -1865,10 +1866,9 @@ public abstract class AlarmAMQPMessageContract {
                     .isEqualTo(expected)));
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
     @Test
-    void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
+    public void shouldReceiveMessageFromEventAlarmCancelExchangeWhenSendingITIPRequestToCancelEvent() throws IOException {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -2054,6 +2054,18 @@ public abstract class AlarmAMQPMessageContract {
                                     },
                                     "cal-address",
                                     "mailto:{attendeeEmail}"
+                                ],
+                                [
+                                    "status",
+                                    {},
+                                    "text",
+                                    "CANCELLED"
+                                ],
+                                [
+                                    "sequence",
+                                    {},
+                                    "integer",
+                                    0
                                 ]
                             ],
                             [
@@ -2097,7 +2109,6 @@ public abstract class AlarmAMQPMessageContract {
                         ]
                     ]
                 ],
-                "import": false,
                 "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", bob.email())
@@ -2114,9 +2125,8 @@ public abstract class AlarmAMQPMessageContract {
                     .isEqualTo(expected)));
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/165")
     @Test
-    void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
+    public void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -2203,7 +2213,7 @@ public abstract class AlarmAMQPMessageContract {
             DTEND:20251005T100000Z
             SUMMARY:Meeting
             ORGANIZER;CN=Bob:mailto:{bobEmail}
-            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            ATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:{aliceEmail}
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
@@ -2220,7 +2230,6 @@ public abstract class AlarmAMQPMessageContract {
         calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + alice.id()), itipRequest2).block();
 
         // Then a message should be present in the event alarm updated exchange
-
         String expected = """
             {
                 "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
@@ -2297,11 +2306,11 @@ public abstract class AlarmAMQPMessageContract {
                                     "cal-address",
                                     "mailto:{attendeeEmail}"
                                 ]
-                            ]
+                            ],
+                            []
                         ]
                     ]
                 ],
-                "import": false,
                 "etag": "${json-unit.any-string}"
             }
             """.replace("{organizerEmail}", bob.email())
@@ -2571,93 +2580,6 @@ public abstract class AlarmAMQPMessageContract {
             .replace("{dtend}", dtend)
             .replace("{alarmAttendeeEmail}", alarmAttendeeEmail)
             .replace("{partStat}", partStat);
-    }
-
-    @Test
-    void itipCancelShouldRemoveAlarm() throws Exception {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser cedric = dockerExtension().newTestUser();
-
-        // GIVEN Cedric an event with Bob
-        String eventUid = "event-" + UUID.randomUUID();
-        String initialIcs = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Example Corp.//CalDAV Client//EN
-            BEGIN:VEVENT
-            UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
-            SUMMARY:Meeting To Be Cancelled
-            ORGANIZER;CN=Cedric:mailto:%s
-            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
-            END:VEVENT
-            END:VCALENDAR
-            """.formatted(eventUid, cedric.email(), bob.email());
-
-        String bobCalendarEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
-        calDavClient.upsertCalendarEvent(bob, URI.create(bobCalendarEventUri), initialIcs);
-
-        Function<String, List<JsonNode>> bobEventsForUri = (uri) ->
-            calDavClient.reportCalendarEvents(bob, uri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
-                .collectList()
-                .block();
-
-        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
-
-        // Ensure event is present initially
-        List<JsonNode> beforeCancel = bobEventsForUri.apply(bobDefaultCalendarUri);
-        assertThat(beforeCancel).anySatisfy(item -> {
-            String json = item.toString();
-            AssertionsForClassTypes.assertThat(json).contains(eventUid);
-            AssertionsForClassTypes.assertThat(json).contains("Meeting To Be Cancelled");
-        });
-
-        // WHEN Cedric sends an ITIP CANCEL
-        String cancelIcs = """
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            PRODID:-//Example Corp.//CalDAV Client//EN
-            CALSCALE:GREGORIAN
-            METHOD:CANCEL
-            BEGIN:VEVENT
-            UID:%s
-            DTSTAMP:20251003T080100Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
-            SUMMARY:Meeting To Be Cancelled
-            ORGANIZER;CN=Cedric:mailto:%s
-            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
-            STATUS:CANCELLED
-            END:VEVENT
-            END:VCALENDAR
-            """.formatted(eventUid, cedric.email(), bob.email());
-
-        String cancelBody = ITIPJsonBodyRequest.builder()
-            .ical(cancelIcs)
-            .sender(cedric.email())
-            .recipient(bob.email())
-            .uid(eventUid)
-            .method("CANCEL")
-            .buildJson();
-        String bobCalendarUri = "/calendars/" + bob.id();
-
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:cancel", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:created", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
-
-        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
-
-        // THEN we have a message
-        BlockingQueue<JsonNode> messages = listenToQueue();
-        awaitAtMost.untilAsserted(() ->
-            assertThat(messages)
-                .anySatisfy(message -> assertThat(message).isNotNull()));
     }
 
     @Test
