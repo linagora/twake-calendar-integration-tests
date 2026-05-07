@@ -2127,7 +2127,7 @@ public abstract class AlarmAMQPMessageContract {
 
     @Test
     public void shouldReceiveMessageFromEventAlarmUpdatedExchangeWhenSendingITIPRequestToRemoveAlarmFromEvent() throws IOException {
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:request", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
 
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
