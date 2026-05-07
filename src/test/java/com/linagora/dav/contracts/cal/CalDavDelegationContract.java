@@ -71,6 +71,7 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
 import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
+import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -3162,5 +3163,296 @@ public abstract class CalDavDelegationContract {
         assertThat(revocationResponse.getKey())
             .as("Bob's write access on the resource calendar should be revoked")
             .isIn(200, 201, 204);
+    }
+
+    @Test
+    void aliceShouldNotSeeDelegatedCalendarInHerCalendarListAfterDeleting() throws Exception {
+        // GIVEN Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        // AND Bob grants write delegation to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        // WHEN Alice deletes the calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
+
+        // THEN the copy no longer appears in Alice's calendar list (JSON response)
+        String jsonAliceCalendars = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+            .when()
+            .get("/calendars/" + alice.id() + ".json")
+            .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(jsonAliceCalendars)
+            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
+
+        // AND the copy no longer appears in Alice's calendar list (XML response)
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + alice.id()));
+
+        List<String> xmlAliceCalendars = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+
+        assertThat(xmlAliceCalendars).doesNotContain(calendarURL.asUri() + "/");
+    }
+
+    @Test
+    void bobInviteShouldPreserveAliceDelegationAccessAfterDeletingDelegatedCalendar() {
+        // GIVEN Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        // AND Bob grants write delegation to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        // WHEN Alice deletes the calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
+
+        // THEN the copy no longer appears in Alice's calendar list
+        String aliceCalendarsAfterDelete = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+        assertThat(aliceCalendarsAfterDelete)
+            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
+
+        // AND Bob's calendar invite still shows Alice with her original delegation access
+        String bobCalendarsResponse = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+        assertThatJson(bobCalendarsResponse)
+            .inPath("_embedded.dav:calendar[0].invite")
+            .isEqualTo("""
+                [
+                    {
+                        "href": "principals/users/%s",
+                        "principal": "principals/users/%s",
+                        "properties": [],
+                        "access": 1,
+                        "comment": null,
+                        "inviteStatus": 2
+                    },
+                    {
+                        "href": "mailto:%s",
+                        "principal": "principals/users/%s",
+                        "properties": [],
+                        "access": 3,
+                        "comment": null,
+                        "inviteStatus": 2
+                    }
+                ]
+                """.formatted(bob.id(), bob.id(), alice.email(), alice.id()));
+    }
+
+    @Test
+    void aliceShouldBeAbleToWriteEventsToBobCalendarAfterDeletingDelegatedCalendarAndResubscribing() throws Exception {
+        // GIVEN Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        // AND Bob grants write delegation to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        // AND Alice deletes the calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
+
+        // Ensure that the copy no longer appears in Alice's calendar list
+        String aliceCalendarsAfterDelete = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+        assertThat(aliceCalendarsAfterDelete)
+            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
+
+        // WHEN Alice re-subscribes to Bob's calendar
+        String subscriptionId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(subscriptionId)
+            .sourceUserId(bob.id())
+            .name("Bob's calendar")
+            .color("#FF0000")
+            .readOnly(false)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        // AND Alice writes an event via the re-subscribed calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Alice created event after resubscribe
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        List<CalendarURL> calendarUrls = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).toList();
+        assertThat(calendarUrls).hasSize(1);
+        calDavClient.upsertCalendarEvent(alice, calendarUrls.getFirst(), eventUid, calendarData);
+
+        // THEN the event appears in Bob's source calendar
+        DavResponse response = calDavClient.findEventsByTime(bob, "20300310T000000", "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+    }
+
+    @Test
+    void resubscribedAliceShouldOnlyHavePublicRightAfterAliceDeletesAndBobRevokes() throws Exception {
+        // GIVEN Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        // AND Bob grants write delegation to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        // AND Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String bobEventData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Bob's event
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+        calDavClient.upsertCalendarEvent(bob, eventUid, bobEventData);
+
+        // AND Alice deletes the calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
+
+        // Ensure that the copy no longer appears in Alice's calendar list
+        String aliceCalendarsAfterDelete = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+        assertThat(aliceCalendarsAfterDelete)
+            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
+
+        // AND Bob revokes Alice's delegation
+        calDavClient.revokeDelegation(bob, bob.id(), alice);
+
+        // WHEN Alice re-subscribes to Bob's calendar
+        String subscriptionId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(subscriptionId)
+            .sourceUserId(bob.id())
+            .name("Bob's calendar")
+            .color("#FF0000")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        // THEN Bob's calendar invite does not show Alice with write access
+        String bobCalendarsResponse = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+        assertThatJson(bobCalendarsResponse)
+            .inPath("_embedded.dav:calendar[0].invite")
+            .isEqualTo("""
+                [
+                    {
+                        "href": "principals/users/%s",
+                        "principal": "principals/users/%s",
+                        "properties": [],
+                        "access": 1,
+                        "comment": null,
+                        "inviteStatus": 2
+                    }
+                ]
+                """.formatted(bob.id(), bob.id()));
+
+        List<CalendarURL> calendarUrls = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).toList();
+        assertThat(calendarUrls).hasSize(1);
+        CalendarURL subscribedCalendarURL = calendarUrls.getFirst();
+
+        // AND Alice can read Bob's calendar via the subscription
+        DavResponse readResponse = calDavClient.findEventsByTime(alice, subscribedCalendarURL, "20300310T000000", "20300510T000000");
+        List<JsonCalendarEventData> readResult = JsonCalendarEventData.from(readResponse.body());
+        assertThat(readResult).hasSize(1);
+        assertThat(readResult.get(0).uid()).isEqualTo(eventUid);
+
+        // AND Alice cannot write to Bob's calendar
+        String newEventUid = "event-" + UUID.randomUUID();
+        String writeAttemptData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Alice attempts write after revocation
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(newEventUid);
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, subscribedCalendarURL, newEventUid, writeAttemptData))
+            .hasMessageContaining("Unexpected status code: 403");
     }
 }
