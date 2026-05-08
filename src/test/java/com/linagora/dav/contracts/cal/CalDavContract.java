@@ -62,6 +62,7 @@ import org.xmlunit.diff.ElementSelectors;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
@@ -2750,6 +2751,74 @@ public abstract class CalDavContract {
         Assertions.assertThat(status)
             .as("Expected 401 for unauthenticated endpoint %s %s", input.method(), resolvedPath)
             .isEqualTo(401);
+    }
+
+    @Test
+    void attendeeCanMoveInvitedEventToAnotherOwnCalendar() {
+        // Given Alice creates a meeting and invites Bob
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Project meeting
+            ORGANIZER:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{aliceEmail}", alice.email())
+            .replace("{bobEmail}", bob.email());
+        calDavClient.upsertCalendarEvent(alice, eventUid, organizerEventIcs);
+
+        // And Bob has the invited event in his default calendar
+        CalendarURL bobDefaultCalendar = CalendarURL.from(bob.id());
+        URI bobDefaultEventUri = awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(bob, bobDefaultCalendar, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected calendar object URI to be present for UID " + eventUid));
+        String bobDefaultEventIcs = calDavClient.getCalendarEvent(bob, bobDefaultEventUri);
+
+        // And Bob has another personal calendar named Other Personal
+        String bobOtherPersonalCalendarId = "other-personal-" + UUID.randomUUID();
+        calDavClient.createNewCalendar(bob, bobOtherPersonalCalendarId, "Other Personal", 2);
+        CalendarURL bobOtherPersonalCalendar = new CalendarURL(bob.id(), bobOtherPersonalCalendarId);
+        String bobEventFileName = bobDefaultEventUri.getPath().substring(bobDefaultEventUri.getPath().lastIndexOf('/') + 1);
+        URI bobOtherPersonalEventUri = URI.create(bobOtherPersonalCalendar.asUri() + "/" + bobEventFileName);
+
+        // When Bob moves the event from his default calendar to Other Personal
+        int moveStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", bobOtherPersonalEventUri.toASCIIString()))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri(bobDefaultEventUri.toASCIIString()));
+
+        // Then the move succeeds
+        assertThat(moveStatus)
+            .as("Bob should be able to move the invited event from default calendar to Other Personal")
+            .isIn(201, 204);
+
+        // And the event no longer exists in Bob's default calendar
+        int sourceStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(bobDefaultEventUri.toASCIIString()));
+        assertThat(sourceStatus)
+            .as("Moved event should no longer exist in Bob default calendar")
+            .isEqualTo(404);
+
+        // And the event exists in Bob's Other Personal calendar
+        assertThatCalendar(calDavClient.getCalendarEvent(bob, bobOtherPersonalEventUri))
+            .as("Moved event should exist in Bob Other Personal calendar")
+            .isEqualTo(bobDefaultEventIcs);
     }
 
     protected record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {

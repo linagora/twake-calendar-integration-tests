@@ -20,6 +20,7 @@ package com.linagora.dav;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -111,6 +112,23 @@ public class XMLUtil {
             }
         }
         return eventIds.build();
+    }
+
+    public static List<URI> extractEventUrisFromXml(byte[] xml) throws ParserConfigurationException, IOException, SAXException, XPathExpressionException {
+        Document doc = DOCUMENT_BUILDER_FACTORY.newDocumentBuilder()
+            .parse(new java.io.ByteArrayInputStream(xml));
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        xpath.setNamespaceContext(new DavNamespaceContext());
+        String expression = "/d:multistatus/d:response/d:href";
+        NodeList nodes = (NodeList) xpath.evaluate(expression, doc, XPathConstants.NODESET);
+        ImmutableList.Builder<URI> eventUris = new ImmutableList.Builder<>();
+        for (int i = 0; i < nodes.getLength(); i++) {
+            String href = nodes.item(i).getTextContent();
+            if (href.endsWith(".ics")) {
+                eventUris.add(URI.create(href));
+            }
+        }
+        return eventUris.build();
     }
 
     public static String extractByXPath(String xml, String xpathExpr, Map<String, String> namespaces) throws Exception {

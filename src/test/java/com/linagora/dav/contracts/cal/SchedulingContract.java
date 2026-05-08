@@ -19,11 +19,13 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -42,11 +44,13 @@ import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.CalendarUtil.CalendarExtractor;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
@@ -3795,10 +3799,199 @@ public abstract class SchedulingContract {
                 .isEqualTo(expectedAliceIcs));
     }
 
+    @Test
+    void movedAttendeeEventCanUpdatePartStatAndPropagateToOrganizer() {
+        // Given Alice creates a meeting and invites Bob
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Project meeting
+            ORGANIZER:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{aliceEmail}", alice.email())
+            .replace("{bobEmail}", bob.email());
+        calDavClient.upsertCalendarEvent(alice, eventUid, organizerEventIcs);
+
+        CalendarURL bobDefaultCalendar = CalendarURL.from(bob.id());
+        URI bobDefaultEventUri = awaitCalendarObjectUriByEventUid(bob, bobDefaultCalendar, eventUid);
+
+        // And Bob moves the invited event to Other Personal
+        String bobOtherPersonalCalendarId = "other-personal-" + UUID.randomUUID();
+        calDavClient.createNewCalendar(bob, bobOtherPersonalCalendarId, "Other Personal", 2);
+        CalendarURL bobOtherPersonalCalendar = new CalendarURL(bob.id(), bobOtherPersonalCalendarId);
+
+        URI bobOtherPersonalEventUri = URI.create(bobOtherPersonalCalendar.asUri() + "/" + UUID.randomUUID() + ".ics");
+        assertThat(moveEvent(bob, bobDefaultEventUri, bobOtherPersonalEventUri))
+            .as("Bob should be able to move the invited event from default calendar to Other Personal")
+            .isIn(201, 204);
+
+        // When Bob accepts the moved event
+        String bobMovedEventIcs = calDavClient.getCalendarEvent(bob, bobOtherPersonalEventUri);
+        String bobAcceptedEventIcs = CalendarUtil.withAttendeePartStat(bobMovedEventIcs, bob.email(), PartStat.ACCEPTED);
+        calDavClient.upsertCalendarEvent(bob, bobOtherPersonalEventUri, bobAcceptedEventIcs);
+
+        // Then Alice organizer calendar reflects Bob acceptance
+        URI aliceOrganizerEventUri = URI.create(CalendarURL.from(alice.id()).asUri() + "/" + eventUid + ".ics");
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+            calDavClient.getCalendarEvent(alice, aliceOrganizerEventUri), bob.email()))
+            .as("Bob PARTSTAT update from the moved event should propagate to Alice organizer event")
+            .isEqualTo(PartStat.ACCEPTED));
+    }
+
+    @Test
+    void organizerUpdateShouldPropagateToMovedAttendeeCalendarWithoutDuplicateInDefaultCalendar() {
+        // Given Bob creates a meeting and invites Alice
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Project meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, organizerEventIcs);
+
+        // And Alice moves the invited event to Other Personal
+        CalendarURL aliceDefaultCalendarURL = CalendarURL.from(alice.id());
+        URI aliceDefaultEventUri = awaitCalendarObjectUriByEventUid(alice, aliceDefaultCalendarURL, eventUid);
+
+        String aliceOtherPersonalCalendarId = "other-personal-" + UUID.randomUUID();
+        calDavClient.createNewCalendar(alice, aliceOtherPersonalCalendarId, "Other Personal", 2);
+        CalendarURL aliceOtherPersonalCalendarURL = new CalendarURL(alice.id(), aliceOtherPersonalCalendarId);
+        URI aliceOtherPersonalEventUri = URI.create(aliceOtherPersonalCalendarURL.asUri() + "/" + UUID.randomUUID() + ".ics");
+        assertThat(moveEvent(alice, aliceDefaultEventUri, aliceOtherPersonalEventUri))
+            .as("Alice should be able to move the invited event from default calendar to Other Personal")
+            .isIn(201, 204);
+
+        // When Bob updates the organizer event
+        URI bobOrganizerEventUri = URI.create(CalendarURL.from(bob.id()).asUri() + "/" + eventUid + ".ics");
+        String bobUpdatedEventIcs = calDavClient.getCalendarEvent(bob, bobOrganizerEventUri)
+            .replace("SUMMARY:Project meeting", "SUMMARY:Project meeting updated");
+        calDavClient.upsertCalendarEvent(bob, bobOrganizerEventUri, bobUpdatedEventIcs);
+
+        // Then Alice's moved event is updated and no duplicate is created in her default calendar
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(readEventSummary(calDavClient.getCalendarEvent(alice, aliceOtherPersonalEventUri)))
+                .as("Organizer update should be applied to Alice moved event")
+                .isEqualTo("Project meeting updated");
+            assertThat(calendarObjectUrisByEventUid(alice, aliceOtherPersonalCalendarURL, eventUid))
+                .as("Alice Other Personal calendar should contain exactly one event with the original UID")
+                .hasSize(1);
+            assertThat(calendarObjectUrisByEventUid(alice, aliceDefaultCalendarURL, eventUid))
+                .as("Organizer update should not recreate the moved event in Alice default calendar")
+                .hasSize(0);
+        });
+    }
+
+    @Test
+    void otherAttendeePartStatUpdateShouldPropagateToMovedAttendeeCalendarWithoutDuplicateInDefaultCalendar() {
+        // Given Bob creates a meeting and invites Alice and Cedric
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Project meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, organizerEventIcs);
+
+        // And Alice moves the invited event to Other Personal
+        CalendarURL aliceDefaultCalendarURL = CalendarURL.from(alice.id());
+        URI aliceDefaultEventUri = awaitCalendarObjectUriByEventUid(alice, aliceDefaultCalendarURL, eventUid);
+
+        String aliceOtherPersonalCalendarId = "other-personal-" + UUID.randomUUID();
+        calDavClient.createNewCalendar(alice, aliceOtherPersonalCalendarId, "Other Personal", 2);
+
+        CalendarURL aliceOtherPersonalCalendarURL = new CalendarURL(alice.id(), aliceOtherPersonalCalendarId);
+        URI aliceOtherPersonalEventUri = URI.create(aliceOtherPersonalCalendarURL.asUri() + "/" + UUID.randomUUID() + ".ics");
+        assertThat(moveEvent(alice, aliceDefaultEventUri, aliceOtherPersonalEventUri))
+            .as("Alice should be able to move the invited event from default calendar to Other Personal")
+            .isIn(201, 204);
+
+        // When Cedric accepts the event
+        URI cedricEventUri = awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), eventUid);
+        String cedricEventIcs = calDavClient.getCalendarEvent(cedric, cedricEventUri);
+        String cedricAcceptedEventIcs = CalendarUtil.withAttendeePartStat(cedricEventIcs, cedric.email(), PartStat.ACCEPTED);
+        calDavClient.upsertCalendarEvent(cedric, cedricEventUri, cedricAcceptedEventIcs);
+
+        // Then Alice's moved event reflects Cedric acceptance and no duplicate is created in her default calendar
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(alice, aliceOtherPersonalEventUri), cedric.email()))
+                .as("Cedric PARTSTAT update should propagate to Alice moved event")
+                .isEqualTo(PartStat.ACCEPTED);
+            assertThat(calendarObjectUrisByEventUid(alice, aliceOtherPersonalCalendarURL, eventUid))
+                .as("Alice Other Personal calendar should contain exactly one event with the original UID")
+                .hasSize(1);
+            assertThat(calendarObjectUrisByEventUid(alice, aliceDefaultCalendarURL, eventUid))
+                .as("Other attendee PARTSTAT update should not recreate the moved event in Alice default calendar")
+                .hasSize(0);
+        });
+    }
+
     private String awaitFirstEventId(OpenPaasUser user) {
         return awaitAtMost.until(() -> calDavClient.findFirstEventId(user),
             Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Expected event id to be present"));
+    }
+
+    private URI awaitCalendarObjectUriByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
+        return awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(user, calendarURL, eventUid),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected calendar object URI to be present for UID " + eventUid));
+    }
+
+    private List<URI> calendarObjectUrisByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
+        return calDavClient.findUserCalendarObjectUrisByEventUid(user, calendarURL, eventUid)
+            .collectList()
+            .block();
+    }
+
+    private int moveEvent(OpenPaasUser user, URI sourceEventUri, URI destinationEventUri) {
+        return executeNoContent(extension().davHttpClient()
+            .headers(headers -> user.impersonatedBasicAuth(headers)
+                .add("Destination", destinationEventUri.toASCIIString()))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri(sourceEventUri.toASCIIString()));
     }
 
     private Set<String> organizerEmails(String icsContent) {
