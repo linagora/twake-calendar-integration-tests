@@ -39,6 +39,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Streams;
+import com.google.common.xml.XmlEscapers;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.buffer.Unpooled;
@@ -283,6 +284,53 @@ public class CalDavClient {
                     return XMLUtil.extractEventIdsFromXml(bytes);
                 } catch (Exception e) {
                     throw new RuntimeException("Failed to parse XML response of finding user calendar event ids in calendar " + calendarURL.asUri(), e);
+                }
+            });
+    }
+
+    public Optional<URI> findFirstUserCalendarObjectUriByEventUid(OpenPaasUser openPaaSUser, CalendarURL calendarURL, String eventUid) {
+        return Optional.ofNullable(findUserCalendarObjectUrisByEventUid(openPaaSUser, calendarURL, eventUid)
+            .blockFirst());
+    }
+
+    public Flux<URI> findUserCalendarObjectUrisByEventUid(OpenPaasUser openPaaSUser, CalendarURL calendarURL, String eventUid) {
+        return httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(calendarURL.asUri().toString())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", XmlEscapers.xmlContentEscaper().escape(eventUid))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 207) {
+                    return responseContent.asByteArray();
+                } else {
+                    return responseContent.asString(StandardCharsets.UTF_8)
+                        .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                        .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                            Unexpected status code: %d when finding user calendar event URIs by UID '%s' in calendar '%s'
+                            %s
+                            """.formatted(response.status().code(), eventUid, calendarURL.asUri(), errorBody))));
+                }
+            }).flatMapIterable(bytes -> {
+                try {
+                    return XMLUtil.extractEventUrisFromXml(bytes);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to parse XML response of finding user calendar event URIs by UID " + eventUid + " in calendar " + calendarURL.asUri(), e);
                 }
             });
     }
