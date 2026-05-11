@@ -1424,7 +1424,7 @@ public abstract class CardJsonContract {
     }
 
     @Test
-    void move() {
+    public void move() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         executeNoContent(dockerExtension().davHttpClient()

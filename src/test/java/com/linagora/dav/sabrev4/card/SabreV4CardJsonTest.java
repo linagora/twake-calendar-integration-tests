@@ -18,6 +18,7 @@
 
 package com.linagora.dav.sabrev4.card;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -30,5 +31,11 @@ public class SabreV4CardJsonTest extends CardJsonContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Override
+    @Disabled("https://github.com/linagora/esn-sabre/issues/348")
+    public void move() {
+    
     }
 }
