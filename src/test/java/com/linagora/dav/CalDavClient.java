@@ -810,6 +810,27 @@ public class CalDavClient {
             });
     }
 
+    public String getUserCalendarsJson(OpenPaasUser user) {
+        String uri = "/calendars/" + user.id() + ".json?sharedDelegationStatus=accepted&sharedPublicSubscription=true&personal=true&withRights=true";
+
+        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
+            .get()
+            .uri(uri)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == HttpStatus.SC_OK) {
+                    return responseContent.asString(StandardCharsets.UTF_8);
+                } else {
+                    return responseContent.asString(StandardCharsets.UTF_8)
+                        .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                        .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                            Unexpected status code: %d when getting calendars JSON for user '%s'
+                            %s
+                            """.formatted(response.status().code(), user.id(), errorBody))));
+                }
+            }).block();
+    }
+
     public void createNewCalendar(OpenPaasUser user, String id, String name, int order) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
 

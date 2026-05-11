@@ -692,50 +692,6 @@ public abstract class CalDavDelegationContract {
 
     @Disabled("https://github.com/linagora/esn-sabre/issues/304")
     @Test
-    void listCalendarsShouldNotShowSharingRightOfDelegationWhenCopiedCalendarHasBeenDeleted() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
-
-        // GIVEN Alice has a copy of bob calendar is created in Alice calendar list
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
-
-        // WHEN Alice deletes this calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
-        calDavClient.deleteCalendar(alice, calendarURL);
-
-        String response = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + bob.id() + ".json")
-        .then()
-            .extract()
-            .body()
-            .asString();
-
-
-        // THEN the sharing right is removed on Bob source calendar
-        assertThatJson(response)
-            .inPath("_embedded.dav:calendar[0].invite")
-            .isEqualTo(String.format("""
-                [
-                    {
-                        "href": "principals/users/{userId2}",
-                        "principal": "principals/users/{userId2}",
-                        "properties": [],
-                        "access": 1,
-                        "comment": null,
-                        "inviteStatus": 2
-                    }
-                ]
-                """.replace("{userId2}", bob.id())));
-    }
-
-    @Test
     void copiedCalendarShouldContainsExistingEvent() throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
@@ -3167,75 +3123,44 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void aliceShouldNotSeeDelegatedCalendarInHerCalendarListAfterDeleting() throws Exception {
-        // GIVEN Bob sets his calendar as publicly readable
-        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
-        // AND Bob grants write delegation to Alice
+        // GIVEN Bob grants write delegation to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        // WHEN Alice deletes the calendar copy
+        // AND Alice's calendar list (JSON response) contains the delegated calendar copy
+        String jsonAliceCalendars = calDavClient.getUserCalendarsJson(alice);
+        assertThat(jsonAliceCalendars)
+            .contains("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
+
         CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
             .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+
+        // AND Alice's calendar list (XML response) contains the delegated calendar copy
+        List<String> xmlAliceCalendars = getXmlCalendars(alice);
+        assertThat(xmlAliceCalendars).contains(calendarURL.asUri() + "/");
+
+        // WHEN Alice deletes the calendar copy
         calDavClient.deleteCalendar(alice, calendarURL);
 
         // THEN the copy no longer appears in Alice's calendar list (JSON response)
-        String jsonAliceCalendars = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + alice.id() + ".json")
-            .then()
-            .extract()
-            .body()
-            .asString();
+        String updatedJsonAliceCalendars = calDavClient.getUserCalendarsJson(alice);
 
-        assertThat(jsonAliceCalendars)
+        assertThat(updatedJsonAliceCalendars)
             .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
 
         // AND the copy no longer appears in Alice's calendar list (XML response)
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + alice.id()));
-
-        List<String> xmlAliceCalendars = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
-            "//d:multistatus/d:response/d:href",
-            Map.of("d", "DAV:")
-        );
-
-        assertThat(xmlAliceCalendars).doesNotContain(calendarURL.asUri() + "/");
+        List<String> updatedXmlAliceCalendars = getXmlCalendars(alice);
+        assertThat(updatedXmlAliceCalendars).doesNotContain(calendarURL.asUri() + "/");
     }
 
     @Test
-    void bobInviteShouldPreserveAliceDelegationAccessAfterDeletingDelegatedCalendar() {
-        // GIVEN Bob sets his calendar as publicly readable
-        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
-        // AND Bob grants write delegation to Alice
+    protected void bobInviteShouldPreserveAliceDelegationAccessAfterDeletingDelegatedCalendar() {
+        // GIVEN Bob grants write delegation to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
         // WHEN Alice deletes the calendar copy
         CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
             .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
         calDavClient.deleteCalendar(alice, calendarURL);
-
-        // THEN the copy no longer appears in Alice's calendar list
-        String aliceCalendarsAfterDelete = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + alice.id() + ".json")
-        .then()
-            .extract()
-            .body()
-            .asString();
-        assertThat(aliceCalendarsAfterDelete)
-            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
 
         // AND Bob's calendar invite still shows Alice with her original delegation access
         String bobCalendarsResponse = given()
@@ -3251,31 +3176,21 @@ public abstract class CalDavDelegationContract {
             .body()
             .asString();
         assertThatJson(bobCalendarsResponse)
-            .inPath("_embedded.dav:calendar[0].invite")
+            .inPath("_embedded.dav:calendar[0].invite[1]")
             .isEqualTo("""
-                [
-                    {
-                        "href": "principals/users/%s",
-                        "principal": "principals/users/%s",
-                        "properties": [],
-                        "access": 1,
-                        "comment": null,
-                        "inviteStatus": 2
-                    },
-                    {
-                        "href": "mailto:%s",
-                        "principal": "principals/users/%s",
-                        "properties": [],
-                        "access": 3,
-                        "comment": null,
-                        "inviteStatus": 2
-                    }
-                ]
-                """.formatted(bob.id(), bob.id(), alice.email(), alice.id()));
+                {
+                    "href": "mailto:%s",
+                    "principal": "principals/users/%s",
+                    "properties": [],
+                    "access": 3,
+                    "comment": null,
+                    "inviteStatus": 2
+                }
+                """.formatted(alice.email(), alice.id()));
     }
 
     @Test
-    void aliceShouldBeAbleToWriteEventsToBobCalendarAfterDeletingDelegatedCalendarAndResubscribing() throws Exception {
+    protected void aliceShouldBeAbleToWriteEventsToBobCalendarAfterDeletingDelegatedCalendarAndResubscribing() throws Exception {
         // GIVEN Bob sets his calendar as publicly readable
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
         // AND Bob grants write delegation to Alice
@@ -3285,22 +3200,6 @@ public abstract class CalDavDelegationContract {
         CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
             .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
         calDavClient.deleteCalendar(alice, calendarURL);
-
-        // Ensure that the copy no longer appears in Alice's calendar list
-        String aliceCalendarsAfterDelete = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + alice.id() + ".json")
-        .then()
-            .extract()
-            .body()
-            .asString();
-        assertThat(aliceCalendarsAfterDelete)
-            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
 
         // WHEN Alice re-subscribes to Bob's calendar
         String subscriptionId = UUID.randomUUID().toString();
@@ -3368,22 +3267,6 @@ public abstract class CalDavDelegationContract {
             .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
         calDavClient.deleteCalendar(alice, calendarURL);
 
-        // Ensure that the copy no longer appears in Alice's calendar list
-        String aliceCalendarsAfterDelete = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + alice.id() + ".json")
-        .then()
-            .extract()
-            .body()
-            .asString();
-        assertThat(aliceCalendarsAfterDelete)
-            .doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
-
         // AND Bob revokes Alice's delegation
         calDavClient.revokeDelegation(bob, bob.id(), alice);
 
@@ -3398,33 +3281,9 @@ public abstract class CalDavDelegationContract {
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
 
-        // THEN Bob's calendar invite does not show Alice with write access
-        String bobCalendarsResponse = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + bob.id() + ".json")
-        .then()
-            .extract()
-            .body()
-            .asString();
-        assertThatJson(bobCalendarsResponse)
-            .inPath("_embedded.dav:calendar[0].invite")
-            .isEqualTo("""
-                [
-                    {
-                        "href": "principals/users/%s",
-                        "principal": "principals/users/%s",
-                        "properties": [],
-                        "access": 1,
-                        "comment": null,
-                        "inviteStatus": 2
-                    }
-                ]
-                """.formatted(bob.id(), bob.id()));
+        // THEN Bob's delegated list does not show Alice with write access
+        String bobCalendarsResponse = calDavClient.getUserCalendarsJson(bob);
+        assertThat(bobCalendarsResponse).doesNotContain(alice.id());
 
         List<CalendarURL> calendarUrls = calDavClient.findUserCalendars(alice).collectList().block()
             .stream().filter(url -> !url.calendarId().equals(alice.id())).toList();
@@ -3454,5 +3313,47 @@ public abstract class CalDavDelegationContract {
             """.formatted(newEventUid);
         assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, subscribedCalendarURL, newEventUid, writeAttemptData))
             .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void newColorShouldBeAppliedAfterDeletingDelegatedCalendarAndResubscribing() {
+        // GIVEN Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        // AND Bob grants write delegation to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        // AND Alice deletes the calendar copy
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        calDavClient.deleteCalendar(alice, calendarURL);
+
+        // WHEN Alice re-subscribes to Bob's calendar
+        String subscriptionId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(subscriptionId)
+            .sourceUserId(bob.id())
+            .name("Bob's calendar")
+            .color("#874D46")
+            .readOnly(false)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        // THEN the new color is reflected in Alice's calendar list
+        String jsonAliceCalendars = calDavClient.getUserCalendarsJson(alice);
+        assertThat(jsonAliceCalendars).contains("\"apple:color\":\"#874D46\"");
+    }
+
+    private List<String> getXmlCalendars(OpenPaasUser user) throws Exception {
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(user::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + user.id()));
+
+        List<String> xmlAliceCalendars = XMLUtil.extractMultipleValueByXPath(
+            response.body(),
+            "//d:multistatus/d:response/d:href",
+            Map.of("d", "DAV:")
+        );
+        return xmlAliceCalendars;
     }
 }

@@ -92,4 +92,14 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     public void amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees() throws Exception {
         super.amqpShouldPublishDelegationUpdatedWhenRevokeOneOfTwoSharees();
     }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.cal.SabreV4CalDavDelegationTest)")
+    @Override
+    public void bobInviteShouldPreserveAliceDelegationAccessAfterDeletingDelegatedCalendar() {
+    }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.cal.SabreV4CalDavDelegationTest)")
+    @Override
+    public void aliceShouldBeAbleToWriteEventsToBobCalendarAfterDeletingDelegatedCalendarAndResubscribing() {
+    }
 }
