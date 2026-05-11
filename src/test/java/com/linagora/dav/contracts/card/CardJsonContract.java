@@ -1439,7 +1439,7 @@ public abstract class CardJsonContract {
                 "UID:123456789\n" +
                 "END:VCARD\n")));
 
-        executeNoContent(dockerExtension().davHttpClient()
+        int responseStatus = executeNoContent(dockerExtension().davHttpClient()
             .headers(headers -> testUser.impersonatedBasicAuth(headers)
                 .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
             .request(HttpMethod.valueOf("MOVE"))
@@ -1451,6 +1451,9 @@ public abstract class CardJsonContract {
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
                 "END:VCARD\n")));
+        assertThat(responseStatus)
+            .as("Card MOVE should return a successful WebDAV status")
+            .isIn(201, 204);
 
         String response1 = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
