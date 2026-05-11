@@ -1,4 +1,4 @@
-ARG SABRE_4_7_IMAGE="linagora/esn-sabre:2.1.0"
+ARG SABRE_4_7_IMAGE="linagora/esn-sabre:2.1.0.1-rc1"
 
 FROM ${SABRE_4_7_IMAGE}
 
