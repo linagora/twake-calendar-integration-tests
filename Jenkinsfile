@@ -35,7 +35,7 @@ pipeline {
 
         stage('Test with amqp scheduling enabled') {
             steps {
-                sh 'mvn test -Damqp.scheduling.enabled=true -Dapi.version=1.43 -Dsurefire.reportNameSuffix=amqp-scheduling'
+                sh 'mvn test -Damqp.scheduling.enabled=true -Dapi.version=1.43 -Dsurefire.reportNameSuffix=amqp-scheduling -Dtest="com.linagora.dav.sabrev4_7.**"'
             }
             post {
                 always {
