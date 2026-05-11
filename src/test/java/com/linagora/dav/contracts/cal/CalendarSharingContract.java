@@ -2757,4 +2757,153 @@ public abstract class CalendarSharingContract {
                 assertThat(json).contains(eventUid);
             });
     }
+
+    @Test
+    public void subscriberUpdateFromReadOnlyCalendarShouldNotModifySourceEvent() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String originalCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251015T090000Z
+            DTEND:20251015T100000Z
+            SUMMARY:Bob's protected event
+            DESCRIPTION:Original content that Alice must not be able to change
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, originalCalendarData);
+
+        // AND: Alice subscribes to Bob's read-only calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Alice sees the event in her subscribed copy
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice attempts to modify the event via her subscribed copy
+        // (whether the request is correctly rejected with 403 or incorrectly accepted, Bob's source must be unchanged)
+        String tamperedCalendarData = originalCalendarData
+            .replace("SUMMARY:Bob's protected event", "SUMMARY:Alice tampered this event")
+            .replace("DESCRIPTION:Original content that Alice must not be able to change",
+                "DESCRIPTION:Tampered by Alice");
+        try {
+            calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), tamperedCalendarData);
+        } catch (RuntimeException ignored) {
+            // 403 Forbidden is the correct behavior; the key invariant is checked below
+        }
+
+        // THEN: Bob's source event must still have the original content
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .as("Bob's source event must not be modified when a read-only subscriber attempts an update (issue-347)")
+            .anySatisfy(eventNode -> {
+                String json = eventNode.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).doesNotContain("Alice tampered this event");
+                assertThat(json).doesNotContain("Tampered by Alice");
+            });
+    }
+
+    @Test
+    public void subscriberDeleteFromReadOnlyCalendarShouldNotDeleteSourceEvent() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has an event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251015T090000Z
+            DTEND:20251015T100000Z
+            SUMMARY:Bob's protected event
+            DESCRIPTION:Alice must not be able to delete this event via her subscription
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND: Alice subscribes to Bob's read-only calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // AND: Alice sees the event in her subscribed copy
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
+                alice,
+                aliceCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(aliceEvents).hasSize(1);
+        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+
+        // WHEN: Alice attempts to delete the event from her subscribed copy
+        // (whether the request is correctly rejected with 403 or incorrectly accepted, Bob's source event must survive)
+        try {
+            calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
+        } catch (RuntimeException ignored) {
+            // 403 Forbidden is the correct behavior; the key invariant is checked below
+        }
+
+        // THEN: Bob's source event must still exist — deletion must not propagate to the source calendar
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
+                bob,
+                bobCalendarURI,
+                Instant.parse("2025-09-01T00:00:00Z"),
+                Instant.parse("2025-11-01T00:00:00Z"))
+            .collectList().block();
+
+        assertThat(bobEvents)
+            .as("Bob's source event must not be deleted when a read-only subscriber attempts deletion (issue-347)")
+            .anySatisfy(eventNode -> assertThat(eventNode.toString()).contains(eventUid));
+    }
 }
