@@ -2069,6 +2069,126 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void attendeeDeletionShouldNotDeleteOrganizerEvent() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Meeting with Alice and Cedric
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        // And Alice receives the invite
+        URI aliceEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), organizerEventUid);
+
+        // When Alice deletes the event from her calendar (declines)
+        calDavClient.deleteCalendarEvent(alice, aliceEventUri);
+
+        // Then Bob's event must still exist and Alice must appear as DECLINED (not the event being deleted)
+        URI bobEventUri = URI.create(CalendarURL.from(bob.id()).asUri() + "/" + organizerEventUid + ".ics");
+        awaitAtMost.untilAsserted(() ->
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobEventUri), alice.email()))
+                .as("Alice should appear as DECLINED in Bob's calendar — event must not be deleted (issue-347)")
+                .isEqualTo(PartStat.DECLINED));
+    }
+
+    @Test
+    void attendeeDeletionShouldNotDeleteOtherAttendeeEvent() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Meeting with Alice and Cedric
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        // And both Alice and Cedric receive the invite
+        URI aliceEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), organizerEventUid);
+        URI cedricEventUri = awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), organizerEventUid);
+
+        // When Alice deletes the event from her calendar (declines)
+        calDavClient.deleteCalendarEvent(alice, aliceEventUri);
+
+        // Then Cedric's event must still exist and reflect Alice as DECLINED
+        awaitAtMost.untilAsserted(() ->
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(cedric, cedricEventUri), alice.email()))
+                .as("Alice should appear as DECLINED in Cedric's calendar — Cedric's event must not be deleted (issue-347)")
+                .isEqualTo(PartStat.DECLINED));
+    }
+
+    @Test
+    void attendeeDeletionShouldRemoveEventFromAttendeeCalendar() {
+        // Given Bob creates an event with Alice as attendee
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Meeting with Alice
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        // And Alice receives the invite
+        URI aliceEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), organizerEventUid);
+
+        // When Alice deletes the event from her calendar
+        calDavClient.deleteCalendarEvent(alice, aliceEventUri);
+
+        // Then the event must no longer appear in Alice's calendar
+        awaitAtMost.untilAsserted(() ->
+            assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), organizerEventUid))
+                .as("Alice's calendar must not contain the event after she deleted it")
+                .hasSize(0));
+    }
+
+    @Test
     void removingAttendeeFromEventShouldMarkAttendeeEventCancelled() {
         // Given Bob creates an event with Cedric as attendee
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -3966,6 +4086,224 @@ public abstract class SchedulingContract {
                 .as("Other attendee PARTSTAT update should not recreate the moved event in Alice default calendar")
                 .hasSize(0);
         });
+    }
+
+    @Test
+    void attendeeDeclinedEventShouldNotReappearOnOrganizerUpdate() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351008T090000Z
+            DTEND:20351008T100000Z
+            SUMMARY:Team meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, organizerEventIcs);
+
+        // And Alice receives the invite and deletes it (declines)
+        URI aliceEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), eventUid);
+        calDavClient.deleteCalendarEvent(alice, aliceEventUri);
+
+        // Alice's event is gone from her own calendar
+        awaitAtMost.untilAsserted(() ->
+            assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
+                .as("Alice's event should be absent from her calendar right after deletion")
+                .hasSize(0));
+
+        // And Alice appears as DECLINED in Bob's calendar
+        URI bobEventUri = URI.create(CalendarURL.from(bob.id()).asUri() + "/" + eventUid + ".ics");
+        awaitAtMost.untilAsserted(() ->
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobEventUri), alice.email()))
+                .as("Alice should appear as DECLINED in Bob's calendar after deleting")
+                .isEqualTo(PartStat.DECLINED));
+
+        // When Bob updates the event (time and description)
+        String updatedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351009T090000Z
+            DTEND:20351009T100000Z
+            SUMMARY:Team meeting rescheduled
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=DECLINED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, bobEventUri, updatedEventIcs);
+
+        // Then Cedric sees the updated event (confirms propagation ran)
+        URI cedricEventUri = awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), eventUid);
+        awaitAtMost.untilAsserted(() ->
+            assertThat(readEventSummary(calDavClient.getCalendarEvent(cedric, cedricEventUri)))
+                .as("Cedric should receive the organizer update")
+                .isEqualTo("Team meeting rescheduled"));
+
+        // And the declined event must not reappear in Alice's calendar
+        assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
+            .as("Alice's declined event must not reappear after organizer update (issue-347)")
+            .hasSize(0);
+    }
+
+    @Test
+    void attendeeDeclinedEventShouldNotReappearWhenNewAttendeeAdded() {
+        // Given Bob creates an event with Alice as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351010T090000Z
+            DTEND:20351010T100000Z
+            SUMMARY:Planning meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, organizerEventIcs);
+
+        // And Alice receives the invite and deletes it (declines)
+        URI aliceEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), eventUid);
+        calDavClient.deleteCalendarEvent(alice, aliceEventUri);
+
+        // Alice's event is gone from her own calendar
+        awaitAtMost.untilAsserted(() ->
+            assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
+                .as("Alice's event should be absent from her calendar right after deletion")
+                .hasSize(0));
+
+        // And Alice appears as DECLINED in Bob's calendar
+        URI bobEventUri = URI.create(CalendarURL.from(bob.id()).asUri() + "/" + eventUid + ".ics");
+        awaitAtMost.untilAsserted(() ->
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobEventUri), alice.email()))
+                .as("Alice should appear as DECLINED in Bob's calendar after deleting")
+                .isEqualTo(PartStat.DECLINED));
+
+        // When Bob adds Cedric as a new attendee
+        String addedAttendeeEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351010T090000Z
+            DTEND:20351010T100000Z
+            SUMMARY:Planning meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=DECLINED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, bobEventUri, addedAttendeeEventIcs);
+
+        // Then Cedric receives the new invite (confirms propagation ran)
+        awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), eventUid);
+
+        // And the declined event must not reappear in Alice's calendar
+        assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
+            .as("Alice's declined event must not reappear when a new attendee is added (issue-347)")
+            .hasSize(0);
+    }
+
+    @Test
+    void attendeeDeclinedEventShouldNotReappearOnOtherAttendeePartStatUpdate() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351011T090000Z
+            DTEND:20351011T100000Z
+            SUMMARY:Sprint review
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, organizerEventIcs);
+
+        // And Alice receives the invite and deletes it (declines)
+        URI aliceEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), eventUid);
+        calDavClient.deleteCalendarEvent(alice, aliceEventUri);
+
+        // Alice's event is gone from her own calendar
+        awaitAtMost.untilAsserted(() ->
+            assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
+                .as("Alice's event should be absent from her calendar right after deletion")
+                .hasSize(0));
+
+        // And Alice appears as DECLINED in Bob's calendar
+        URI bobEventUri = URI.create(CalendarURL.from(bob.id()).asUri() + "/" + eventUid + ".ics");
+        awaitAtMost.untilAsserted(() ->
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobEventUri), alice.email()))
+                .as("Alice should appear as DECLINED in Bob's calendar after deleting")
+                .isEqualTo(PartStat.DECLINED));
+
+        // When Cedric accepts the event
+        URI cedricEventUri = awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), eventUid);
+        String cedricEventIcs = calDavClient.getCalendarEvent(cedric, cedricEventUri);
+        String cedricAcceptedEventIcs = CalendarUtil.withAttendeePartStat(cedricEventIcs, cedric.email(), PartStat.ACCEPTED);
+        calDavClient.upsertCalendarEvent(cedric, cedricEventUri, cedricAcceptedEventIcs);
+
+        // Then Cedric's acceptance propagates to Bob (confirms propagation ran)
+        awaitAtMost.untilAsserted(() ->
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bob, bobEventUri), cedric.email()))
+                .as("Cedric's acceptance should be reflected in Bob's calendar")
+                .isEqualTo(PartStat.ACCEPTED));
+
+        // And the declined event must not reappear in Alice's calendar
+        assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
+            .as("Alice's declined event must not reappear when another attendee updates partstat (issue-347)")
+            .hasSize(0);
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
