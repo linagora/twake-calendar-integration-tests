@@ -673,4 +673,68 @@ public abstract class CardDavSharingContract {
                 && !href.equals("/addressbooks/" + alice.id() + "/")))
             .hasSize(1);
     }
+
+    @Test
+    public void subscriberDeleteFromReadOnlyAddressBookShouldNotDeleteSourceContact() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+        String vcardUid = "protected-contact-uid";
+        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN Bob has a read-only public address book with a contact
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, vcardPayload);
+
+        // AND Alice subscribes to Bob's address book
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Alice tries to delete the contact via her subscribed copy
+        try {
+            cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid);
+        } catch (RuntimeException ignored) {
+            // A 403 response is correct behaviour — the key invariant is that Bob's source is unaffected
+        }
+
+        // THEN Bob's source contact must still exist
+        String bobContacts = cardDavClient.getContacts(bob, bob.id(), addressBook);
+        assertThat(bobContacts).contains("John Doe");
+    }
+
+    @Test
+    public void subscriberUpdateFromReadOnlyAddressBookShouldNotModifySourceContact() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+        String vcardUid = "protected-contact-uid";
+        byte[] originalPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+        byte[] tamperedPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:Alice Tampered\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
+
+        // GIVEN Bob has a read-only public address book with a contact
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+        cardDavClient.upsertContact(bob, addressBook, vcardUid, originalPayload);
+
+        // AND Alice subscribes to Bob's address book
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Alice tries to overwrite the contact via her subscribed copy
+        try {
+            cardDavClient.upsertContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid, tamperedPayload);
+        } catch (RuntimeException ignored) {
+            // A 403 response is correct behaviour — the key invariant is that Bob's source is unaffected
+        }
+
+        // THEN Bob's source contact must remain unchanged
+        String bobContacts = cardDavClient.getContacts(bob, bob.id(), addressBook);
+        assertThat(bobContacts).contains("John Doe");
+        assertThat(bobContacts).doesNotContain("Alice Tampered");
+    }
 }
