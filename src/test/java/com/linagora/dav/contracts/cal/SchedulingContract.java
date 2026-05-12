@@ -428,7 +428,6 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
@@ -518,7 +517,6 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
@@ -667,7 +665,6 @@ public abstract class SchedulingContract {
             });
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalTRANSP() {
         // Given Bob creates an event with Alice and TRANSP set to OPAQUE
@@ -737,7 +734,6 @@ public abstract class SchedulingContract {
             .isEqualTo(TRANSP_TRANSPARENT);
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalCLASS() {
         // Given Bob creates an event with Alice and CLASS set to PUBLIC
@@ -806,7 +802,6 @@ public abstract class SchedulingContract {
             .isEqualTo(CLASS_PUBLIC);
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalTRANSP() {
         // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
@@ -877,7 +872,6 @@ public abstract class SchedulingContract {
             .isEqualTo(TRANSP_TRANSPARENT);
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalVALARMOnRecurringMasterAndOverride() {
         // Given Bob creates a recurring event with one override and different organizer alarms
@@ -969,7 +963,6 @@ public abstract class SchedulingContract {
         });
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalTRANSPOnRecurringMasterAndOverride() {
         // Given Bob creates a recurring event with one override and different organizer TRANSP values
@@ -1059,7 +1052,6 @@ public abstract class SchedulingContract {
         });
     }
 
-    @Disabled("Waiting for new image esn-sabre")
     @Test
     void organizerUpdateShouldNotResetAttendeeLocalCLASSOnRecurringMasterAndOverride() {
         // Given Bob creates a recurring event with one override and different organizer CLASS values
