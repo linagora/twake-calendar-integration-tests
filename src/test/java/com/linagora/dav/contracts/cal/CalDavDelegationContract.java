@@ -29,6 +29,7 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -82,6 +83,7 @@ import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.component.VEvent;
+import net.fortuna.ical4j.model.parameter.PartStat;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -1704,6 +1706,150 @@ public abstract class CalDavDelegationContract {
         // THEN a 403 error is thrown
         assertThatThrownBy(() -> calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid))
             .hasMessageContaining("Unexpected status code: 403 when delete calendar object");
+    }
+
+    @Test
+    void deleteFromReadDelegatedCalendarShouldNotDeleteOriginCalendar() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar with an event
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Bob's protected delegated event")
+            .location("Twake Meeting Room")
+            .description("This event must remain in Bob's origin calendar.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND Bob delegates that calendar to Alice with READ only
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        CalendarURL mirrorCalendarURL = calDavClient.findUserCalendars(alice)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next().block();
+        URI mirrorEventUri = URI.create(mirrorCalendarURL.asUri() + "/" + eventUid + ".ics");
+
+        // WHEN Alice deletes the event via the delegated mirror calendar
+        int mirrorDeleteStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .delete()
+            .uri(mirrorEventUri.toASCIIString()));
+
+        // AND Bob's origin calendar object must remain regardless of the mirror DELETE status
+        URI originEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
+        DavResponse originEventResponse = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .get()
+            .uri(originEventUri.toASCIIString()));
+
+        assertSoftly(softly -> {
+            softly.assertThat(mirrorDeleteStatus)
+                .as("Read-only delegated mirror DELETE should be rejected")
+                .isEqualTo(403);
+            softly.assertThat(originEventResponse.status())
+                .as("Origin calendar event must remain when mirror DELETE returned " + mirrorDeleteStatus)
+                .isEqualTo(200);
+            softly.assertThat(originEventResponse.body())
+                .contains(eventUid)
+                .contains("SUMMARY:Bob's protected delegated event");
+        });
+    }
+
+    @Test
+    void partStatUpdateFromReadDelegatedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser david = dockerExtension().newTestUser();
+
+        // GIVEN Bob is the organizer of an event with Alice as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300411T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Bob delegated attendee event
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL;CN=Alice:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        URI organizerEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
+        CalendarURL aliceDefaultCalendarURL = CalendarURL.from(alice.id());
+
+        // AND Alice receives the invited event in her own calendar
+        URI aliceEventUri = awaitAtMost.until(
+                () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(alice, aliceDefaultCalendarURL, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected invited event to be present in Alice calendar"));
+        awaitAtMost.untilAsserted(() -> assertSoftly(softly -> {
+            softly.assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
+                .as("Alice PARTSTAT on Bob organizer calendar before David delegated update")
+                .isEqualTo(PartStat.NEEDS_ACTION);
+            softly.assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(alice, aliceEventUri), alice.email()))
+                .as("Alice PARTSTAT on Alice attendee calendar before David delegated update")
+                .isEqualTo(PartStat.NEEDS_ACTION);
+        }));
+
+        // AND Alice delegates her calendar to David with READ only
+        calDavClient.grantDelegation(alice, alice.id(), david, DelegationRight.READ);
+        CalendarURL delegatedCalendarURL = awaitAtMost.until(
+                () -> calDavClient.findUserCalendars(david)
+                    .filter(url -> !url.base().equals(url.calendarId()))
+                    .next().blockOptional(),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present for David"));
+
+        // AND David finds the event through his delegated calendar URI
+        URI delegatedEventUri = awaitAtMost.until(
+                () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(david, delegatedCalendarURL, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event to be present in David delegated calendar"));
+        assertThat(delegatedEventUri.toASCIIString()).startsWith(delegatedCalendarURL.asUri().toASCIIString() + "/");
+
+        // WHEN David accepts Alice's participation via his delegated read-only calendar
+        String delegatedEventIcs = calDavClient.getCalendarEvent(david, delegatedEventUri);
+        assertThat(CalendarUtil.getAttendeePartStat(delegatedEventIcs, alice.email()))
+            .as("Alice PARTSTAT on David's delegated calendar before update")
+            .isEqualTo(PartStat.NEEDS_ACTION);
+        String acceptedDelegatedEventIcs = CalendarUtil.withAttendeePartStat(delegatedEventIcs, alice.email(), PartStat.ACCEPTED);
+        int delegatedUpdateStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> david.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri(delegatedEventUri.toASCIIString())
+            .send(body(acceptedDelegatedEventIcs)));
+
+        // THEN Bob's organizer calendar keeps Alice participation untouched
+        Awaitility.await()
+            .during(Duration.ofSeconds(2))
+            .untilAsserted(() -> assertSoftly(softly -> {
+                softly.assertThat(delegatedUpdateStatus)
+                    .as("Read-only delegated PARTSTAT update should be rejected")
+                    .isEqualTo(403);
+                softly.assertThat(CalendarUtil.getAttendeePartStat(
+                        calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
+                    .as("Alice PARTSTAT on Bob organizer calendar after David delegated update")
+                    .isEqualTo(PartStat.NEEDS_ACTION);
+            }));
     }
 
     @Test

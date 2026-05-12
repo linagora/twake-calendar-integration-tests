@@ -617,10 +617,10 @@ public class CalDavClient {
         return new CalendarURL(userId, calendarId);
     }
 
-    public void subscribeToSharedCalendar(OpenPaasUser user, SubscribedCalendarRequest subscribedCalendarRequest) {
+    public CalendarURL subscribeToSharedCalendar(OpenPaasUser user, SubscribedCalendarRequest subscribedCalendarRequest) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
 
-        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
@@ -628,7 +628,7 @@ public class CalDavClient {
             .send(Mono.just(Unpooled.wrappedBuffer(subscribedCalendarRequest.serialize().getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201) {
-                    return Mono.empty();
+                    return Mono.just(new CalendarURL(user.id(), subscribedCalendarRequest.id()));
                 }
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))

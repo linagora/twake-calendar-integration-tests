@@ -21,10 +21,12 @@ package com.linagora.dav.contracts.cal;
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.io.IOException;
 import java.net.URI;
@@ -53,6 +55,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
+import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
@@ -69,6 +72,7 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import net.fortuna.ical4j.model.parameter.PartStat;
 
 public abstract class CalendarSharingContract {
 
@@ -2457,6 +2461,99 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    protected void partStatUpdateFromReadPublicSubscribedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
+        OpenPaasUser david = extension().newTestUser();
+
+        // GIVEN: Bob is the organizer of an event with Alice as attendee
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251008T090000Z
+            DTEND:20251008T100000Z
+            SUMMARY:Bob organizer event
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL;CN=Alice:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, bob.email(), bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        URI organizerEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
+
+        // AND: Alice receives the invited event in her own calendar
+        CalendarURL aliceDefaultCalendarURL = CalendarURL.from(alice.id());
+        URI aliceEventUri = awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(alice, aliceDefaultCalendarURL, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected invited event to be present in Alice calendar"));
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
+                .as("Alice PARTSTAT on Bob organizer calendar before David mirror update")
+                .isEqualTo(PartStat.NEEDS_ACTION);
+            assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(alice, aliceEventUri), alice.email()))
+                .as("Alice PARTSTAT on Alice attendee calendar before David mirror update")
+                .isEqualTo(PartStat.NEEDS_ACTION);
+        });
+
+        // AND: Alice exposes her calendar as read-only public calendar
+        calDavClient.updateCalendarAcl(alice, "{DAV:}read");
+
+        // AND: David subscribes to Alice's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(alice.id())
+            .name("Alice readonly mirror")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        CalendarURL mirrorCalendarURL = calDavClient.subscribeToSharedCalendar(david, subscribedCalendarRequest);
+        assertThat(mirrorCalendarURL.asUri().toASCIIString())
+            .isEqualTo("/calendars/" + david.id() + "/" + subscribedCalendarId);
+
+        // AND: David finds the event through his mirror calendar URI, not Alice's attendee calendar URI
+        URI mirrorEventUri = awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(david, mirrorCalendarURL, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event to be present in David subscribed calendar"));
+        assertThat(mirrorEventUri.toASCIIString()).startsWith(mirrorCalendarURL.asUri().toASCIIString() + "/");
+
+        // WHEN: David accepts Alice's participation via his subscribed mirror calendar
+        String mirrorEventIcs = calDavClient.getCalendarEvent(david, mirrorEventUri);
+        assertThat(CalendarUtil.getAttendeePartStat(mirrorEventIcs, alice.email()))
+            .as("Alice PARTSTAT on David's subscribed mirror calendar before update")
+            .isEqualTo(PartStat.NEEDS_ACTION);
+        String acceptedMirrorEventIcs = CalendarUtil.withAttendeePartStat(mirrorEventIcs, alice.email(), PartStat.ACCEPTED);
+        int mirrorUpdateStatus = executeNoContent(extension().davHttpClient()
+            .headers(headers -> david.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri(mirrorEventUri.toASCIIString())
+            .send(body(acceptedMirrorEventIcs)));
+
+        // THEN: Bob's organizer calendar keeps Alice participation untouched
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertSoftly(softly -> {
+                softly.assertThat(mirrorUpdateStatus)
+                    .as("Read-only mirror PARTSTAT update should be rejected")
+                    .isEqualTo(403);
+                softly.assertThat(CalendarUtil.getAttendeePartStat(
+                        calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
+                    .as("Alice PARTSTAT on Bob organizer calendar after David mirror update")
+                    .isEqualTo(PartStat.NEEDS_ACTION);
+            }));
+    }
+
+    @Test
     public void nativeUpsertShouldBeAcceptedOnWritePublicCalender() {
         // GIVEN: Bob sets his calendar as read-write
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
@@ -2622,6 +2719,79 @@ public abstract class CalendarSharingContract {
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("Unexpected status code: 403")
             .hasMessageContaining("User did not have the required privileges");
+    }
+
+    @Disabled("Wait to a new esn-sabre image")
+    @Test
+    public void deleteFromReadPublicSubscribedCalendarShouldNotDeleteOriginCalendar() {
+        // GIVEN: Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has an event in his origin calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251008T090000Z
+            DTEND:20251008T100000Z
+            SUMMARY:Bob's origin event
+            DESCRIPTION:Event to verify origin deletion safety
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // AND: Alice subscribes to Bob's readonly calendar
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob readonly mirror")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        CalendarURL mirrorCalendarURL = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        assertThat(mirrorCalendarURL.asUri().toASCIIString())
+            .isEqualTo("/calendars/" + alice.id() + "/" + subscribedCalendarId);
+
+        // AND: Alice finds the event through her mirror calendar URI, not Bob's origin calendar URI
+        URI mirrorEventUri = awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(alice, mirrorCalendarURL, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event to be present in Alice subscribed calendar"));
+        assertThat(mirrorEventUri.toASCIIString()).startsWith(mirrorCalendarURL.asUri().toASCIIString() + "/");
+
+        // WHEN: Alice deletes the event via the mirror calendar
+        int mirrorDeleteStatus = executeNoContent(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .delete()
+            .uri(mirrorEventUri.toASCIIString()));
+
+        // AND: Bob's origin calendar object must remain
+        URI originEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
+        DavResponse originEventResponse = execute(extension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .get()
+            .uri(originEventUri.toASCIIString()));
+
+        assertSoftly(softly -> {
+            softly.assertThat(mirrorDeleteStatus)
+                .as("Read-only mirror DELETE should be rejected")
+                .isEqualTo(403);
+            softly.assertThat(originEventResponse.status())
+                .as("Origin calendar event must remain when mirror DELETE returned " + mirrorDeleteStatus)
+                .isEqualTo(200);
+            softly.assertThat(originEventResponse.body())
+                .contains(eventUid)
+                .contains("SUMMARY:Bob's origin event");
+        });
     }
 
     @Test
