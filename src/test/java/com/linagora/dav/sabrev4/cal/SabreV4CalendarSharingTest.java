@@ -108,4 +108,11 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     @Test
     public void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
     }
+
+    @Disabled("Fixed in sabre 4.7")
+    @Override
+    @Test
+    public void partStatUpdateFromReadPublicSubscribedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
+
+    }
 }

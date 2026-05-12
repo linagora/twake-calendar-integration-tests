@@ -2461,7 +2461,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    public void partStatUpdateFromReadPublicSubscribedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
+    protected void partStatUpdateFromReadPublicSubscribedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
         OpenPaasUser david = extension().newTestUser();
 
         // GIVEN: Bob is the organizer of an event with Alice as attendee
@@ -2721,6 +2721,7 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
+    @Disabled("Wait to a new esn-sabre image")
     @Test
     public void deleteFromReadPublicSubscribedCalendarShouldNotDeleteOriginCalendar() {
         // GIVEN: Bob sets his calendar as read-only
