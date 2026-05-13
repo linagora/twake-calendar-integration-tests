@@ -16,6 +16,5 @@ else
   docker build --pull -t sabre-v4-7-it -f Dockerfile.sabre4_7 .
 fi
 
-docker pull linagora/twake-calendar-side-service:branch-master
 docker build -t tcalendar-it -f Dockerfile.tcalendar .
 docker build -t ldap-it -f Dockerfile.ldap .
