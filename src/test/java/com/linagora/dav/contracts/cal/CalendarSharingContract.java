@@ -2054,7 +2054,6 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/304")
     @Test
     protected void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
         // GIVEN: a resource with alice as admin

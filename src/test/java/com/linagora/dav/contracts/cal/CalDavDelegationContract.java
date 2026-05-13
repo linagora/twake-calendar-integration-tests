@@ -47,7 +47,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -690,7 +689,6 @@ public abstract class CalDavDelegationContract {
                 .replace("{userEmail}", alice.email()));
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/304")
     @Test
     void copiedCalendarShouldContainsExistingEvent() throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
