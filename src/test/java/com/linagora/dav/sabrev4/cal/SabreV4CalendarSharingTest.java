@@ -85,7 +85,7 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
         super.nativeDeleteShouldBeRejectedOnReadPublicCalender();
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/347")
+    @Disabled("Fixed in Sabre 4.7")
     @Override
     public void deleteFromReadPublicSubscribedCalendarShouldNotDeleteOriginCalendar() {
         super.deleteFromReadPublicSubscribedCalendarShouldNotDeleteOriginCalendar();
