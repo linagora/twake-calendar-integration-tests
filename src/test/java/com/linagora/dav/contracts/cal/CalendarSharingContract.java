@@ -2054,7 +2054,6 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/304")
     @Test
     protected void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
         // GIVEN: a resource with alice as admin
@@ -2112,18 +2111,19 @@ public abstract class CalendarSharingContract {
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/";
-        String modifiedICS = calendarData.replace(summary, "Hacked by Alice!");
+        CalendarURL newCalendarUrl = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
 
         // THEN: the event in the resource calendar should be updated successfully by alice
-        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
+        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, newCalendarUrl.asUri().toString(),
                 Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
             .collectList().block();
 
         String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+        String modifiedICS = calendarData.replace(summary, "Hacked by Alice!");
         calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), modifiedICS);
 
-        List<JsonNode> updatedEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
+        List<JsonNode> updatedEvents = calDavClient.reportCalendarEvents(alice, newCalendarUrl.asUri().toString(),
                 Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
             .collectList().block();
         assertThat(updatedEvents).hasSize(1);
