@@ -2722,7 +2722,6 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
-    @Disabled("Wait to a new esn-sabre image")
     @Test
     public void deleteFromReadPublicSubscribedCalendarShouldNotDeleteOriginCalendar() {
         // GIVEN: Bob sets his calendar as read-only
