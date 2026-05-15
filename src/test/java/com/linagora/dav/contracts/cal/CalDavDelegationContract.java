@@ -2401,6 +2401,31 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
+    void delegatedAdminShouldBeAbleToKeepOwnDelegationWhenDelegatingCalendar() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob delegates his calendar to Alice in admin mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+        CalendarURL delegatedCalendarURL = awaitAtMost.until(
+            () -> calDavClient.findDelegatedCalendar(alice).stream().findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present"));
+
+        // WHEN Alice delegates Bob's calendar to Cedric while keeping her existing admin delegation
+        calDavClient.grantDelegations(alice, delegatedCalendarURL.calendarId(), Map.of(
+            alice, DelegationRight.ADMIN,
+            cedric, DelegationRight.READ));
+
+        // THEN Cedric receives the delegated calendar
+        awaitAtMost.until(
+            () -> calDavClient.findDelegatedCalendar(cedric).stream().findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected Cedric delegated calendar to be present"));
+    }
+
+    @Test
     void rightMetadataOfCopiedCalendarShouldBeUpdatedWhenOriginalCalendarIsUpdated() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
