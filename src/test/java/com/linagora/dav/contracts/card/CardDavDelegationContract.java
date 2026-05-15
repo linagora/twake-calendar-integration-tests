@@ -21,10 +21,12 @@ package com.linagora.dav.contracts.card;
 import static com.linagora.dav.CardDavClient.*;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
+import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -45,6 +47,7 @@ import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 
 import com.linagora.dav.XMLUtil;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
@@ -816,6 +819,96 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    void ownerShouldNotBeAbleToDelegateAddressBookToThemself() {
+        String addressBook = "collected";
+
+        // GIVEN Bob owns an address book
+        String bobAddressBooksBeforeSelfDelegation = getAddressBooksJson(bob);
+
+        // WHEN Bob attempts to delegate that address book to himself
+        String payload = """
+            {
+                "dav:share-resource": {
+                    "dav:sharee": [
+                        {
+                            "dav:href": "mailto:%s",
+                            "dav:share-access": %d
+                        },
+                        {
+                            "dav:href": "principals/users/%s",
+                            "dav:share-access": 1
+                        }
+                    ]
+                }
+            }
+            """.formatted(bob.email(), DelegationRight.READ.getValue(), bob.id());
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
+            .send(body(payload)));
+
+        // THEN the self delegation is rejected
+        assertThat(status)
+            .as("Self delegation by owner should be rejected")
+            .isEqualTo(SC_BAD_REQUEST);
+        assertThat(getAddressBooksJson(bob))
+            .as("Self delegation by owner must not mutate Bob's address book list")
+            .isEqualTo(bobAddressBooksBeforeSelfDelegation);
+    }
+
+    @Test
+    void delegatedAdminShouldNotBeAbleToDelegateAddressBookToThemself() {
+        String addressBook = "collected";
+
+        // GIVEN Bob owns an address book
+        // AND Alice has admin delegation on Bob's address book
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
+        String bobAddressBooksBeforeSelfDelegation = getAddressBooksJson(bob);
+        String aliceAddressBooksBeforeSelfDelegation = getAddressBooksJson(alice);
+
+        // WHEN Alice attempts to delegate Bob's address book to herself
+        String payload = """
+            {
+                "dav:share-resource": {
+                    "dav:sharee": [
+                        {
+                            "dav:href": "mailto:%s",
+                            "dav:share-access": %d
+                        },
+                        {
+                            "dav:href": "principals/users/%s",
+                            "dav:share-access": 1
+                        }
+                    ]
+                }
+            }
+            """.formatted(alice.email(), DelegationRight.READ.getValue(), alice.id());
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
+            .send(body(payload)));
+
+        // THEN the self delegation by delegated admin is rejected
+        assertThat(status)
+            .as("Self delegation by delegated admin should be rejected")
+            .isEqualTo(SC_BAD_REQUEST);
+        assertThat(getAddressBooksJson(bob))
+            .as("Self delegation by delegated admin must not mutate Bob's source address book list")
+            .isEqualTo(bobAddressBooksBeforeSelfDelegation);
+        assertThat(getAddressBooksJson(alice))
+            .as("Self delegation by delegated admin must not mutate Alice's delegated address book list")
+            .isEqualTo(aliceAddressBooksBeforeSelfDelegation);
+    }
+
+    @Test
     void grantDelegationDirectlyInOriginalAddressBookShouldSucceedWhenDelegatedUserHasAdminRight() {
         String addressBook = "collected";
         cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
@@ -898,5 +991,21 @@ public abstract class CardDavDelegationContract {
                 """.replace("{aliceId}", alice.id()))
                 .replace("{bobId}", bob.id())
                 .replace("{cedricId}", cedric.id()));
+    }
+
+    private String getAddressBooksJson(OpenPaasUser user) {
+        return given()
+            .headers("Authorization", user.impersonatedBasicAuth())
+            .queryParam("contactsCount", true)
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get(AddressBookURL.URL_PATH_PREFIX + "/" + user.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
     }
 }
