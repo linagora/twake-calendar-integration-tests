@@ -19,6 +19,7 @@
 package com.linagora.dav.sabrev4.cal;
 
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
@@ -56,5 +57,15 @@ class SabreV4CalDavTest extends CalDavContract {
     @Disabled("Fixed on Sabre 4.7")
     @Override
     protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
+    }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void subscribedCalendarShouldExposeCalendarResourceTypeForCalDavDiscovery() {
+    }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
     }
 }
