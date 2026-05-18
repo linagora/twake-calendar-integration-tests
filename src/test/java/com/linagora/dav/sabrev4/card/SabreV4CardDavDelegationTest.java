@@ -35,6 +35,20 @@ public class SabreV4CardDavDelegationTest extends CardDavDelegationContract {
     }
 
     @Test
+    @Disabled("Fixed in Sabre 4.7 (com.linagora.dav.sabrev4_7.card.SabreV4CardDavDelegationTest)")
+    @Override
+    public void ownerShouldNotBeAbleToDelegateAddressBookToThemself() {
+        super.ownerShouldNotBeAbleToDelegateAddressBookToThemself();
+    }
+
+    @Test
+    @Disabled("Fixed in Sabre 4.7 (com.linagora.dav.sabrev4_7.card.SabreV4CardDavDelegationTest)")
+    @Override
+    public void delegatedAdminShouldNotBeAbleToDelegateAddressBookToThemself() {
+        super.delegatedAdminShouldNotBeAbleToDelegateAddressBookToThemself();
+    }
+
+    @Test
     @Disabled("https://github.com/linagora/esn-sabre/issues/60")
     @Override
     public void canCreateNewContactDirectlyInCopiedAddressBook() {

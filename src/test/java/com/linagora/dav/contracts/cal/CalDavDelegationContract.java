@@ -2065,7 +2065,7 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
-    void ownerShouldNotBeAbleToDelegateCalendarToThemself() {
+    public void ownerShouldNotBeAbleToDelegateCalendarToThemself() {
         OpenPaasUser bob = dockerExtension().newTestUser();
         String calendarId = UUID.randomUUID().toString();
 
@@ -2106,7 +2106,7 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
-    void delegatedAdminShouldNotBeAbleToDelegateCalendarToThemself() {
+    public void delegatedAdminShouldNotBeAbleToDelegateCalendarToThemself() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
         String calendarId = UUID.randomUUID().toString();

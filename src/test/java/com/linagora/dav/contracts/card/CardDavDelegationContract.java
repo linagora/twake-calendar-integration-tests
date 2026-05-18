@@ -819,7 +819,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void ownerShouldNotBeAbleToDelegateAddressBookToThemself() {
+    protected void ownerShouldNotBeAbleToDelegateAddressBookToThemself() {
         String addressBook = "collected";
 
         // GIVEN Bob owns an address book
@@ -861,7 +861,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void delegatedAdminShouldNotBeAbleToDelegateAddressBookToThemself() {
+    protected void delegatedAdminShouldNotBeAbleToDelegateAddressBookToThemself() {
         String addressBook = "collected";
 
         // GIVEN Bob owns an address book
