@@ -765,12 +765,23 @@ public class CalDavClient {
                                                        boolean sharedPublicSubscription,
                                                        boolean withDelegation,
                                                        boolean withRights) {
+        return findUserCalendarsWithOptions(requester, targetUserId, sharedPublicSubscription, withDelegation, withRights, false);
+    }
+
+    public Flux<JsonNode> findUserCalendarsWithOptions(OpenPaasUser requester, String targetUserId,
+                                                       boolean sharedPublicSubscription,
+                                                       boolean withDelegation,
+                                                       boolean withRights,
+                                                       boolean personal) {
         StringBuilder uriBuilder = new StringBuilder(CalendarURL.CALENDAR_URL_PATH_PREFIX)
             .append("/")
             .append(targetUserId)
             .append(".json")
             .append("?");
 
+        if (personal) {
+            uriBuilder.append("personal=true&");
+        }
         if (sharedPublicSubscription) {
             uriBuilder.append("sharedPublicSubscription=true&");
         }
@@ -808,6 +819,16 @@ public class CalDavClient {
                     return Flux.error(new RuntimeException("Failed to parse calendars JSON", e));
                 }
             });
+    }
+
+    public List<CalendarURL> findDelegatedCalendar(OpenPaasUser openPaaSUser) {
+        return findUserCalendarsWithOptions(openPaaSUser, openPaaSUser.id(), true, true, true, true)
+            .filter(calendarNode -> calendarNode.has("calendarserver:delegatedsource"))
+            .map(calendarNode -> calendarNode.path("_links").path("self").path("href").asText())
+            .filter(href -> !href.isEmpty())
+            .map(this::parseCalendarHref)
+            .collectList()
+            .block();
     }
 
     public String getUserCalendarsJson(OpenPaasUser user) {

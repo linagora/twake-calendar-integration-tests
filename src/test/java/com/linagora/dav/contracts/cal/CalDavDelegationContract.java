@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
+import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -2064,6 +2065,99 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
+    public void ownerShouldNotBeAbleToDelegateCalendarToThemself() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String calendarId = UUID.randomUUID().toString();
+
+        // GIVEN Bob owns a calendar
+        calDavClient.createNewCalendar(bob, calendarId, "Calendar A", 2);
+        String bobCalendarsBeforeSelfDelegation = calDavClient.getUserCalendarsJson(bob);
+
+        // WHEN Bob attempts to delegate that calendar to himself
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {
+                    "dav:href": "mailto:%s",
+                    %s
+                  }
+                ],
+                "remove": []
+              }
+            }
+            """.formatted(bob.email(), DelegationRight.READ.getValue());
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + bob.id() + "/" + calendarId + ".json")
+            .send(body(payload)));
+
+        // THEN the self delegation is rejected
+        assertThat(status)
+            .as("Self delegation by owner should be rejected")
+            .isEqualTo(SC_BAD_REQUEST);
+        assertThat(calDavClient.getUserCalendarsJson(bob))
+            .as("Self delegation by owner must not mutate Bob's calendar list")
+            .isEqualTo(bobCalendarsBeforeSelfDelegation);
+    }
+
+    @Test
+    public void delegatedAdminShouldNotBeAbleToDelegateCalendarToThemself() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String calendarId = UUID.randomUUID().toString();
+
+        // GIVEN Bob owns a calendar
+        // AND Alice has admin delegation on Bob's calendar
+        calDavClient.createNewCalendar(bob, calendarId, "Calendar A", 2);
+        calDavClient.grantDelegation(bob, calendarId, alice, DelegationRight.ADMIN);
+        CalendarURL delegatedCalendarURL = awaitAtMost.until(
+            () -> calDavClient.findDelegatedCalendar(alice).stream().findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present"));
+        String bobCalendarsBeforeSelfDelegation = calDavClient.getUserCalendarsJson(bob);
+        String aliceCalendarsBeforeSelfDelegation = calDavClient.getUserCalendarsJson(alice);
+
+        // WHEN Alice attempts to delegate her delegated calendar copy to herself
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {
+                    "dav:href": "mailto:%s",
+                    %s
+                  }
+                ],
+                "remove": []
+              }
+            }
+            """.formatted(alice.email(), DelegationRight.READ.getValue());
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.POST)
+            .uri(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + alice.id() + "/" + delegatedCalendarURL.calendarId() + ".json")
+            .send(body(payload)));
+
+        // THEN the self delegation by delegated admin is rejected
+        assertThat(status)
+            .as("Self delegation by delegated admin should be rejected")
+            .isEqualTo(SC_BAD_REQUEST);
+        assertThat(calDavClient.getUserCalendarsJson(bob))
+            .as("Self delegation by delegated admin must not mutate Bob's source calendar list")
+            .isEqualTo(bobCalendarsBeforeSelfDelegation);
+        assertThat(calDavClient.getUserCalendarsJson(alice))
+            .as("Self delegation by delegated admin must not mutate Alice's delegated calendar list")
+            .isEqualTo(aliceCalendarsBeforeSelfDelegation);
+    }
+
+    @Test
     void updateCalendarAclShouldRunSuccessfullyWhenDelegatedUserHasAdminRight() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -2304,6 +2398,31 @@ public abstract class CalDavDelegationContract {
                 .replace("{userId3}", cedric.id())
                 .replace("{userEmail}", alice.email())
                 .replace("{userEmail3}", cedric.email()));
+    }
+
+    @Test
+    void delegatedAdminShouldBeAbleToKeepOwnDelegationWhenDelegatingCalendar() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob delegates his calendar to Alice in admin mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+        CalendarURL delegatedCalendarURL = awaitAtMost.until(
+            () -> calDavClient.findDelegatedCalendar(alice).stream().findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present"));
+
+        // WHEN Alice delegates Bob's calendar to Cedric while keeping her existing admin delegation
+        calDavClient.grantDelegations(alice, delegatedCalendarURL.calendarId(), Map.of(
+            alice, DelegationRight.ADMIN,
+            cedric, DelegationRight.READ));
+
+        // THEN Cedric receives the delegated calendar
+        awaitAtMost.until(
+            () -> calDavClient.findDelegatedCalendar(cedric).stream().findFirst(),
+            Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected Cedric delegated calendar to be present"));
     }
 
     @Test

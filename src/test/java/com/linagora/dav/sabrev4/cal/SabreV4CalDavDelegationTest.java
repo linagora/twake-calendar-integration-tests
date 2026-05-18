@@ -33,6 +33,18 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
         return dockerExtension;
     }
 
+    @Disabled("Fixed in Sabre 4.7 (com.linagora.dav.sabrev4_7.cal.SabreV4CalDavDelegationTest)")
+    @Override
+    public void ownerShouldNotBeAbleToDelegateCalendarToThemself() {
+        super.ownerShouldNotBeAbleToDelegateCalendarToThemself();
+    }
+
+    @Disabled("Fixed in Sabre 4.7 (com.linagora.dav.sabrev4_7.cal.SabreV4CalDavDelegationTest)")
+    @Override
+    public void delegatedAdminShouldNotBeAbleToDelegateCalendarToThemself() {
+        super.delegatedAdminShouldNotBeAbleToDelegateCalendarToThemself();
+    }
+
     @Disabled("Issue https://github.com/linagora/esn-sabre/issues/195")
     @Override
     public void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
