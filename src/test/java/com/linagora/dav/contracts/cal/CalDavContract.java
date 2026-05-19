@@ -32,6 +32,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -40,12 +41,14 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -62,6 +65,7 @@ import org.xmlunit.diff.ElementSelectors;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
@@ -2913,5 +2917,130 @@ public abstract class CalDavContract {
                     </C:free-busy-query>
                     """),
                     Map.of("Accept", "application/xml", "Content-Type", "application/xml", "Depth", "0")));
+    }
+
+    @Disabled("Wait for a new image")
+    @Test
+    protected void subscribedCalendarShouldExposeCalendarResourceTypeForCalDavDiscovery() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND Alice subscribes to Bob's calendar
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob's calendar")
+            .color("#FF0000")
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // WHEN Alice does PROPFIND on the subscribed calendar
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(sharedCalendarPath)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:resourcetype/>
+                  </D:prop>
+                </D:propfind>
+                """)));
+
+        // THEN the resourcetype exposes <cal:calendar/>, making the calendar discoverable by any CalDAV client
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body()).contains(sharedCalendarPath);
+        assertThat(response.body()).contains("<d:collection/>", "<cal:calendar/>");
+    }
+
+    @Disabled("Wait for a new image")
+    @Test
+    protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob sets his calendar as read-only
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND Alice subscribes as read-only
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob's readonly calendar")
+            .color("#FF0000")
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(sharedCalendarPath)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:current-user-privilege-set/>
+                  </D:prop>
+                </D:propfind>
+                """)));
+
+        // THEN only read privileges are advertised, no write
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body()).contains(sharedCalendarPath);
+        assertThat(response.body()).contains("<d:read/>");
+        assertThat(response.body()).doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+    }
+
+    @Test
+    void readWriteSubscribedCalendarShouldAdvertiseWritePrivileges() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob sets his calendar as writable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        // AND Alice subscribes as read-write
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob's writable calendar")
+            .color("#FF0000")
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(sharedCalendarPath)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:current-user-privilege-set/>
+                  </D:prop>
+                </D:propfind>
+                """)));
+
+        // THEN write privileges are advertised
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body()).contains(sharedCalendarPath);
+        assertThat(response.body()).contains("<d:write/>", "<d:read/>");
     }
 }
