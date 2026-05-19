@@ -852,7 +852,7 @@ public class CalDavClient {
             }).block();
     }
 
-    public void createNewCalendar(OpenPaasUser user, String id, String name, int order) {
+    public CalendarURL createNewCalendar(OpenPaasUser user, String id, String name, int order) {
         String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
 
         String payload = """
@@ -883,6 +883,8 @@ public class CalDavClient {
                         """.formatted(response.status().code(), id, user.id(), responseBody))));
             })
             .block();
+
+        return new CalendarURL(user.id(), id);
     }
 
     public void deleteCalendar(OpenPaasUser user, CalendarURL calendarURL) {
