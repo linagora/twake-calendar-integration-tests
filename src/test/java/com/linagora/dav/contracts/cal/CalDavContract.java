@@ -48,6 +48,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -2918,6 +2919,7 @@ public abstract class CalDavContract {
                     Map.of("Accept", "application/xml", "Content-Type", "application/xml", "Depth", "0")));
     }
 
+    @Disabled("Wait for a new image")
     @Test
     protected void subscribedCalendarShouldExposeCalendarResourceTypeForCalDavDiscovery() {
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -2958,6 +2960,7 @@ public abstract class CalDavContract {
         assertThat(response.body()).contains("<d:collection/>", "<cal:calendar/>");
     }
 
+    @Disabled("Wait for a new image")
     @Test
     protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
         OpenPaasUser bob = dockerExtension().newTestUser();
