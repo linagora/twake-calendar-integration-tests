@@ -2793,8 +2793,7 @@ public abstract class CalDavContract {
 
         // And Bob has another personal calendar named Other Personal
         String bobOtherPersonalCalendarId = "other-personal-" + UUID.randomUUID();
-        calDavClient.createNewCalendar(bob, bobOtherPersonalCalendarId, "Other Personal", 2);
-        CalendarURL bobOtherPersonalCalendar = new CalendarURL(bob.id(), bobOtherPersonalCalendarId);
+        CalendarURL bobOtherPersonalCalendar = calDavClient.createNewCalendar(bob, bobOtherPersonalCalendarId, "Other Personal", 2);
         String bobEventFileName = bobDefaultEventUri.getPath().substring(bobDefaultEventUri.getPath().lastIndexOf('/') + 1);
         URI bobOtherPersonalEventUri = URI.create(bobOtherPersonalCalendar.asUri() + "/" + bobEventFileName);
 
@@ -2823,6 +2822,176 @@ public abstract class CalDavContract {
         assertThatCalendar(calDavClient.getCalendarEvent(bob, bobOtherPersonalEventUri))
             .as("Moved event should exist in Bob Other Personal calendar")
             .isEqualTo(bobDefaultEventIcs);
+    }
+
+    @Test
+    void moveRecurringEventWithoutOccurrenceOverrideShouldSucceed() {
+        // Given Bob has a self-organized daily recurring event without occurrence override in his default calendar
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = "event-" + UUID.randomUUID();
+        String recurringEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            TRANSP:OPAQUE
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20260519T060000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20260519T063000
+            CLASS:PUBLIC
+            SEQUENCE:1
+            X-OPENPAAS-VIDEOCONFERENCE:
+            SUMMARY:rec 4
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            RRULE:FREQ=DAILY;INTERVAL=1;COUNT=3
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL;CN=Bob:mailto:{bobEmail}
+            DTSTAMP:20260518T093706Z
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email());
+
+        CalendarURL bobDefaultCalendar = CalendarURL.from(bob.id());
+        URI bobDefaultEventUri = URI.create(bobDefaultCalendar.asUri() + "/" + eventUid + ".ics");
+        calDavClient.upsertCalendarEvent(bob, bobDefaultEventUri, recurringEventIcs);
+
+        // And Bob has another personal calendar named test personal
+        String bobPersonalCalendarId = "test-personal-" + UUID.randomUUID();
+        CalendarURL bobPersonalCalendar = calDavClient.createNewCalendar(bob, bobPersonalCalendarId, "test personal", 2);
+        URI bobPersonalEventUri = URI.create(bobPersonalCalendar.asUri() + "/" + eventUid + ".ics");
+
+        // When Bob moves the recurring event from the default calendar to test personal
+        int moveStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", bobPersonalEventUri.toASCIIString()))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri(bobDefaultEventUri.toASCIIString()));
+
+        assertThat(moveStatus)
+            .as("Bob should be able to move the organizer recurring event from default calendar to test personal")
+            .isIn(201, 204);
+
+        int sourceStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(bobDefaultEventUri.toASCIIString()));
+        assertThat(sourceStatus)
+            .as("Moved recurring event should no longer exist in Bob default calendar")
+            .isEqualTo(404);
+
+        // Then fetching the exact target resource href returns the same recurring event
+        DavResponse targetResponse = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(bobPersonalEventUri.toASCIIString()));
+
+        assertThat(targetResponse.status()).isEqualTo(200);
+        assertThatCalendar(targetResponse.body())
+            .as("Moved recurring event without occurrence override should stay unchanged")
+            .isEqualTo(recurringEventIcs);
+    }
+
+    @Test
+    void moveRecurringEventWithOccurrenceOverrideShouldSucceed() {
+        // Given Bob has a self-organized daily recurring event with one occurrence override in his default calendar
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = "event-" + UUID.randomUUID();
+        String recurringEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            TRANSP:OPAQUE
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20260519T060000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20260519T063000
+            CLASS:PUBLIC
+            SEQUENCE:1
+            X-OPENPAAS-VIDEOCONFERENCE:
+            SUMMARY:rec 4
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            RRULE:FREQ=DAILY;INTERVAL=1;COUNT=3
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL;CN=Bob:mailto:{bobEmail}
+            DTSTAMP:20260518T093706Z
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:20260520T060000
+            TRANSP:OPAQUE
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20260520T070000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20260520T073000
+            CLASS:PUBLIC
+            SEQUENCE:1
+            X-OPENPAAS-VIDEOCONFERENCE:
+            SUMMARY:rec 4 override
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL;CN=Bob:mailto:{bobEmail}
+            DTSTAMP:20260518T093706Z
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email());
+
+        CalendarURL bobDefaultCalendar = CalendarURL.from(bob.id());
+        URI bobDefaultEventUri = URI.create(bobDefaultCalendar.asUri() + "/" + eventUid + ".ics");
+        calDavClient.upsertCalendarEvent(bob, bobDefaultEventUri, recurringEventIcs);
+
+        // And Bob has another personal calendar named test personal
+        String bobPersonalCalendarId = "test-personal-" + UUID.randomUUID();
+        CalendarURL bobPersonalCalendar = calDavClient.createNewCalendar(bob, bobPersonalCalendarId, "test personal", 2);
+        URI bobPersonalEventUri = URI.create(bobPersonalCalendar.asUri() + "/" + eventUid + ".ics");
+
+        // When Bob moves the recurring event from the default calendar to test personal
+        int moveStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Destination", bobPersonalEventUri.toASCIIString()))
+            .request(HttpMethod.valueOf("MOVE"))
+            .uri(bobDefaultEventUri.toASCIIString()));
+
+        assertThat(moveStatus)
+            .as("Bob should be able to move the organizer recurring event with occurrence override to test personal")
+            .isIn(201, 204);
+
+        int sourceStatus = executeNoContent(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(bobDefaultEventUri.toASCIIString()));
+        assertThat(sourceStatus)
+            .as("Moved recurring event should no longer exist in Bob default calendar")
+            .isEqualTo(404);
+
+        // Then fetching the exact target resource href returns the same recurring event and occurrence override
+        DavResponse targetResponse = execute(dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .get()
+            .uri(bobPersonalEventUri.toASCIIString()));
+
+        assertThat(targetResponse.status()).isEqualTo(200);
+        assertThatCalendar(targetResponse.body())
+            .as("Moved recurring event with occurrence override should stay unchanged")
+            .isEqualTo(recurringEventIcs);
     }
 
     protected record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {
