@@ -18,6 +18,8 @@
 
 package com.linagora.dav.contracts.card;
 
+import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -27,17 +29,20 @@ import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
+import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.linagora.dav.CardDavClient;
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.VCardContact;
 
+import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
@@ -52,13 +57,19 @@ public abstract class DomainAddressBookContract {
     private OpenPaasUser openPaasUser;
     private String technicalToken;
     private String domainId;
+    private String domainName;
+    private static final String DOMAIN_ADDRESS_BOOK = "dab";
+    private static final String DOMAIN_MEMBERS_ADDRESS_BOOK = "domain-members";
 
     @BeforeEach
     void setUp() {
         cardDavClient = new CardDavClient(extension().davHttpClient());
-        openPaasUser = extension().newTestUser();
-        domainId = extension().domainId();
-        technicalToken = extension().twakeCalendarProvisioningService().generateToken();
+        domainName = "domain-" + UUID.randomUUID() + ".test";
+        Document domain = extension().twakeCalendarProvisioningService()
+            .createDomainIfNotExists(domainName);
+        domainId = domain.getObjectId("_id").toString();
+        openPaasUser = newDomainUser();
+        technicalToken = extension().twakeCalendarProvisioningService().generateToken(domainId);
 
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
@@ -70,9 +81,6 @@ public abstract class DomainAddressBookContract {
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
                 .toString())
             .build();
-
-        cardDavClient.deleteAddressBook(domainId, "dab", technicalToken);
-        cardDavClient.deleteAddressBook(domainId, "domain-members", technicalToken);
     }
 
     @ParameterizedTest
@@ -146,7 +154,7 @@ public abstract class DomainAddressBookContract {
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     void adminUserCannotAddContactIntoDomainMemberAddressBook(VCardContact.Format format) {
-        OpenPaasUser adminUser = extension().newTestUser();
+        OpenPaasUser adminUser = newDomainUser();
         String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
             .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
             .toString();
@@ -229,12 +237,212 @@ public abstract class DomainAddressBookContract {
             .doesNotContain("tech.updated@" + domainId);
     }
 
+    @Test
+    void domainMembersAddressBookCanReportTechnicalTokenChangesBySyncToken() {
+        // GIVEN a domain-members address book provisioned by the technical token
+        cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
+
+        String vcardUid = "member-sync-" + UUID.randomUUID();
+        VCardContact contact = VCardContact.builder()
+            .firstName("Domain")
+            .lastName("Member")
+            .email("domain.member@" + domainId)
+            .build();
+
+        // WHEN a domain member contact is created by the technical token
+        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, contact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
+        // THEN the next sync report exposes the created contact and advances the sync token
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
+            .contains("<d:status>HTTP/1.1 200 OK</d:status>")
+            .contains("<d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>");
+
+        VCardContact updatedContact = VCardContact.builder()
+            .firstName("Updated")
+            .lastName("Member")
+            .email("updated.member@" + domainId)
+            .build();
+
+        // WHEN the same domain member contact is updated by the technical token
+        cardDavClient.upsertDomainMemberContact(domainId, vcardUid, updatedContact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
+        // THEN the next sync report exposes the updated contact and advances the sync token again
+        response = execute(extension().davHttpClient()
+            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
+            .contains("<d:status>HTTP/1.1 200 OK</d:status>")
+            .contains("<d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>");
+
+        // WHEN the domain member contact is deleted by the technical token
+        cardDavClient.deleteContactDomainMembers(domainId, vcardUid, technicalToken);
+        // THEN the next sync report exposes the deleted contact as 404 and advances the sync token
+        response = execute(extension().davHttpClient()
+            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
+            .contains("<d:status>HTTP/1.1 404 Not Found</d:status>")
+            .contains("<d:sync-token>http://sabre.io/ns/sync/4</d:sync-token>");
+    }
+
+    @Test
+    void domainAddressBookCanReportDomainContactChangesBySyncToken() {
+        // GIVEN a domain admin and a domain address book provisioned by the technical token
+        OpenPaasUser adminUser = newDomainUser();
+        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+            .toString();
+
+        String domainName = StringUtils.substringAfterLast(adminUser.email(), "@");
+
+        given()
+            .baseUri(tcalendarAdminApiBase)
+            .put("/domains/" + domainName + "/admins/" + adminUser.email())
+            .then()
+            .statusCode(204);
+
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+
+        String vcardUid = "dab-sync-" + UUID.randomUUID();
+        VCardContact contact = VCardContact.builder()
+            .firstName("Domain")
+            .lastName("Contact")
+            .email("domain.contact@" + domainId)
+            .build();
+
+        // WHEN a domain contact is created in the domain address book by the technical token
+        cardDavClient.upsertDomainContact(domainId, vcardUid, contact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
+        // THEN the next sync report exposes the created contact and advances the sync token
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
+            .contains("<d:status>HTTP/1.1 200 OK</d:status>")
+            .contains("<d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>");
+
+        VCardContact updatedContact = VCardContact.builder()
+            .firstName("Updated")
+            .lastName("Contact")
+            .email("updated.contact@" + domainId)
+            .build();
+
+        // WHEN the same domain contact is updated by the technical token
+        cardDavClient.upsertDomainContact(domainId, vcardUid, updatedContact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
+        // THEN the next sync report exposes the updated contact and advances the sync token again
+        response = execute(extension().davHttpClient()
+            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
+            .contains("<d:status>HTTP/1.1 200 OK</d:status>")
+            .contains("<d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>");
+
+        // WHEN the domain contact is deleted by a domain admin
+        cardDavClient.deleteContact(adminUser, domainId, DOMAIN_ADDRESS_BOOK, vcardUid);
+        // THEN the next sync report exposes the deleted contact as 404 and advances the sync token
+        response = execute(extension().davHttpClient()
+            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)));
+
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
+            .contains("<d:status>HTTP/1.1 404 Not Found</d:status>")
+            .contains("<d:sync-token>http://sabre.io/ns/sync/4</d:sync-token>");
+    }
+
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     void domainAdministratorCanAddContactToDomainAddressBook(VCardContact.Format format) {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -268,9 +476,8 @@ public abstract class DomainAddressBookContract {
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     void domainAdministratorCanUpdateContactInDomainAddressBook(VCardContact.Format format) {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -309,9 +516,8 @@ public abstract class DomainAddressBookContract {
 
     @Test
     void domainAdministratorCanDeleteContactInDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -347,8 +553,7 @@ public abstract class DomainAddressBookContract {
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     void normalUserCannotAddContactToDomainAddressBook(VCardContact.Format format) {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -364,8 +569,7 @@ public abstract class DomainAddressBookContract {
 
     @Test
     void normalUserCannotDeleteContactToDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -377,8 +581,7 @@ public abstract class DomainAddressBookContract {
 
     @Test
     void normalUserCannotSetPublicRightOfDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -388,9 +591,8 @@ public abstract class DomainAddressBookContract {
 
     @Test
     void normalUserCannotDelegateDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
 
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
 
@@ -401,8 +603,7 @@ public abstract class DomainAddressBookContract {
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     protected void domainAdministratorCanSetPublicRightOfDomainAddressBook(VCardContact.Format format) {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
@@ -424,7 +625,7 @@ public abstract class DomainAddressBookContract {
         cardDavClient.setDomainAddressBookPublicRightReadWrite(bob, domainId, "dab");
 
         // Then any user can add the contact in the domain address book
-        OpenPaasUser alice = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
 
         String vcardUid = "test-contact-uid";
         VCardContact contact = VCardContact.builder()
@@ -442,9 +643,8 @@ public abstract class DomainAddressBookContract {
     @ParameterizedTest
     @EnumSource(VCardContact.Format.class)
     protected void domainAdministratorCanDelegateDomainAddressBook(VCardContact.Format format) {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
@@ -486,10 +686,9 @@ public abstract class DomainAddressBookContract {
 
     @Test
     protected void domainAdministratorCanDelegateDomainAddressBookWithAdminRight() {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
-        OpenPaasUser cedric = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
+        OpenPaasUser cedric = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
@@ -529,8 +728,7 @@ public abstract class DomainAddressBookContract {
 
     @Test
     void domainAdministratorCannotSetPublicRightOfDomainMembersBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain members address book exists
         cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
@@ -562,9 +760,8 @@ public abstract class DomainAddressBookContract {
 
     @Test
     void domainAdministratorCannotDelegateDomainMembersBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser alice = extension().newTestUser();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser alice = newDomainUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
@@ -596,15 +793,10 @@ public abstract class DomainAddressBookContract {
 
     @Test
     protected void shouldReturn403WhenNonAdminUserSetPublicRightOfDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
-
-        String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
-            .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
-            .toString();
 
         String expected = getAddressBookMetadata(domainId);
 
@@ -620,8 +812,7 @@ public abstract class DomainAddressBookContract {
 
     @Test
     protected void shouldReturn400WhenDomainAdminSetEmptyPublicRightOfDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
@@ -660,8 +851,7 @@ public abstract class DomainAddressBookContract {
 
     @Test
     protected void shouldReturn400WhenDomainAdminSetInvalidPublicRightOfDomainAddressBook() {
-        String domainId = extension().domainId();
-        OpenPaasUser bob = extension().newTestUser();
+        OpenPaasUser bob = newDomainUser();
 
         // Given domain address book exists
         cardDavClient.createDomainAddressBook(domainId, technicalToken);
@@ -698,6 +888,12 @@ public abstract class DomainAddressBookContract {
         String actual = getAddressBookMetadata(domainId);
         // And the public right does not change
         assertThat(actual).isEqualTo(expected);
+    }
+
+    private OpenPaasUser newDomainUser() {
+        return extension().twakeCalendarProvisioningService()
+            .createUser("user_" + UUID.randomUUID(), domainName)
+            .block();
     }
 
     private String getAddressBookMetadata(String domainId) {
