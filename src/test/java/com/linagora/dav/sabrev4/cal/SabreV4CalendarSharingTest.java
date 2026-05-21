@@ -115,4 +115,19 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     public void partStatUpdateFromReadPublicSubscribedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
 
     }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void subscribedCalendarShouldExposeCalendarResourceTypeForCalDavDiscovery() {
+    }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
+    }
+
+    @Disabled("Fixed on Sabre 4.7")
+    @Override
+    protected void subscribedResourceCalendarShouldOnlyAdvertiseReadPrivileges() {
+    }
 }
