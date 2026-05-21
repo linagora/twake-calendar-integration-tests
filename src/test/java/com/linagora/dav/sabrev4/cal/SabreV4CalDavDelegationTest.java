@@ -114,4 +114,9 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     @Override
     public void aliceShouldBeAbleToWriteEventsToBobCalendarAfterDeletingDelegatedCalendarAndResubscribing() {
     }
+
+    @Disabled("Fixed in Sabre 4_7 (com.linagora.dav.sabrev4_7.cal.SabreV4CalDavDelegationTest)")
+    @Override
+    protected void readOnlyDelegatedCalendarShouldOnlyAdvertiseReadPrivileges() {
+    }
 }
