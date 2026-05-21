@@ -3155,6 +3155,71 @@ public abstract class CalDavDelegationContract {
             .isEqualTo(200);
     }
 
+    @Test
+    protected void readOnlyDelegatedCalendarShouldOnlyAdvertiseReadPrivileges() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice with read-only rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+
+        // WHEN Alice PROPFIND the delegated calendar with current-user-privilege-set property
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(calendarURL.asUri().toString())
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:current-user-privilege-set/>
+                  </D:prop>
+                </D:propfind>
+                """)));
+
+        // THEN Alice should see only read privileges in the current-user-privilege-set property of the delegated calendar
+        AssertionsForClassTypes.assertThat(response.status()).isEqualTo(207);
+        AssertionsForClassTypes.assertThat(response.body()).contains(calendarURL.asUri().toString());
+        AssertionsForClassTypes.assertThat(response.body()).contains("<d:read/>");
+        AssertionsForClassTypes.assertThat(response.body()).doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+    }
+
+    @Test
+    void readWriteDelegatedCalendarShouldAdvertiseWritePrivileges() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN Bob has a calendar
+        // AND Bob delegates that calendar to Alice with read-write rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+
+        // WHEN Alice PROPFIND the delegated calendar with current-user-privilege-set property
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(calendarURL.asUri().toString())
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:current-user-privilege-set/>
+                  </D:prop>
+                </D:propfind>
+                """)));
+
+        // THEN Alice should see write privileges in the current-user-privilege-set property of the delegated calendar
+        AssertionsForClassTypes.assertThat(response.status()).isEqualTo(207);
+        AssertionsForClassTypes.assertThat(response.body()).contains(calendarURL.asUri().toString());
+        AssertionsForClassTypes.assertThat(response.body()).contains("<d:write/>", "<d:read/>");
+    }
+
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
         Map.Entry<Integer, String> delegationResponse = dockerExtension().davHttpClient()
             .headers(headers -> headers
