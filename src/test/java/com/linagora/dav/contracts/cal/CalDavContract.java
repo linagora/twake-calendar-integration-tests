@@ -32,7 +32,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +40,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
@@ -3143,6 +3141,51 @@ public abstract class CalDavContract {
             .id(UUID.randomUUID().toString())
             .sourceUserId(bob.id())
             .name("Bob's readonly calendar")
+            .color("#FF0000")
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
+        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+
+        // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(sharedCalendarPath)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:current-user-privilege-set/>
+                  </D:prop>
+                </D:propfind>
+                """)));
+
+        // THEN only read privileges are advertised, no write
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body()).contains(sharedCalendarPath);
+        assertThat(response.body()).contains("<d:read/>");
+        assertThat(response.body()).doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+    }
+
+    @Test
+    protected void subscribedResourceCalendarShouldOnlyAdvertiseReadPrivileges() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN resource
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", bob)
+            .block();
+
+        // AND Alice subscribes to the resource calendar
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(resource.id())
+            .name("projector resource calendar")
             .color("#FF0000")
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
