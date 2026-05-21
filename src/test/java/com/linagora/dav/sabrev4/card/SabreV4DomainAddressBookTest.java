@@ -36,6 +36,11 @@ public class SabreV4DomainAddressBookTest extends DomainAddressBookContract {
     }
 
     @Override
+    protected boolean isolateDomainPerTest() {
+        return false;
+    }
+
+    @Override
     @Disabled("Fixed in Sabre 4_7")
     protected void domainAdministratorCanSetPublicRightOfDomainAddressBook(VCardContact.Format format) {
     }
@@ -63,5 +68,15 @@ public class SabreV4DomainAddressBookTest extends DomainAddressBookContract {
     @Override
     @Disabled("Fixed in Sabre 4_7")
     protected void shouldReturn400WhenDomainAdminSetInvalidPublicRightOfDomainAddressBook() {
+    }
+
+    @Override
+    @Disabled("Fixed in Sabre 4_7")
+    protected void domainAddressBookCanReportDomainContactChangesBySyncToken() {
+    }
+
+    @Override
+    @Disabled("Fixed in Sabre 4_7")
+    protected void domainMembersAddressBookCanReportTechnicalTokenChangesBySyncToken() {
     }
 }

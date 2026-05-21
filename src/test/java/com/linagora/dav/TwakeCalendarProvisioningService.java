@@ -122,7 +122,11 @@ public class TwakeCalendarProvisioningService {
     }
 
     public String generateToken() {
-        return technicalTokenService.generate(openPaasDomain().get("_id").toString())
+        return generateToken(openPaasDomain().get("_id").toString());
+    }
+
+    public String generateToken(String domainId) {
+        return technicalTokenService.generate(domainId)
             .map(TechnicalTokenService.JwtToken::value)
             .block();
     }
