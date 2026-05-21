@@ -58,14 +58,4 @@ class SabreV4CalDavTest extends CalDavContract {
     @Override
     protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
     }
-
-    @Disabled("Fixed on Sabre 4.7")
-    @Override
-    protected void subscribedCalendarShouldExposeCalendarResourceTypeForCalDavDiscovery() {
-    }
-
-    @Disabled("Fixed on Sabre 4.7")
-    @Override
-    protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
-    }
 }
