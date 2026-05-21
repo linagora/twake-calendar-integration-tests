@@ -64,12 +64,19 @@ public abstract class DomainAddressBookContract {
     @BeforeEach
     void setUp() {
         cardDavClient = new CardDavClient(extension().davHttpClient());
-        domainName = "domain-" + UUID.randomUUID() + ".test";
-        Document domain = extension().twakeCalendarProvisioningService()
-            .createDomainIfNotExists(domainName);
-        domainId = domain.getObjectId("_id").toString();
-        openPaasUser = newDomainUser();
-        technicalToken = extension().twakeCalendarProvisioningService().generateToken(domainId);
+        if (isolateDomainPerTest()) {
+            domainName = "domain-" + UUID.randomUUID() + ".test";
+            Document domain = extension().twakeCalendarProvisioningService()
+                .createDomainIfNotExists(domainName);
+            domainId = domain.getObjectId("_id").toString();
+            openPaasUser = newDomainUser();
+            technicalToken = extension().twakeCalendarProvisioningService().generateToken(domainId);
+        } else {
+            openPaasUser = extension().newTestUser();
+            domainId = extension().domainId();
+            domainName = StringUtils.substringAfterLast(openPaasUser.email(), "@");
+            technicalToken = extension().twakeCalendarProvisioningService().generateToken();
+        }
 
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
@@ -81,6 +88,10 @@ public abstract class DomainAddressBookContract {
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
                 .toString())
             .build();
+    }
+
+    protected boolean isolateDomainPerTest() {
+        return true;
     }
 
     @ParameterizedTest
@@ -238,7 +249,7 @@ public abstract class DomainAddressBookContract {
     }
 
     @Test
-    void domainMembersAddressBookCanReportTechnicalTokenChangesBySyncToken() {
+    protected void domainMembersAddressBookCanReportTechnicalTokenChangesBySyncToken() {
         // GIVEN a domain-members address book provisioned by the technical token
         cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
 
@@ -332,7 +343,7 @@ public abstract class DomainAddressBookContract {
     }
 
     @Test
-    void domainAddressBookCanReportDomainContactChangesBySyncToken() {
+    protected void domainAddressBookCanReportDomainContactChangesBySyncToken() {
         // GIVEN a domain admin and a domain address book provisioned by the technical token
         OpenPaasUser adminUser = newDomainUser();
         String tcalendarAdminApiBase = extension().getDockerTwakeCalendarSetupSingleton()
