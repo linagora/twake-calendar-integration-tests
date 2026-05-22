@@ -70,8 +70,17 @@ public class DockerTwakeCalendarSetup {
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
 
     public DockerTwakeCalendarSetup(String sabreVersion) {
+        this(sabreVersion, false);
+    }
+
+    public DockerTwakeCalendarSetup(String sabreVersion, boolean principalPrivacy) {
+        this(sabreVersion, Boolean.toString(principalPrivacy));
+    }
+
+    private DockerTwakeCalendarSetup(String sabreVersion, String principalPrivacy) {
         String amqpSchedulingEnabled = System.getProperty(AMQP_SCHEDULING_ENABLED_PROPERTY, AMQP_SCHEDULING_ENABLED_DEFAULT);
         LOGGER.info("Test config: {}={}", AMQP_SCHEDULING_ENABLED_PROPERTY, amqpSchedulingEnabled);
+        LOGGER.info("Test config: PRINCIPAL_PRIVACY={}", principalPrivacy);
         try {
             environment = new ComposeContainer(
                 new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
@@ -88,6 +97,7 @@ public class DockerTwakeCalendarSetup {
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
                 .withEnv("AMQP_SCHEDULING_ENABLED", amqpSchedulingEnabled)
+                .withEnv("PRINCIPAL_PRIVACY", principalPrivacy)
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("sabre_dav " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
         } catch (URISyntaxException e) {
