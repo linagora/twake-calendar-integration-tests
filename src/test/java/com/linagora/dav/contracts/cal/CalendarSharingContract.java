@@ -2928,7 +2928,6 @@ public abstract class CalendarSharingContract {
             });
     }
 
-    @Disabled("Wait for a new image")
     @Test
     protected void subscribedCalendarShouldExposeCalendarResourceTypeForCalDavDiscovery() {
         OpenPaasUser bob = extension().newTestUser();
@@ -2969,7 +2968,6 @@ public abstract class CalendarSharingContract {
         assertThat(response.body()).contains("<d:collection/>", "<cal:calendar/>");
     }
 
-    @Disabled("Wait for a new image")
     @Test
     protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
         OpenPaasUser bob = extension().newTestUser();
