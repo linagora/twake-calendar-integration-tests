@@ -22,18 +22,40 @@ import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4_7;
 
 public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtension {
 
-    private static final DockerTwakeCalendarSetup dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7);
+    private static final boolean PRINCIPAL_PRIVACY_DISABLED = false;
+    private static final boolean PRINCIPAL_PRIVACY_ENABLED = true;
 
-    static {
-        dockerTwakeCalendarSetup.start();
-    }
+    private static DockerTwakeCalendarSetup defaultDockerTwakeCalendarSetup;
+
+    private final DockerTwakeCalendarSetup dockerTwakeCalendarSetup;
 
     public DockerTwakeCalendarExtensionV4_7() {
+        this(PRINCIPAL_PRIVACY_DISABLED);
+    }
 
+    public DockerTwakeCalendarExtensionV4_7(boolean principalPrivacy) {
+        if (principalPrivacy) {
+            dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7, PRINCIPAL_PRIVACY_ENABLED);
+            dockerTwakeCalendarSetup.start();
+        } else {
+            dockerTwakeCalendarSetup = defaultDockerTwakeCalendarSetup();
+        }
+    }
+
+    public static DockerTwakeCalendarExtensionV4_7 withPrincipalPrivacy() {
+        return new DockerTwakeCalendarExtensionV4_7(PRINCIPAL_PRIVACY_ENABLED);
     }
 
     @Override
     DockerTwakeCalendarSetup setup() {
         return dockerTwakeCalendarSetup;
+    }
+
+    private static synchronized DockerTwakeCalendarSetup defaultDockerTwakeCalendarSetup() {
+        if (defaultDockerTwakeCalendarSetup == null) {
+            defaultDockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7);
+            defaultDockerTwakeCalendarSetup.start();
+        }
+        return defaultDockerTwakeCalendarSetup;
     }
 }

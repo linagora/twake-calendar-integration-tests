@@ -95,5 +95,6 @@ services:
       - LOG_TRACE=true
       - SABRE_IMPERSONATION_ENABLED=true
       - AMQP_SCHEDULING_ENABLED=${AMQP_SCHEDULING_ENABLED}
+      - PRINCIPAL_PRIVACY=${PRINCIPAL_PRIVACY}
     networks:
       - emaily
