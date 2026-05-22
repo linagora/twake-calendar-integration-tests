@@ -74,6 +74,20 @@ public class CardDavClient {
         }
     }
 
+    public static Retry retryTechnicalTokenRequest() {
+        return Retry.fixedDelay(1, Duration.ofMillis(500))
+            .filter(RetryableRequestException.class::isInstance)
+            .onRetryExhaustedThrow((retryBackoffSpec, retrySignal) -> retrySignal.failure());
+    }
+
+    public static class RetryableRequestException extends RuntimeException {
+        RetryableRequestException() {
+            super();
+        }
+    }
+
+    public static final String TWAKE_CALENDAR_TOKEN_HEADER = "TwakeCalendarToken";
+
     private static final String CONTENT_TYPE_VCARD = "application/vcard+json";
     private static final String ACCEPT_VCARD_JSON = "application/json, text/plain, */*";
     private static final String ADDRESS_BOOK_PATH = "/addressbooks/%s/%s/%s.vcf";
@@ -95,7 +109,7 @@ public class CardDavClient {
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .put()
             .uri(String.format(ADDRESS_BOOK_PATH, baseId, addressBook, vcardUid))
-            .send(Mono.just(Unpooled.wrappedBuffer(vcardPayload)))
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(vcardPayload)))
             .responseSingle((response, byteBufMono) ->
                 handleContactUpsertResponse(response, byteBufMono, openPaasUser, addressBook, vcardUid))
             .block();
@@ -254,20 +268,26 @@ public class CardDavClient {
 
     public void deleteAddressBook(String baseId, String addressBookId, String technicalToken) {
         String uri = String.format("/addressbooks/%s/%s.json", baseId, addressBookId);
-        client.headers(headers -> headers.add("TwakeCalendarToken", technicalToken)
+        client.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
             .delete()
             .uri(uri)
             .responseSingle((response, buf) -> {
-                if (response.status().code() == 204 || response.status().code() == 404) {
+                int status = response.status().code();
+                if (status == 204 || status == 404) {
                     return Mono.empty();
+                }
+                if (status == 401) {
+                    return Mono.error(new RetryableRequestException());
                 }
                 return buf.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
                     .flatMap(errorBody -> Mono.error(new RuntimeException(
                         "Unexpected status code: %d when deleting address book %s with baseId %s\n%s"
-                            .formatted(response.status().code(), addressBookId, baseId, errorBody))));
-            }).block();
+                            .formatted(status, addressBookId, baseId, errorBody))));
+            })
+            .retryWhen(retryTechnicalTokenRequest())
+            .block();
     }
 
     public void grantDelegation(OpenPaasUser user, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
@@ -525,7 +545,7 @@ public class CardDavClient {
             """.getBytes(StandardCharsets.UTF_8);
 
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json"))
             .post()
@@ -536,8 +556,8 @@ public class CardDavClient {
                 if (status == 201) {
                     return Mono.empty();
                 }
-                if (status == 404) {
-                    return Mono.error(new RuntimeException("__RETRY__"));
+                if (status == 401 || status == 404) {
+                    return Mono.error(new RetryableRequestException());
                 }
 
                 return buf.asString(StandardCharsets.UTF_8)
@@ -553,8 +573,7 @@ public class CardDavClient {
                             """.formatted(domainId, status, body)));
                     });
             })
-            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
-                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
+            .retryWhen(retryTechnicalTokenRequest())
             .then()
             .block();
     }
@@ -565,17 +584,20 @@ public class CardDavClient {
                                           String technicalToken) {
         String uri = String.format("/addressbooks/%s/domain-members/%s.vcf", domainId, vcardUid);
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .put()
             .uri(uri)
-            .send(Mono.just(Unpooled.wrappedBuffer(vcardPayload)))
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(vcardPayload)))
             .responseSingle((response, buf) -> {
                 int status = response.status().code();
 
                 if (status == 201 || status == 204) {
                     return Mono.empty();
+                }
+                if (status == 401) {
+                    return Mono.error(new RetryableRequestException());
                 }
 
                 return buf.asString(StandardCharsets.UTF_8)
@@ -587,13 +609,14 @@ public class CardDavClient {
                         Response: %s
                         """.formatted(status, domainId, vcardUid, body))));
             })
+            .retryWhen(retryTechnicalTokenRequest())
             .block();
     }
 
     public void deleteContactDomainMembers(String domainId, String vcardUid, String technicalToken) {
         String uri = String.format(ADDRESS_BOOK_PATH, domainId, "domain-members", vcardUid);
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .delete()
             .uri(uri)
@@ -601,6 +624,9 @@ public class CardDavClient {
                 int statusCode = response.status().code();
                 if (statusCode == 204) {
                     return Mono.empty();
+                }
+                if (statusCode == 401) {
+                    return Mono.error(new RetryableRequestException());
                 }
 
                 return buf.asString(StandardCharsets.UTF_8)
@@ -614,6 +640,7 @@ public class CardDavClient {
                             statusCode, domainId, vcardUid, body)));
                     });
             })
+            .retryWhen(retryTechnicalTokenRequest())
             .block();
     }
 
@@ -631,7 +658,7 @@ public class CardDavClient {
             """.getBytes(StandardCharsets.UTF_8);
 
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json"))
             .post()
@@ -642,8 +669,8 @@ public class CardDavClient {
                 if (status == 201) {
                     return Mono.empty();
                 }
-                if (status == 404) {
-                    return Mono.error(new RuntimeException("__RETRY__"));
+                if (status == 401 || status == 404) {
+                    return Mono.error(new RetryableRequestException());
                 }
 
                 return buf.asString(StandardCharsets.UTF_8)
@@ -659,8 +686,7 @@ public class CardDavClient {
                             """.formatted(domainId, status, body)));
                     });
             })
-            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
-                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
+            .retryWhen(retryTechnicalTokenRequest())
             .then()
             .block();
     }
@@ -671,17 +697,20 @@ public class CardDavClient {
                                     String technicalToken) {
         String uri = String.format("/addressbooks/%s/dab/%s.vcf", domainId, vcardUid);
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .put()
             .uri(uri)
-            .send(Mono.just(Unpooled.wrappedBuffer(vcardPayload)))
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(vcardPayload)))
             .responseSingle((response, buf) -> {
                 int status = response.status().code();
 
                 if (status == 201 || status == 204) {
                     return Mono.empty();
+                }
+                if (status == 401) {
+                    return Mono.error(new RetryableRequestException());
                 }
 
                 return buf.asString(StandardCharsets.UTF_8)
@@ -692,6 +721,8 @@ public class CardDavClient {
                         UID: %s
                         Response: %s
                         """.formatted(status, domainId, vcardUid, body))));
-            }).block();
+            })
+            .retryWhen(retryTechnicalTokenRequest())
+            .block();
     }
 }

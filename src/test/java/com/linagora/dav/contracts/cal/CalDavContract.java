@@ -2306,12 +2306,6 @@ public abstract class CalDavContract {
 
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
 
-        // To ensure calendar directory is activated
-        try {
-            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        } catch (Exception ignored) {
-        }
-
         String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
         Calendar actualCalendar = CalendarUtil.parseIcs(actual);
         actualCalendar.removeAll(Property.PRODID);
@@ -2377,12 +2371,6 @@ public abstract class CalDavContract {
 
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
 
-        // To ensure calendar directory is activated
-        try {
-            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        } catch (Exception ignored) {
-        }
-
         String updatedCalendarData = generateCalendarDataWithResource(
             eventUid,
             testUser.email(),
@@ -2424,12 +2412,6 @@ public abstract class CalDavContract {
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
 
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
-
-        // To ensure calendar directory is activated
-        try {
-            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        } catch (Exception ignored) {
-        }
 
         String updatedCalendarData = generateCalendarDataWithResource(
             eventUid,

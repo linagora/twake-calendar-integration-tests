@@ -18,6 +18,8 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.CardDavClient.TWAKE_CALENDAR_TOKEN_HEADER;
+import static com.linagora.dav.CardDavClient.retryTechnicalTokenRequest;
 import static com.linagora.dav.TestUtil.body;
 
 import java.net.URI;
@@ -40,6 +42,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Streams;
 import com.google.common.xml.XmlEscapers;
+import com.linagora.dav.CardDavClient.RetryableRequestException;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.buffer.Unpooled;
@@ -155,7 +158,7 @@ public class CalDavClient {
     }
 
     public void upsertCalendarEvent(String entityId, String eventId, String calendarData, String token) {
-        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+        httpClient.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, token))
             .put()
             .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
             .send(TestUtil.body(calendarData))
@@ -163,13 +166,18 @@ public class CalDavClient {
                 if (response.status().code() == 201 || response.status().code() == 204) {
                     return Mono.empty();
                 }
+                if (response.status().code() == 401) {
+                    return Mono.error(new RetryableRequestException());
+                }
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
                     .flatMap(responseBody -> Mono.error(new RuntimeException("""
                         Unexpected status code: %d when create/update calendar object
                         %s
                         """.formatted(response.status().code(), responseBody))));
-            }).block();
+            })
+            .retryWhen(retryTechnicalTokenRequest())
+            .block();
     }
 
     public void upsertJsonCalendarEvent(OpenPaasUser openPaasUser, String eventId, String calendarData) {
@@ -196,12 +204,15 @@ public class CalDavClient {
     }
 
     public String getCalendarEvent(String entityId, String eventId, String token) {
-        return httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+        return httpClient.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, token))
             .get()
             .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 200) {
                     return responseContent.asByteArray().map(bytes -> new String(bytes, StandardCharsets.UTF_8));
+                }
+                if (response.status().code() == 401) {
+                    return Mono.error(new RetryableRequestException());
                 }
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
@@ -209,7 +220,9 @@ public class CalDavClient {
                         Unexpected status code: %d when create/update calendar object
                         %s
                         """.formatted(response.status().code(), responseBody))));
-            }).block();
+            })
+            .retryWhen(retryTechnicalTokenRequest())
+            .block();
     }
 
     public String getCalendarEvent(OpenPaasUser userRequest, URI calendarURI) {
@@ -473,6 +486,25 @@ public class CalDavClient {
         grantDelegations(entityId, Map.of(delegatedUser, right), token);
     }
 
+    public void revokeDelegation(String entityId, OpenPaasUser delegatedUser, String token) {
+        String uri = "/calendars/" + entityId + "/" + entityId + ".json";
+
+        String payload = """
+            {
+              "share": {
+                "set": [],
+                "remove": [
+                  {
+                    "dav:href": "mailto:{email}"
+                  }
+                ]
+              }
+            }
+            """.replace("{email}", delegatedUser.email());
+
+        sendDelegationRequest(uri, payload, token);
+    }
+
     public void grantDelegations(String entityId, Map<OpenPaasUser, DelegationRight> delegations, String token) {
         String uri = "/calendars/" + entityId + "/" + entityId + ".json";
 
@@ -497,15 +529,7 @@ public class CalDavClient {
             }
             """.replace("{entries}", setEntries);
 
-        try{
-            sendDelegationRequest(uri, payload, token);
-        } catch (Exception e) {
-            if (e.getMessage().contains("Could not find node at path:")) {    // Retry once on first creation because DAV data not be provisioned yet.
-                sendDelegationRequest(uri, payload, token);
-            } else {
-                throw e;
-            }
-        }
+        sendDelegationRequest(uri, payload, token);
     }
 
     public DavResponse findEventsByTime(OpenPaasUser user, String start, String end) {
@@ -558,7 +582,7 @@ public class CalDavClient {
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
             .uri(uri)
-            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 200) {
                     return Mono.empty();
@@ -573,15 +597,18 @@ public class CalDavClient {
     }
 
     private void sendDelegationRequest(String uri, String payload, String token) {
-        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token)
+        httpClient.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, token)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
             .uri(uri)
-            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 200) {
                     return Mono.empty();
+                }
+                if (response.status().code() == 401 || response.status().code() == 404) {
+                    return Mono.error(new RetryableRequestException());
                 }
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
@@ -589,7 +616,9 @@ public class CalDavClient {
                         Unexpected status code: %d when sharing calendar '%s'
                         %s
                         """.formatted(response.status().code(), uri, errorBody))));
-            }).block();
+            })
+            .retryWhen(retryTechnicalTokenRequest())
+            .block();
     }
 
     private List<CalendarURL> extractCalendarURLsFromResponse(String json) {

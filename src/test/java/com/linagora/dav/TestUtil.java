@@ -45,7 +45,7 @@ public class TestUtil {
 
     public static final boolean DEBUG = true;
     public static Mono<ByteBuf> body(String body) {
-        return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
+        return Mono.fromCallable(() -> Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
     }
 
     public static DavResponse execute(HttpClient.ResponseReceiver<?> client) {
