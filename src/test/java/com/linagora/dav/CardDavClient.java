@@ -18,6 +18,8 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -254,7 +256,7 @@ public class CardDavClient {
 
     public void deleteAddressBook(String baseId, String addressBookId, String technicalToken) {
         String uri = String.format("/addressbooks/%s/%s.json", baseId, addressBookId);
-        client.headers(headers -> headers.add("TwakeCalendarToken", technicalToken)
+        client.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
             .delete()
             .uri(uri)
@@ -525,7 +527,7 @@ public class CardDavClient {
             """.getBytes(StandardCharsets.UTF_8);
 
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json"))
             .post()
@@ -565,7 +567,7 @@ public class CardDavClient {
                                           String technicalToken) {
         String uri = String.format("/addressbooks/%s/domain-members/%s.vcf", domainId, vcardUid);
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .put()
@@ -593,7 +595,7 @@ public class CardDavClient {
     public void deleteContactDomainMembers(String domainId, String vcardUid, String technicalToken) {
         String uri = String.format(ADDRESS_BOOK_PATH, domainId, "domain-members", vcardUid);
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .delete()
             .uri(uri)
@@ -631,7 +633,7 @@ public class CardDavClient {
             """.getBytes(StandardCharsets.UTF_8);
 
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json"))
             .post()
@@ -671,7 +673,7 @@ public class CardDavClient {
                                     String technicalToken) {
         String uri = String.format("/addressbooks/%s/dab/%s.vcf", domainId, vcardUid);
         client.headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_VCARD)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
             .put()

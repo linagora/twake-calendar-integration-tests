@@ -96,13 +96,21 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin) {
+        return createResource(name, description, admin, openPaasDomain().getObjectId("_id"));
+    }
+
+    public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, String domainName) {
+        return createResource(name, description, admin, createDomainIfNotExists(domainName).getObjectId("_id"));
+    }
+
+    private Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, ObjectId domainId) {
         Document resourceToSave = new Document()
             .append("name", name)
             .append("description", description)
             .append("type", "resource")
             .append("icon", "home")
             .append("deleted", false)
-            .append("domain", openPaasDomain().get("_id"))
+            .append("domain", domainId)
             .append("creator", new org.bson.types.ObjectId(admin.id()))
             .append("administrators", List.of(new Document()
                 .append("id", admin.id())

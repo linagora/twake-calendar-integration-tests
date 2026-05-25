@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts.card;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
@@ -33,6 +34,8 @@ import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.CardDavClient.DelegationRight;
@@ -63,14 +66,16 @@ public abstract class CardDavMultitenancyContract {
     private OpenPaasUser bob;
     private OpenPaasUser john;
     private String secondDomainId;
-    private String technicalToken;
+    private String defaultDomainToken;
+    private String secondDomainToken;
 
     @BeforeEach
     void setUp() {
         cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
         Document secondDomainDoc = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
         secondDomainId = secondDomainDoc.getObjectId("_id").toString();
-        technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        defaultDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        secondDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken(secondDomainId);
         bob = dockerExtension().newTestUser();
         john = dockerExtension().twakeCalendarProvisioningService()
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
@@ -403,7 +408,7 @@ public abstract class CardDavMultitenancyContract {
 
     @Test
     void readDabShouldReturnErrorStatusForCrossDomainUser() {
-        cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
 
         assertThatThrownBy(() -> cardDavClient.getContacts(bob, secondDomainId, DOMAIN_ADDRESS_BOOK))
             .isInstanceOf(RuntimeException.class)
@@ -414,7 +419,7 @@ public abstract class CardDavMultitenancyContract {
     void readDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain
         // And Bob is domain admin of first domain
-        cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
         makeDomainAdmin(bob, DEFAULT_DOMAIN);
 
         // When Bob tries to read domain address book of second domain
@@ -426,7 +431,7 @@ public abstract class CardDavMultitenancyContract {
 
     @Test
     void addContactToPublicReadWriteDabShouldReturnErrorStatusForCrossDomainUser() {
-        cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
         makeDomainAdmin(john, SECOND_DOMAIN);
         cardDavClient.setDomainAddressBookPublicRightReadWrite(john, secondDomainId, DOMAIN_ADDRESS_BOOK);
 
@@ -440,7 +445,7 @@ public abstract class CardDavMultitenancyContract {
     void addContactToPublicReadWriteDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain with public read write right
         // And Bob is domain admin of first domain
-        cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
         makeDomainAdmin(john, SECOND_DOMAIN);
         cardDavClient.setDomainAddressBookPublicRightReadWrite(john, secondDomainId, DOMAIN_ADDRESS_BOOK);
 
@@ -458,7 +463,7 @@ public abstract class CardDavMultitenancyContract {
     void setPublicRightOfDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain
         // And Bob is domain admin of first domain
-        cardDavClient.createDomainAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
         makeDomainAdmin(bob, DEFAULT_DOMAIN);
 
         // When Bob tries to set public right of domain address book of second domain
@@ -473,7 +478,7 @@ public abstract class CardDavMultitenancyContract {
     void delegateDabAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain address book of second domain
         // And Bob is domain admin of first domain
-        cardDavClient.createDomainAddressBook(dockerExtension().domainId(), technicalToken);
+        cardDavClient.createDomainAddressBook(dockerExtension().domainId(), defaultDomainToken);
         makeDomainAdmin(bob, DEFAULT_DOMAIN);
 
         // When Bob tries to delegate domain address book of first domain to John who is a user of second domain
@@ -485,7 +490,7 @@ public abstract class CardDavMultitenancyContract {
 
     @Test
     void readDomainMemberBookShouldReturnErrorStatusForCrossDomainUser() {
-        cardDavClient.createDomainMembersAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainMembersAddressBook(secondDomainId, secondDomainToken);
 
         assertThatThrownBy(() -> cardDavClient.getContacts(bob, secondDomainId, DOMAIN_MEMBERS_BOOK))
             .isInstanceOf(RuntimeException.class)
@@ -496,7 +501,7 @@ public abstract class CardDavMultitenancyContract {
     void readDomainMemberBookAsDomainAdminShouldReturnErrorStatusForCrossDomainUser() {
         // Given domain member address book of second domain
         // And Bob is domain admin of first domain
-        cardDavClient.createDomainMembersAddressBook(secondDomainId, technicalToken);
+        cardDavClient.createDomainMembersAddressBook(secondDomainId, secondDomainToken);
         makeDomainAdmin(bob, DEFAULT_DOMAIN);
 
         // When Bob tries to read domain member address book of second domain
@@ -517,4 +522,263 @@ public abstract class CardDavMultitenancyContract {
             .then()
             .statusCode(204);
     }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @ParameterizedTest
+    @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
+    protected void shouldNotCreateDomainAddressBookWhenUsingForeignTechnicalToken(String addressBookId) {
+        // GIVEN Domain B and a payload for one of its domain address books
+        Document targetDomain = dockerExtension().twakeCalendarProvisioningService()
+            .createDomainIfNotExists("technical-token-target-" + UUID.randomUUID() + ".test");
+        String targetDomainId = targetDomain.getObjectId("_id").toString();
+        String targetDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken(targetDomainId);
+        String payload = DOMAIN_MEMBERS_BOOK.equals(addressBookId) ? """
+            {
+                "id": "domain-members",
+                "dav:name": "Domain Members",
+                "carddav:description": "Address book contains all domain members",
+                "dav:acl": [ "{DAV:}read" ],
+                "type": "group"
+            }
+            """ : """
+            {
+                "id": "dab",
+                "dav:name": "Domain address book",
+                "carddav:description": "Domain address book",
+                "dav:acl": [ "{DAV:}read" ],
+                "type": "group",
+                "state": "enabled"
+            }
+            """;
+
+        // WHEN a Domain A technical token tries to create the Domain B address book
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json"))
+            .post()
+            .uri("/addressbooks/" + targetDomainId + ".json")
+            .send(body(payload)));
+
+        // THEN no address book is created in Domain B and a Domain B technical token can still create it
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, targetDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json"))
+            .post()
+            .uri("/addressbooks/" + targetDomainId + ".json")
+            .send(body(payload))))
+            .isEqualTo(201);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotExposeDomainAddressBooksWhenUsingForeignTechnicalToken() {
+        // GIVEN a domain address book exists in Domain B
+        cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
+
+        // WHEN a Domain A technical token lists Domain B address books
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/addressbooks/" + secondDomainId + ".json"));
+
+        // THEN Domain B address books are not exposed
+        assertThat(status).isIn(403, 404);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @ParameterizedTest
+    @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
+    protected void shouldNotExposeDomainAddressBookContactsInJsonWhenUsingForeignTechnicalToken(String addressBookId) {
+        // GIVEN a contact exists in one of the Domain B address books
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.createDomainMembersAddressBook(secondDomainId, secondDomainToken);
+        } else {
+            cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
+        }
+        String vcardUid = "contact-" + UUID.randomUUID();
+        byte[] payload = """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:Visible Contact
+            N:Visible Contact;;;;
+            UID:%s
+            END:VCARD
+            """.formatted(vcardUid).getBytes(StandardCharsets.UTF_8);
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.upsertDomainMemberContact(secondDomainId, vcardUid, payload, secondDomainToken);
+        } else {
+            cardDavClient.upsertDomainContact(secondDomainId, vcardUid, payload, secondDomainToken);
+        }
+
+        // WHEN a Domain A technical token reads Domain B contacts as JSON
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json, text/plain, */*"))
+            .get()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"));
+
+        // THEN Domain B contacts are not exposed and remain readable by a Domain B technical token
+        assertThat(status).isIn(403, 404);
+        assertThat(execute(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json, text/plain, */*"))
+            .get()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
+            .body()).contains("Visible Contact");
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @ParameterizedTest
+    @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
+    protected void shouldNotExposeDomainAddressBookContactsReportWhenUsingForeignTechnicalToken(String addressBookId) {
+        // GIVEN a contact exists in one of the Domain B address books
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.createDomainMembersAddressBook(secondDomainId, secondDomainToken);
+        } else {
+            cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
+        }
+        String vcardUid = "contact-" + UUID.randomUUID();
+        byte[] payload = """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:Reported Contact
+            N:Reported Contact;;;;
+            UID:%s
+            END:VCARD
+            """.formatted(vcardUid).getBytes(StandardCharsets.UTF_8);
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.upsertDomainMemberContact(secondDomainId, vcardUid, payload, secondDomainToken);
+        } else {
+            cardDavClient.upsertDomainContact(secondDomainId, vcardUid, payload, secondDomainToken);
+        }
+
+        // WHEN a Domain A technical token runs a CardDAV REPORT on Domain B contacts
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId)
+            .send(body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+                  <D:prop>
+                    <D:getetag/>
+                    <C:address-data/>
+                  </D:prop>
+                </C:addressbook-query>
+                """)));
+
+        // THEN the report does not expose Domain B contacts and they remain readable by a Domain B technical token
+        assertThat(status).isIn(403, 404);
+        assertThat(execute(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json, text/plain, */*"))
+            .get()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
+            .body()).contains("Reported Contact");
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @ParameterizedTest
+    @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
+    protected void shouldNotCreateContactInDomainAddressBookWhenUsingForeignTechnicalToken(String addressBookId) {
+        // GIVEN one of the Domain B address books exists
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.createDomainMembersAddressBook(secondDomainId, secondDomainToken);
+        } else {
+            cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
+        }
+        String vcardUid = "contact-" + UUID.randomUUID();
+
+        // WHEN a Domain A technical token writes a contact into the Domain B address book
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/vcard+json")
+                .add("Accept", "application/json, text/plain, */*"))
+            .put()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + "/" + vcardUid + ".vcf")
+            .send(body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Forbidden Contact
+                N:Forbidden Contact;;;;
+                UID:%s
+                END:VCARD
+                """.formatted(vcardUid))));
+
+        // THEN no contact is created in Domain B
+        assertThat(status).isIn(403, 404);
+        assertThat(execute(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json, text/plain, */*"))
+            .get()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
+            .body())
+            .doesNotContain(vcardUid)
+            .doesNotContain("Forbidden Contact");
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @ParameterizedTest
+    @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
+    protected void shouldNotDeleteContactFromDomainAddressBookWhenUsingForeignTechnicalToken(String addressBookId) {
+        // GIVEN a contact exists in one of the Domain B address books
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.createDomainMembersAddressBook(secondDomainId, secondDomainToken);
+        } else {
+            cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
+        }
+        String vcardUid = "contact-" + UUID.randomUUID();
+        byte[] payload = """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:Contact To Keep
+            N:Contact To Keep;;;;
+            UID:%s
+            END:VCARD
+            """.formatted(vcardUid).getBytes(StandardCharsets.UTF_8);
+        if (DOMAIN_MEMBERS_BOOK.equals(addressBookId)) {
+            cardDavClient.upsertDomainMemberContact(secondDomainId, vcardUid, payload, secondDomainToken);
+        } else {
+            cardDavClient.upsertDomainContact(secondDomainId, vcardUid, payload, secondDomainToken);
+        }
+
+        // WHEN a Domain A technical token deletes the Domain B contact
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Accept", "application/json, text/plain, */*"))
+            .delete()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + "/" + vcardUid + ".vcf"));
+
+        // THEN the Domain B contact remains available
+        assertThat(status).isIn(403, 404);
+        assertThat(execute(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json, text/plain, */*"))
+            .get()
+            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
+            .body()).contains("Contact To Keep");
+    }
+
 }
