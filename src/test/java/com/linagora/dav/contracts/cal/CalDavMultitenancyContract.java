@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.net.URI;
 import java.util.UUID;
 
+import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -51,11 +53,16 @@ public abstract class CalDavMultitenancyContract {
     private CalDavClient calDavClient;
     private OpenPaasUser bob;
     private OpenPaasUser john;
+    private String defaultDomainToken;
+    private String secondDomainToken;
 
     @BeforeEach
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
-        dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
+        Document secondDomainDoc = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
+        String secondDomainId = secondDomainDoc.getObjectId("_id").toString();
+        defaultDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        secondDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken(secondDomainId);
         bob = dockerExtension().newTestUser();
         john = dockerExtension().twakeCalendarProvisioningService()
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
@@ -609,5 +616,257 @@ public abstract class CalDavMultitenancyContract {
         assertThatThrownBy(() -> calDavClient.sendITIPRequest(john, URI.create("/calendars/" + bob.id()), counterBody).block())
             .isInstanceOf(RuntimeException.class)
             .message().containsAnyOf("403", "404");
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotExposeUserCalendarsWhenUsingForeignTechnicalToken() {
+        // GIVEN John owns a Domain B calendar
+        // WHEN a Domain A technical token lists John's calendars
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/calendars/" + john.id() + ".json"));
+
+        // THEN Domain B calendars are not exposed and remain reachable with a Domain B technical token
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/calendars/" + john.id() + ".json")))
+            .isEqualTo(200);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotCreateIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
+        // GIVEN John owns a Domain B calendar
+        String eventUid = "event-" + UUID.randomUUID();
+
+        // WHEN a Domain A technical token writes an ICS event into John's calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "text/calendar ; charset=utf-8"))
+            .put()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+            .send(body(icsEvent(eventUid, "Forbidden ICS event"))));
+
+        // THEN no event is created in Domain B
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")))
+            .isEqualTo(404);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotExposeIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
+        // GIVEN an ICS event exists in John's Domain B calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(john.id(), eventUid, icsEvent(eventUid, "Visible ICS event"), secondDomainToken);
+
+        // WHEN a Domain A technical token reads that ICS event
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics"));
+
+        // THEN the Domain B event is not exposed and remains readable by a Domain B technical token
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")))
+            .isEqualTo(200);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotDeleteIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
+        // GIVEN an ICS event exists in John's Domain B calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(john.id(), eventUid, icsEvent(eventUid, "Protected ICS event"), secondDomainToken);
+
+        // WHEN a Domain A technical token deletes that ICS event
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken))
+            .delete()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics"));
+
+        // THEN the Domain B event remains available
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")))
+            .isEqualTo(200);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotCreateJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
+        // GIVEN John owns a Domain B calendar
+        String eventUid = "event-" + UUID.randomUUID();
+
+        // WHEN a Domain A technical token writes a JSON event into John's calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/calendar+json"))
+            .put()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .send(body("""
+                ["vcalendar",[],[["vevent",[
+                    ["uid",{},"text","%s"],
+                    ["dtstart",{"tzid":"Asia/Ho_Chi_Minh"},"date-time","3025-04-11T10:00:00"],
+                    ["dtend",{"tzid":"Asia/Ho_Chi_Minh"},"date-time","3025-04-11T11:00:00"],
+                    ["summary",{},"text","Forbidden JSON event"],
+                    ["dtstamp",{},"date-time","3025-04-11T02:00:00Z"]
+                ],[]]]]
+                """.formatted(eventUid))));
+
+        // THEN no event is created in Domain B
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Accept", "application/calendar+json"))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")))
+            .isEqualTo(404);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotExposeJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
+        // GIVEN a JSON event exists in John's Domain B calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Content-Type", "application/calendar+json"))
+            .put()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .send(body("""
+                ["vcalendar",[],[["vevent",[
+                    ["uid",{},"text","%s"],
+                    ["dtstart",{"tzid":"Asia/Ho_Chi_Minh"},"date-time","3025-04-11T10:00:00"],
+                    ["dtend",{"tzid":"Asia/Ho_Chi_Minh"},"date-time","3025-04-11T11:00:00"],
+                    ["summary",{},"text","Visible JSON event"],
+                    ["dtstamp",{},"date-time","3025-04-11T02:00:00Z"]
+                ],[]]]]
+                """.formatted(eventUid)))))
+            .isEqualTo(201);
+
+        // WHEN a Domain A technical token reads that event as JSON
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Accept", "application/calendar+json"))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json"));
+
+        // THEN the Domain B event is not exposed and remains readable by a Domain B technical token
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Accept", "application/calendar+json"))
+            .get()
+            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")))
+            .isEqualTo(200);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotExposeUserCalendarReportWhenUsingForeignTechnicalToken() {
+        // GIVEN an event exists in John's Domain B calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(john.id(), eventUid, icsEvent(eventUid, "Reported event"), secondDomainToken);
+
+        // WHEN a Domain A technical token searches John's calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/json")
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250401T000000","end":"30250430T000000"}}
+                """)));
+
+        // THEN the report does not expose Domain B events and a Domain B technical token can still search the calendar
+        assertThat(status).isIn(403, 404);
+        assertThat(executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Content-Type", "application/json")
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
+            .send(body("""
+                {"match":{"start":"30250401T000000","end":"30250430T000000"}}
+                """))))
+            .isEqualTo(200);
+    }
+
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
+    @Test
+    protected void shouldNotGrantUserCalendarDelegationWhenUsingForeignTechnicalToken() {
+        // GIVEN John owns a Domain B calendar
+        OpenPaasUser secondDomainDelegate = dockerExtension().twakeCalendarProvisioningService()
+            .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
+
+        // WHEN a Domain A technical token grants delegation on John's calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Content-Type", "application/json;charset=UTF-8")
+                .add("Accept", "application/json, text/plain, */*"))
+            .post()
+            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
+            .send(body("""
+                {
+                  "share": {
+                    "set": [
+                      {
+                        "dav:href": "mailto:%s",
+                        "dav:read-write": true
+                      }
+                    ],
+                    "remove": []
+                  }
+                }
+                """.formatted(secondDomainDelegate.email()))));
+
+        // THEN no delegated calendar appears
+        assertThat(status).isIn(403, 404);
+        assertThat(calDavClient.findUserCalendars(secondDomainDelegate).collectList().block())
+            .noneMatch(calendarURL -> calendarURL.base().equals(john.id()));
+    }
+
+    private static String icsEvent(String eventUid, String summary) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:30250411T020000Z
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary);
     }
 }
