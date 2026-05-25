@@ -18,6 +18,7 @@
 
 package com.linagora.dav;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static com.linagora.dav.TestUtil.body;
 
 import java.net.URI;
@@ -155,7 +156,7 @@ public class CalDavClient {
     }
 
     public void upsertCalendarEvent(String entityId, String eventId, String calendarData, String token) {
-        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+        httpClient.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, token))
             .put()
             .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
             .send(TestUtil.body(calendarData))
@@ -196,7 +197,7 @@ public class CalDavClient {
     }
 
     public String getCalendarEvent(String entityId, String eventId, String token) {
-        return httpClient.headers(headers -> headers.add("TwakeCalendarToken", token))
+        return httpClient.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, token))
             .get()
             .uri("/calendars/" + entityId + "/" + entityId + "/" + eventId + ".ics")
             .responseSingle((response, responseContent) -> {
@@ -573,7 +574,7 @@ public class CalDavClient {
     }
 
     private void sendDelegationRequest(String uri, String payload, String token) {
-        httpClient.headers(headers -> headers.add("TwakeCalendarToken", token)
+        httpClient.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, token)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)

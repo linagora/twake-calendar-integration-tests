@@ -44,6 +44,8 @@ public class TestUtil {
     public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public static final boolean DEBUG = true;
+    public static final String TWAKE_CALENDAR_TOKEN_HEADER = "TwakeCalendarToken";
+
     public static Mono<ByteBuf> body(String body) {
         return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
     }
