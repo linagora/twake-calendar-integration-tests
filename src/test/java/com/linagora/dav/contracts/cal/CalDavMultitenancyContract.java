@@ -597,7 +597,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeUserCalendarsWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
@@ -620,7 +619,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
@@ -644,7 +642,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in John's Domain B calendar
@@ -666,7 +663,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotDeleteIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in John's Domain B calendar
@@ -688,7 +684,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
@@ -722,7 +717,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN a JSON event exists in John's Domain B calendar
@@ -763,7 +757,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeUserCalendarReportWhenUsingForeignTechnicalToken() {
         // GIVEN an event exists in John's Domain B calendar
@@ -797,7 +790,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotGrantUserCalendarDelegationWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar

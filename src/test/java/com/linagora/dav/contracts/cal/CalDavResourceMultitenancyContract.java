@@ -229,7 +229,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeResourceCalendarsWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token lists Domain B resource calendars
@@ -244,7 +243,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateIcsEventWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token writes an ICS event into the Domain B resource calendar
@@ -279,7 +277,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeIcsEventWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in a Domain B resource calendar
@@ -314,7 +311,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotDeleteIcsEventWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in a Domain B resource calendar
@@ -349,7 +345,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateJsonEventWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token writes a JSON event into the Domain B resource calendar
@@ -381,7 +376,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeJsonEventWhenUsingForeignTechnicalToken() {
         // GIVEN a JSON event exists in a Domain B resource calendar
@@ -422,7 +416,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeResourceCalendarReportWhenUsingForeignTechnicalToken() {
         // GIVEN an event exists in a Domain B resource calendar
@@ -469,7 +462,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotGrantResourceCalendarDelegationWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token grants delegation on the Domain B resource calendar

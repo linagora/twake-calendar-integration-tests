@@ -504,7 +504,6 @@ public abstract class CardDavMultitenancyContract {
             .statusCode(204);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @ParameterizedTest
     @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
     protected void shouldNotCreateDomainAddressBookWhenUsingForeignTechnicalToken(String addressBookId) {
@@ -555,7 +554,6 @@ public abstract class CardDavMultitenancyContract {
             .isEqualTo(201);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeDomainAddressBooksWhenUsingForeignTechnicalToken() {
         // GIVEN a domain address book exists in Domain B
@@ -573,7 +571,6 @@ public abstract class CardDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @ParameterizedTest
     @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
     protected void shouldNotExposeDomainAddressBookContactsInJsonWhenUsingForeignTechnicalToken(String addressBookId) {
@@ -619,7 +616,6 @@ public abstract class CardDavMultitenancyContract {
             .body()).contains("Visible Contact");
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @ParameterizedTest
     @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
     protected void shouldNotExposeDomainAddressBookContactsReportWhenUsingForeignTechnicalToken(String addressBookId) {
@@ -674,7 +670,6 @@ public abstract class CardDavMultitenancyContract {
             .body()).contains("Reported Contact");
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @ParameterizedTest
     @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
     protected void shouldNotCreateContactInDomainAddressBookWhenUsingForeignTechnicalToken(String addressBookId) {
@@ -717,7 +712,6 @@ public abstract class CardDavMultitenancyContract {
             .doesNotContain("Forbidden Contact");
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @ParameterizedTest
     @ValueSource(strings = {DOMAIN_ADDRESS_BOOK, DOMAIN_MEMBERS_BOOK})
     protected void shouldNotDeleteContactFromDomainAddressBookWhenUsingForeignTechnicalToken(String addressBookId) {
