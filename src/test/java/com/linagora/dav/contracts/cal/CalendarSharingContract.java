@@ -2132,9 +2132,8 @@ public abstract class CalendarSharingContract {
         assertThat(updatedEventJson).contains("Hacked by Alice!");
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/51")
     @Test
-    void cannotSubscribeToResourceFromAnotherDomain() {
+    public void cannotSubscribeToResourceFromAnotherDomain() {
         TwakeCalendarProvisioningService provisioningService = extension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService();
 

@@ -31,7 +31,6 @@ import java.util.UUID;
 
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CalDavClient;
@@ -89,7 +88,6 @@ public abstract class CalDavResourceMultitenancyContract {
         secondDomainToken = dockerExtension().twakeCalendarProvisioningService().generateToken(secondDomainId);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindResourceCalendarHomeShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -100,7 +98,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindResourceCalendarShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -111,7 +108,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void getEventFromResourceCalendarShouldReturn403ForCrossDomainUser() {
         String eventUid = UUID.randomUUID().toString();
@@ -151,7 +147,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void reportResourceCalendarShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -167,7 +162,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void getJsonCalendarListShouldReturn403ForCrossDomainUser() {
         int status = executeNoContent(dockerExtension().davHttpClient()
@@ -198,7 +192,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .statusCode(403);
     }
 
-    @Disabled("Currently returns 404")
     @Test
     void getJsonEventShouldReturn403Or404ForCrossDomainUser() {
         String eventUid = UUID.randomUUID().toString();
@@ -236,7 +229,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeResourceCalendarsWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token lists Domain B resource calendars
@@ -251,7 +243,6 @@ public abstract class CalDavResourceMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateIcsEventWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token writes an ICS event into the Domain B resource calendar
@@ -286,7 +277,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeIcsEventWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in a Domain B resource calendar
@@ -321,7 +311,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotDeleteIcsEventWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in a Domain B resource calendar
@@ -356,7 +345,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateJsonEventWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token writes a JSON event into the Domain B resource calendar
@@ -388,7 +376,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeJsonEventWhenUsingForeignTechnicalToken() {
         // GIVEN a JSON event exists in a Domain B resource calendar
@@ -429,7 +416,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeResourceCalendarReportWhenUsingForeignTechnicalToken() {
         // GIVEN an event exists in a Domain B resource calendar
@@ -476,7 +462,6 @@ public abstract class CalDavResourceMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotGrantResourceCalendarDelegationWhenUsingForeignTechnicalToken() {
         // WHEN a Domain A technical token grants delegation on the Domain B resource calendar

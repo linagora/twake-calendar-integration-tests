@@ -30,7 +30,6 @@ import java.util.UUID;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.DavResponse;
@@ -60,7 +59,6 @@ public abstract class PrincipalMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void principalPropertySearchShouldRespectDomainIsolation() throws Exception {
         // Given Bob is authenticated in the default domain, Alice is in the same domain, and John is in another domain
@@ -115,7 +113,6 @@ public abstract class PrincipalMultitenancyContract {
             .isEmpty();
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void jwtAuthenticatedBobCannotPropfindCrossDomainPrincipal() {
         // Given Bob is authenticated with a JWT token
@@ -146,7 +143,6 @@ public abstract class PrincipalMultitenancyContract {
         assertThat(johnPrincipalResponse.status()).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindOnCrossDomainPrincipalShouldReturn403() {
         int status = execute(dockerExtension().davHttpClient()
@@ -165,7 +161,6 @@ public abstract class PrincipalMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void calendarHomeSetDiscoveryShouldReturn403ForCrossDomainPrincipal() {
         int status = execute(dockerExtension().davHttpClient()
@@ -184,7 +179,6 @@ public abstract class PrincipalMultitenancyContract {
         assertThat(status).isEqualTo(403);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void addressBookHomeSetDiscoveryShouldReturn403ForCrossDomainPrincipal() {
         int status = execute(dockerExtension().davHttpClient()

@@ -30,7 +30,6 @@ import java.util.UUID;
 
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CalDavClient;
@@ -68,7 +67,6 @@ public abstract class CalDavMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-integration-tests/issues/209")
     @Test
     void propfindOnCalendarsRootShouldNotExposeCrossDomainCalendarHome() {
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -87,7 +85,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(response.body()).doesNotContain(john.id());
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void propfindShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -100,7 +97,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void propfindCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -155,7 +151,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void putEventShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -169,7 +164,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void deleteEventShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -183,7 +177,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void getEventShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -197,7 +190,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void proppatchShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -219,7 +211,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void headEventShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -233,7 +224,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void exportShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -246,7 +236,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void reportShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -338,7 +327,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void getJsonCalendarListShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -351,7 +339,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void putJsonEventShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -426,7 +413,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void exportJsonCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -456,7 +442,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(destinationResponse.status()).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void updateJsonCalendarMetadataShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -475,7 +460,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void reportJsonCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -502,7 +486,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void subscribeShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
@@ -520,7 +503,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void delegateShouldReturnErrorStatusForCrossDomainUser() {
         assertThatThrownBy(() -> calDavClient.grantDelegation(bob, bob.id(), john, DelegationRight.READ_WRITE))
@@ -528,7 +510,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void freeBusyShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -544,7 +525,6 @@ public abstract class CalDavMultitenancyContract {
         assertThat(status).isIn(403, 404);
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void itipRequestShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
@@ -581,7 +561,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("https://github.com/linagora/twake-calendar-side-service/issues/673")
     @Test
     void itipCounterShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
@@ -618,7 +597,6 @@ public abstract class CalDavMultitenancyContract {
             .message().containsAnyOf("403", "404");
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeUserCalendarsWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
@@ -641,7 +619,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
@@ -665,7 +642,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in John's Domain B calendar
@@ -687,7 +663,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotDeleteIcsEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN an ICS event exists in John's Domain B calendar
@@ -709,7 +684,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotCreateJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
@@ -743,7 +717,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(404);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN a JSON event exists in John's Domain B calendar
@@ -784,7 +757,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotExposeUserCalendarReportWhenUsingForeignTechnicalToken() {
         // GIVEN an event exists in John's Domain B calendar
@@ -818,7 +790,6 @@ public abstract class CalDavMultitenancyContract {
             .isEqualTo(200);
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/357")
     @Test
     protected void shouldNotGrantUserCalendarDelegationWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
