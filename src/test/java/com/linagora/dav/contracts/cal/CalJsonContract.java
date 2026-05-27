@@ -46,6 +46,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -3215,6 +3216,57 @@ public abstract class CalJsonContract {
 
         assertThat(jsonResponse.has("etag")).isTrue();
         assertThat(jsonResponse.get("etag").asText()).isNotEmpty();
+    }
+
+    @Test
+    void shouldListCalendarWithFreeBusyAndRightsParams() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("withFreeBusy", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .statusCode(200);
+    }
+
+    @Test
+    void shouldListCalendarWithFreeBusyAndRightsWhenSubscribedCalendarSourceIsDeleted() {
+        dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .enableSharedCalendarModule()
+            .block();
+
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // Bob makes his calendar publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // Alice subscribes to Bob's calendar
+        SubscribedCalendarRequest subscription = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob's calendar")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscription);
+
+        // Bob deletes his calendar — the subscribed node becomes null
+        calDavClient.deleteCalendar(bob, CalendarURL.from(bob.id()));
+
+        // Alice lists her calendars with withFreeBusy + withRights: should not crash with 500
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("withFreeBusy", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .statusCode(200);
     }
 
     @Test
