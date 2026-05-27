@@ -3242,21 +3242,24 @@ public abstract class CalJsonContract {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
 
-        // Bob makes his calendar publicly readable
-        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        // Bob creates a secondary calendar and makes it publicly readable
+        String bobSecondaryCalendarId = UUID.randomUUID().toString();
+        CalendarURL bobSecondaryCalendar = calDavClient.createNewCalendar(bob, bobSecondaryCalendarId, "Bob secondary", 2);
+        calDavClient.updateCalendarAcl(bob, bobSecondaryCalendar, "{DAV:}read");
 
-        // Alice subscribes to Bob's calendar
+        // Alice subscribes to Bob's secondary calendar
         SubscribedCalendarRequest subscription = SubscribedCalendarRequest.builder()
             .id(UUID.randomUUID().toString())
             .sourceUserId(bob.id())
-            .name("Bob's calendar")
+            .sourceCalendarId(bobSecondaryCalendarId)
+            .name("Bob's secondary calendar")
             .color("#00FF00")
             .readOnly(true)
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscription);
 
-        // Bob deletes his calendar — the subscribed node becomes null
-        calDavClient.deleteCalendar(bob, CalendarURL.from(bob.id()));
+        // Bob deletes his secondary calendar — the subscribed source node becomes null
+        calDavClient.deleteCalendar(bob, bobSecondaryCalendar);
 
         // Alice lists her calendars with withFreeBusy + withRights: should not crash with 500
         given()
