@@ -30,7 +30,6 @@ import java.util.UUID;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.DavResponse;
@@ -60,8 +59,6 @@ public abstract class PrincipalMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
     }
 
-    @Disabled("Temporary disable, wait to pr https://github.com/linagora/esn-sabre/pull/364" +
-        "It will fail if PRINCIPAL_PRIVACY=true")
     @Test
     void principalPropertySearchShouldRespectDomainIsolation() throws Exception {
         // Given Bob is authenticated in the default domain, Alice is in the same domain, and John is in another domain
