@@ -25,7 +25,6 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import com.linagora.dav.DockerTwakeCalendarExtensionV4_7;
 import com.linagora.dav.contracts.PrincipalPrivacyContract;
 
-@Disabled("Wait to pr https://github.com/linagora/esn-sabre/pull/364")
 public class SabreV4PrincipalPrivacyTest extends PrincipalPrivacyContract {
     @RegisterExtension
     static DockerTwakeCalendarExtensionV4_7 dockerExtension = DockerTwakeCalendarExtensionV4_7.withPrincipalPrivacy();
