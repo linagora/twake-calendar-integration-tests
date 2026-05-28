@@ -22,6 +22,7 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
+import static com.linagora.dav.TwakeCalendarProvisioningService.DEFAULT_DOMAIN;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,6 +73,7 @@ import com.linagora.dav.TestUtil;
 import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
@@ -2345,6 +2347,41 @@ public abstract class CalDavContract {
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
             .replace("{resourceId}", resource.id()));
+    }
+
+    @Test
+    protected void resourceCalendarShouldBeAccessibleWhenAuthenticatedByAdminImpersonation() {
+        // Given a resource exists but its CalDAV calendar has not been accessed yet
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", testUser)
+            .block();
+
+        String resourceEmail = resource.id() + "@" + DEFAULT_DOMAIN;
+
+        // When Sabre authenticates admin impersonation of the resource
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(HttpHeaderNames.AUTHORIZATION, OpenPaasUser.impersonatedBasicAuth(resourceEmail))
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/xml")
+                .add("Depth", "0"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + resource.id() + "/" + resource.id())
+            .send(body("""
+                <d:propfind xmlns:d="DAV:">
+                    <d:prop>
+                        <d:resourcetype />
+                    </d:prop>
+                </d:propfind>
+                """)));
+
+        // Then the resource calendar is lazily provisioned without breaking authentication
+        assertThat(response.status())
+            .as("Admin impersonation of resource %s should access its default calendar", resourceEmail)
+            .isEqualTo(207);
+        assertThat(response.body())
+            .contains("/calendars/" + resource.id() + "/" + resource.id() + "/");
     }
 
     @Test
