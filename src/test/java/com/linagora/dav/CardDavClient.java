@@ -21,7 +21,6 @@ package com.linagora.dav;
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,7 +40,6 @@ import reactor.core.publisher.Mono;
 import reactor.netty.ByteBufMono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.client.HttpClientResponse;
-import reactor.util.retry.Retry;
 
 public class CardDavClient {
 
@@ -538,9 +536,6 @@ public class CardDavClient {
                 if (status == 201) {
                     return Mono.empty();
                 }
-                if (status == 404) {
-                    return Mono.error(new RuntimeException("__RETRY__"));
-                }
 
                 return buf.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(""))
@@ -555,8 +550,6 @@ public class CardDavClient {
                             """.formatted(domainId, status, body)));
                     });
             })
-            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
-                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
             .then()
             .block();
     }
@@ -644,9 +637,6 @@ public class CardDavClient {
                 if (status == 201) {
                     return Mono.empty();
                 }
-                if (status == 404) {
-                    return Mono.error(new RuntimeException("__RETRY__"));
-                }
 
                 return buf.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(""))
@@ -661,8 +651,6 @@ public class CardDavClient {
                             """.formatted(domainId, status, body)));
                     });
             })
-            .retryWhen(Retry.fixedDelay(1, Duration.ofMillis(500))
-                .filter(err -> err.getMessage() != null && err.getMessage().contains("__RETRY__")))
             .then()
             .block();
     }
