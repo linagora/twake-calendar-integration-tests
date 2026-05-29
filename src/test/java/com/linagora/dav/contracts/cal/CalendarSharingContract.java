@@ -2114,22 +2114,28 @@ public abstract class CalendarSharingContract {
         CalendarURL newCalendarUrl = calDavClient.findUserCalendars(alice).collectList().block()
             .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
 
-        // THEN: the event in the resource calendar should be updated successfully by alice
+        // THEN: the resource participation in the event should be updated successfully by alice
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, newCalendarUrl.asUri().toString(),
                 Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
             .collectList().block();
 
         String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
-        String modifiedICS = calendarData.replace(summary, "Hacked by Alice!");
+        String modifiedICS = calendarData.replace(
+            "ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=resource:mailto:" + resource.id() + "@open-paas.org",
+            "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=resource:mailto:" + resource.id() + "@open-paas.org");
         calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), modifiedICS);
 
         List<JsonNode> updatedEvents = calDavClient.reportCalendarEvents(alice, newCalendarUrl.asUri().toString(),
                 Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
             .collectList().block();
         assertThat(updatedEvents).hasSize(1);
-        String updatedEventJson = updatedEvents.getFirst().toString();
-
-        assertThat(updatedEventJson).contains("Hacked by Alice!");
+        assertThatJson(updatedEvents.getFirst())
+            .inPath("data[2][0][1]")
+            .isArray()
+            .anySatisfy(node -> assertThatJson(MAPPER.writeValueAsString(node))
+                .isEqualTo("""
+                    ["attendee", {"partstat":"ACCEPTED","rsvp":"TRUE","role":"REQ-PARTICIPANT","cutype":"RESOURCE","cn":"resource"}, "cal-address", "mailto:%s@open-paas.org"]"""
+                    .formatted(resource.id())));
     }
 
     @Test

@@ -21,6 +21,7 @@ package com.linagora.dav.contracts.cal;
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.executeNoContent;
 import static org.assertj.core.api.Assertions.entry;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
@@ -36,7 +37,6 @@ import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -787,7 +787,7 @@ public abstract class SchedulingContract {
             .replace("CLASS:" + CLASS_PUBLIC, "CLASS:" + CLASS_PRIVATE);
         calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
 
-          // And Bob updates event summary
+        // And Bob updates event summary
         String bobUpdatedCalendarEventIcs = calDavClient.getCalendarEvent(bob, bobCalendarEventUri)
             .replace("SUMMARY:" + initialSummary, "SUMMARY:" + updatedSummary);
         calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, bobUpdatedCalendarEventIcs);
@@ -1165,36 +1165,161 @@ public abstract class SchedulingContract {
         }
     }
 
-    static Stream<PropertyChange> coreEventPropertyUpdates() {
-        return Stream.of(
-            new PropertyChange(Property.SUMMARY, "Shared title", "Alice local title"),
-            new PropertyChange(Property.DESCRIPTION, "Shared description", "Alice local description"),
-            new PropertyChange(Property.DTSTART, "20351005T090000Z", "20351005T093000Z"),
-            new PropertyChange(Property.DTEND, "20351005T100000Z", "20351005T120000Z"),
-            new PropertyChange(Property.CLASS, "PUBLIC", "PRIVATE"),
-            new PropertyChange(Property.LOCATION, "Room A", "Room B"));
+    static Stream<PropertyChange> attendeeAllowedLocalEventPropertyUpdates() {
+        return Stream.of(new PropertyChange(Property.CLASS, "PUBLIC", "PRIVATE"));
     }
 
-    static Stream<PropertyChange> recurringOnlyPropertyUpdates() {
-        return Stream.of(
-            new PropertyChange(Property.RRULE, "FREQ=DAILY;COUNT=5", "FREQ=DAILY;COUNT=6"),
-            new PropertyChange(Property.RDATE, "20351011T090000Z", "20351012T090000Z"),
-            new PropertyChange(Property.EXDATE, "20351007T090000Z", "20351008T090000Z"));
+    static Stream<PropertyChange> attendeeAllowedLocalRecurringOverridePropertyUpdates() {
+        return Stream.of(new PropertyChange(Property.CLASS, "PRIVATE", "PUBLIC"));
     }
 
-    static Stream<PropertyChange> recurringMasterPropertyUpdates() {
-        return Stream.concat(coreEventPropertyUpdates(), recurringOnlyPropertyUpdates());
+    static Stream<PropertyChange> forbiddenAttendeeSchedulingPropertyUpdates() {
+        return Stream.of(
+            new PropertyChange(Property.DTSTART,
+                "20351005T090000Z",
+                "20351005T093000Z"),
+            new PropertyChange(Property.DTEND,
+                "20351005T100000Z",
+                "20351005T110000Z"),
+            new PropertyChange(Property.LOCATION,
+                "Room A",
+                "Room B"),
+            new PropertyChange(Property.SUMMARY,
+                "Shared title",
+                "Alice local title"),
+            new PropertyChange(Property.ORGANIZER,
+                "mailto:{bobEmail}",
+                "mailto:mallory@example.org"));
     }
 
-    static Stream<PropertyChange> recurringOverridePropertyUpdates() {
-        return Stream.of(
-            new PropertyChange(Property.SUMMARY, "Occurrence from organizer", "Alice local occurrence"),
-            new PropertyChange(Property.DTSTART, "20351006T130000Z", "20351006T133000Z"),
-            new PropertyChange(Property.DTEND, "20351006T140000Z", "20351006T160000Z"));
+    @ParameterizedTest(name = "[{index}] attendee updating forbidden {0} should be rejected")
+    @MethodSource("forbiddenAttendeeSchedulingPropertyUpdates")
+    void attendeeUpdatingForbiddenSchedulingPropertyShouldBeRejected(PropertyChange change) {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Shared title
+            DESCRIPTION:Shared description
+            CLASS:PUBLIC
+            LOCATION:Room A
+            STATUS:CONFIRMED
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        String originalLine = change.originalLine().replace("{bobEmail}", bob.email());
+        String updatedLine = change.updatedLine();
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .contains(originalLine);
+            assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .contains(originalLine);
+            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .contains(originalLine);
+        });
+
+        // When Alice updates an organizer-controlled property in her copy
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace(originalLine, updatedLine);
+        // Then the server rejects the attendee scheduling object change
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object")
+            .hasMessageContaining("Attendees are not allowed to change");
+
+        // And calendars keep the organizer-controlled value unchanged
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                    .contains(originalLine)
+                    .doesNotContain(updatedLine);
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .contains(originalLine)
+                    .doesNotContain(updatedLine);
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .contains(originalLine)
+                    .doesNotContain(updatedLine);
+            });
+    }
+
+    @Test
+    void attendeeUpdatingOrganizerLessEventShouldBeAllowed() {
+        // Given Alice has an organizer-less event in her own calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String eventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Owner local title
+            LOCATION:Room A
+            STATUS:CONFIRMED
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains("DTSTART:20351005T090000Z")
+            .contains("DTEND:20351005T100000Z")
+            .contains("SUMMARY:Owner local title")
+            .contains("LOCATION:Room A")
+            .doesNotContain("ORGANIZER:"));
+
+        // When Alice updates fields that are forbidden on attendee scheduling objects
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("DTSTART:20351005T090000Z", "DTSTART:20351005T093000Z")
+            .replace("DTEND:20351005T100000Z", "DTEND:20351005T110000Z")
+            .replace("SUMMARY:Owner local title", "SUMMARY:Owner updated title")
+            .replace("LOCATION:Room A", "LOCATION:Room B");
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then the organizer-less event is treated as a local object and the update is accepted
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .contains("DTSTART:20351005T093000Z")
+            .contains("DTEND:20351005T110000Z")
+            .contains("SUMMARY:Owner updated title")
+            .contains("LOCATION:Room B")
+            .doesNotContain("ORGANIZER:"));
     }
 
     @ParameterizedTest(name = "[{index}] attendee updating {0} should not propagate to organizer and other attendees")
-    @MethodSource("coreEventPropertyUpdates")
+    @MethodSource("attendeeAllowedLocalEventPropertyUpdates")
     void attendeePUTUpdateShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
         // Given Bob creates an event with Alice and Cedric as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -1263,7 +1388,7 @@ public abstract class SchedulingContract {
     }
 
     @ParameterizedTest(name = "[{index}] attendee updating recurring master {0} should not propagate to organizer and other attendees")
-    @MethodSource("recurringMasterPropertyUpdates")
+    @MethodSource("attendeeAllowedLocalEventPropertyUpdates")
     void attendeePUTUpdateOnRecurringShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
         // Given Bob creates a recurring master event (no overrides) with Alice and Cedric as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -1335,7 +1460,7 @@ public abstract class SchedulingContract {
     }
 
     @ParameterizedTest(name = "[{index}] attendee updating existing override {0} should not propagate to organizer and other attendees")
-    @MethodSource("recurringOverridePropertyUpdates")
+    @MethodSource("attendeeAllowedLocalRecurringOverridePropertyUpdates")
     void attendeeUpdatingExistingOverrideShouldNotPropagateToOrganizerAndOtherAttendees(PropertyChange change) {
         // Given Bob creates a recurring event with one override and invites Alice and Cedric
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -1363,6 +1488,7 @@ public abstract class SchedulingContract {
             DTSTART:20351006T130000Z
             DTEND:20351006T140000Z
             SUMMARY:Occurrence from organizer
+            CLASS:PRIVATE
             ORGANIZER:mailto:{bobEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
@@ -1840,7 +1966,7 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    void attendeeChangingOrganizerShouldOnlyAffectAttendeeCalendar() {
+    void attendeeChangingOrganizerShouldBeRejected() {
         Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
             "Fixed with async scheduling");
 
@@ -1879,16 +2005,19 @@ public abstract class SchedulingContract {
         String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
         String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
             .replace("ORGANIZER:mailto:" + bob.email(), "ORGANIZER:mailto:" + alice.email());
-        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
 
-        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
-            .extractPropertyValue(Property.ORGANIZER))
-            .isEqualTo("mailto:" + alice.email()));
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object")
+            .hasMessageContaining("Attendees are not allowed to change ORGANIZER");
 
-        // Then Bob and Cedric calendars still point to Bob as organizer
+        // Then Alice, Bob and Cedric calendars still point to Bob as organizer
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                    .extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + bob.email());
                 assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
                     .extractPropertyValue(Property.ORGANIZER))
                     .isEqualTo("mailto:" + bob.email());
@@ -1899,7 +2028,7 @@ public abstract class SchedulingContract {
     }
 
     @Test
-    void attendeeChangingOrganizerOnRecurringShouldOnlyAffectAttendeeCalendar() {
+    void attendeeChangingOrganizerOnRecurringShouldBeRejected() {
         Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
             "Fixed with async scheduling");
 
@@ -1954,12 +2083,18 @@ public abstract class SchedulingContract {
                 "SUMMARY:Recurring organizer isolation check\nORGANIZER:mailto:" + alice.email())
             .replace("SUMMARY:Recurring organizer isolation check - override\nORGANIZER:mailto:" + bob.email(),
                 "SUMMARY:Recurring organizer isolation check - override\nORGANIZER:mailto:" + alice.email());
-        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
 
-        // Then Bob and Cedric calendars still point to Bob as organizer on master and override
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object")
+            .hasMessageContaining("Attendees are not allowed to change ORGANIZER");
+
+        // Then Alice, Bob and Cedric calendars still point to Bob as organizer on master and override
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
+                assertThat(organizerEmails(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+                    .containsExactly("mailto:" + bob.email());
                 assertThat(organizerEmails(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
                     .containsExactly("mailto:" + bob.email());
                 assertThat(organizerEmails(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri)))
@@ -4300,13 +4435,13 @@ public abstract class SchedulingContract {
 
     private String awaitFirstEventId(OpenPaasUser user) {
         return awaitAtMost.until(() -> calDavClient.findFirstEventId(user),
-            Optional::isPresent)
+                Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Expected event id to be present"));
     }
 
     private URI awaitCalendarObjectUriByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
         return awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(user, calendarURL, eventUid),
-            Optional::isPresent)
+                Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Expected calendar object URI to be present for UID " + eventUid));
     }
 
