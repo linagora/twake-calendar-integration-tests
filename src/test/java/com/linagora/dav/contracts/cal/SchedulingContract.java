@@ -429,6 +429,150 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void attendeeAddingVALARMShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees and no VALARM
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Alarm add isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local alarm addition isolation
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .doesNotContain("BEGIN:VALARM");
+            assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .doesNotContain("BEGIN:VALARM");
+            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .doesNotContain("BEGIN:VALARM");
+        });
+
+        // When Alice adds a VALARM in her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("END:VEVENT", """
+                BEGIN:VALARM
+                TRIGGER:{alarmTrigger5m}
+                ACTION:DISPLAY
+                DESCRIPTION:Alice local reminder
+                END:VALARM
+                END:VEVENT
+                """.replace("{alarmTrigger5m}", ALARM_TRIGGER_5M));
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects the added alarm
+        awaitAtMost.untilAsserted(() -> assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+            .isEqualTo(ALARM_TRIGGER_5M));
+
+        // And Bob and Cedric calendars keep no VALARM
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .doesNotContain("BEGIN:VALARM");
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .doesNotContain("BEGIN:VALARM");
+            });
+    }
+
+    @Test
+    void attendeeRemovingVALARMShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Alarm remove isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local alarm removal isolation
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            BEGIN:VALARM
+            TRIGGER:{alarmTrigger15m}
+            ACTION:DISPLAY
+            DESCRIPTION:Organizer reminder
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{alarmTrigger15m}", ALARM_TRIGGER_15M);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+                .isEqualTo(ALARM_TRIGGER_15M);
+            assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
+                .isEqualTo(ALARM_TRIGGER_15M);
+            assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri)))
+                .isEqualTo(ALARM_TRIGGER_15M);
+        });
+
+        // When Alice removes the VALARM from her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = removeFirstAlarm(aliceCalendarEventIcs);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects the removed alarm
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .doesNotContain("BEGIN:VALARM"));
+
+        // And Bob and Cedric calendars keep original alarm trigger
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
+                    .isEqualTo(ALARM_TRIGGER_15M);
+                assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri)))
+                    .isEqualTo(ALARM_TRIGGER_15M);
+            });
+    }
+
+    @Test
     void organizerUpdateShouldNotResetAttendeeLocalVALARM() {
         // Given Bob creates an event with Alice and Cedric as attendees and a VALARM
         String organizerEventUid = "event-" + UUID.randomUUID();
@@ -662,6 +806,288 @@ public abstract class SchedulingContract {
                 assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
                     .extractPropertyValue(Property.TRANSP))
                     .isEqualTo(TRANSP_OPAQUE);
+            });
+    }
+
+    @Test
+    void attendeeAddingTRANSPShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees and no TRANSP
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Free busy add isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local transparency addition isolation
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .doesNotContain("TRANSP:");
+            assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .doesNotContain("TRANSP:");
+            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .doesNotContain("TRANSP:");
+        });
+
+        // When Alice adds TRANSP in her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("DESCRIPTION:Check attendee local transparency addition isolation",
+                "DESCRIPTION:Check attendee local transparency addition isolation\nTRANSP:" + TRANSP_TRANSPARENT);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects the added TRANSP
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(Property.TRANSP))
+            .isEqualTo(TRANSP_TRANSPARENT));
+
+        // And Bob and Cedric calendars keep no TRANSP
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .doesNotContain("TRANSP:");
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .doesNotContain("TRANSP:");
+            });
+    }
+
+    @Test
+    void attendeeRemovingTRANSPShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Free busy remove isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local transparency removal isolation
+            TRANSP:{transpOpaque}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{transpOpaque}", TRANSP_OPAQUE);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .extractPropertyValue(Property.TRANSP))
+                .isEqualTo(TRANSP_OPAQUE);
+        });
+
+        // When Alice removes TRANSP in her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replaceFirst("(?m)^TRANSP:" + TRANSP_OPAQUE + "\\R?", "");
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects the removed TRANSP
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .doesNotContain("TRANSP:"));
+
+        // And Bob and Cedric calendars keep original TRANSP
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .extractPropertyValue(Property.TRANSP))
+                    .isEqualTo(TRANSP_OPAQUE);
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .extractPropertyValue(Property.TRANSP))
+                    .isEqualTo(TRANSP_OPAQUE);
+            });
+    }
+
+    @Test
+    void attendeeAddingCLASSShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees and no CLASS
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Class add isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local class addition isolation
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .doesNotContain("CLASS:");
+            assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .doesNotContain("CLASS:");
+            assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .doesNotContain("CLASS:");
+        });
+
+        // When Alice adds CLASS in her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replace("DESCRIPTION:Check attendee local class addition isolation",
+                "DESCRIPTION:Check attendee local class addition isolation\nCLASS:" + CLASS_PRIVATE);
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects the added CLASS
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .extractPropertyValue(Property.CLASS))
+            .isEqualTo(CLASS_PRIVATE));
+
+        // And Bob and Cedric calendars keep no CLASS
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .doesNotContain("CLASS:");
+                assertThat(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .doesNotContain("CLASS:");
+            });
+    }
+
+    @Test
+    void attendeeRemovingCLASSShouldNotPropagateToOrganizerAndOtherAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees and CLASS set to PUBLIC
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Class remove isolation check
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check attendee local class removal isolation
+            CLASS:{classPublic}
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Cedric:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{classPublic}", CLASS_PUBLIC);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        String cedricCalendarEventId = awaitFirstEventId(cedric);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        URI cedricCalendarEventUri = URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + cedricCalendarEventId + ".ics");
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                .extractPropertyValue(Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                .extractPropertyValue(Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+            assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                .extractPropertyValue(Property.CLASS))
+                .isEqualTo(CLASS_PUBLIC);
+        });
+
+        // When Alice removes CLASS in her own event copy via HTTP PUT
+        String aliceCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+        String aliceUpdatedCalendarEventIcs = aliceCalendarEventIcs
+            .replaceFirst("(?m)^CLASS:" + CLASS_PUBLIC + "\\R?", "");
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        // Then Alice calendar reflects the removed CLASS
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .doesNotContain("CLASS:"));
+
+        // And Bob and Cedric calendars keep original CLASS
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+                    .extractPropertyValue(Property.CLASS))
+                    .isEqualTo(CLASS_PUBLIC);
+                assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri))
+                    .extractPropertyValue(Property.CLASS))
+                    .isEqualTo(CLASS_PUBLIC);
             });
     }
 
@@ -4474,6 +4900,10 @@ public abstract class SchedulingContract {
             .map(line -> line.substring("TRIGGER:".length()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Expected VALARM trigger to be present"));
+    }
+
+    private String removeFirstAlarm(String icsContent) {
+        return icsContent.replaceFirst("(?s)BEGIN:VALARM\\R.*?\\REND:VALARM\\R?", "");
     }
 
     private String readEventSummary(String icsContent) {
