@@ -474,6 +474,25 @@ public class CalDavClient {
         grantDelegations(entityId, Map.of(delegatedUser, right), token);
     }
 
+    public void revokeDelegation(String entityId, OpenPaasUser delegatedUser, String token) {
+        String uri = "/calendars/" + entityId + "/" + entityId + ".json";
+
+        String payload = """
+            {
+              "share": {
+                "set": [],
+                "remove": [
+                  {
+                    "dav:href": "mailto:{email}"
+                  }
+                ]
+              }
+            }
+            """.replace("{email}", delegatedUser.email());
+
+        sendDelegationRequest(uri, payload, token);
+    }
+
     public void grantDelegations(String entityId, Map<OpenPaasUser, DelegationRight> delegations, String token) {
         String uri = "/calendars/" + entityId + "/" + entityId + ".json";
 
@@ -498,15 +517,7 @@ public class CalDavClient {
             }
             """.replace("{entries}", setEntries);
 
-        try{
-            sendDelegationRequest(uri, payload, token);
-        } catch (Exception e) {
-            if (e.getMessage().contains("Could not find node at path:")) {    // Retry once on first creation because DAV data not be provisioned yet.
-                sendDelegationRequest(uri, payload, token);
-            } else {
-                throw e;
-            }
-        }
+        sendDelegationRequest(uri, payload, token);
     }
 
     public DavResponse findEventsByTime(OpenPaasUser user, String start, String end) {

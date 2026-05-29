@@ -2402,11 +2402,6 @@ public abstract class CalendarSharingContract {
             .replace("{resourceId}", resource.id());
 
         String token = extension().twakeCalendarProvisioningService().generateToken();
-        // To ensure calendar directory is activated
-        try {
-            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        } catch (Exception ignored) {
-        }
         calDavClient.upsertCalendarEvent(resource.id(), resourceEventId, updatedCalendarData, token);
 
         // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)

@@ -26,11 +26,11 @@ import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.cal.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
-import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -44,7 +44,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,7 +86,6 @@ import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
 
 public abstract class CalDavDelegationContract {
 
@@ -3221,86 +3219,11 @@ public abstract class CalDavDelegationContract {
     }
 
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
-        Map.Entry<Integer, String> delegationResponse = dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
-                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
-            .request(HttpMethod.POST)
-            .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
-            .send(Mono.defer(() -> {
-                String payload = """
-                    {
-                      "share": {
-                        "set": [
-                          {
-                            "dav:href": "mailto:%s",
-                            "dav:read-write": true
-                          }
-                        ],
-                        "remove": []
-                      }
-                    }
-                    """.formatted(admin.email());
-                return Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)));
-            }))
-            .responseSingle((response, content) -> content.asString()
-                .defaultIfEmpty("")
-                .flatMap(body -> {
-                    int status = response.status().code();
-                    if (status != 200 && status != 201 && status != 204) {
-                        return Mono.error(new RuntimeException("HTTP " + status + ": " + body));
-                    }
-                    return Mono.just(Map.entry(status, body));
-                }))
-            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1))
-                .filter(error -> StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path")))
-            .block();
-
-        assertThat(delegationResponse.getKey())
-            .as("Bob should be granted write access to the resource calendar")
-            .isIn(200, 201, 204);
+        calDavClient.grantDelegation(resource.id(), admin, DelegationRight.READ_WRITE, technicalToken);
     }
 
     private void revokeResourceAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
-        Map.Entry<Integer, String> revocationResponse = dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add("TwakeCalendarToken", technicalToken)
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
-                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
-            .request(HttpMethod.POST)
-            .uri("/calendars/" + resource.id() + "/" + resource.id() + ".json")
-            .send(Mono.defer(() -> {
-                String payload = """
-                    {
-                      "share": {
-                        "set": [],
-                        "remove": [
-                          {
-                            "dav:href": "mailto:%s"
-                          }
-                        ]
-                      }
-                    }
-                    """.formatted(admin.email());
-                return Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8)));
-            }))
-            .responseSingle((response, content) -> content.asString()
-                .defaultIfEmpty("")
-                .flatMap(body -> {
-                    int status = response.status().code();
-                    if (status != 200 && status != 201 && status != 204) {
-                        return Mono.error(new RuntimeException("HTTP " + status + ": " + body));
-                    }
-                    return Mono.just(Map.entry(status, body));
-                }))
-            .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(1))
-                .filter(error -> StringUtils.containsAnyIgnoreCase(error.getMessage(), "Could not find node at path")))
-            .block();
-
-        assertThat(revocationResponse.getKey())
-            .as("Bob's write access on the resource calendar should be revoked")
-            .isIn(200, 201, 204);
+        calDavClient.revokeDelegation(resource.id(), admin, technicalToken);
     }
 
     @Test

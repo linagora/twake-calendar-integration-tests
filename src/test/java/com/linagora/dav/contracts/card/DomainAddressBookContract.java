@@ -88,10 +88,15 @@ public abstract class DomainAddressBookContract {
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
                 .toString())
             .build();
+
+        afterDomainAddressBookSetUp(openPaasUser, domainId, technicalToken);
     }
 
     protected boolean isolateDomainPerTest() {
         return true;
+    }
+
+    protected void afterDomainAddressBookSetUp(OpenPaasUser openPaasUser, String domainId, String technicalToken) {
     }
 
     @ParameterizedTest

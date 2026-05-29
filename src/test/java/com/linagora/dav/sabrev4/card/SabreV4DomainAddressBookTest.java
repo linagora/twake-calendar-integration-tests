@@ -18,10 +18,13 @@
 
 package com.linagora.dav.sabrev4.card;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
+
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
+import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.VCardContact;
 import com.linagora.dav.contracts.card.DomainAddressBookContract;
 
@@ -38,6 +41,19 @@ public class SabreV4DomainAddressBookTest extends DomainAddressBookContract {
     @Override
     protected boolean isolateDomainPerTest() {
         return false;
+    }
+
+    @Override
+    protected void afterDomainAddressBookSetUp(OpenPaasUser openPaasUser, String domainId, String technicalToken) {
+        // Sabre 4.1.5 lazily provisions the technical-token principal on the first DAV request.
+        extension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/addressbooks/" + domainId + ".json")
+            .responseSingle((response, responseContent) -> responseContent.asString().then())
+            .block();
     }
 
     @Override

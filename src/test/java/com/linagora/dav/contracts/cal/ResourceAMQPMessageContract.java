@@ -175,12 +175,6 @@ public abstract class ResourceAMQPMessageContract {
 
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
 
-        // To ensure calendar directory is activated
-        try {
-            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        } catch (Exception ignored) {
-        }
-
         String updatedCalendarData = generateCalendarData(
             eventUid,
             testUser.email(),
@@ -282,12 +276,6 @@ public abstract class ResourceAMQPMessageContract {
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
 
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
-
-        // To ensure calendar directory is activated
-        try {
-            calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        } catch (Exception ignored) {
-        }
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
