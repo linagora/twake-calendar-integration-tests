@@ -1271,6 +1271,118 @@ public abstract class SearchAMQPMessageContract {
     }
 
     @Test
+    protected void itipCancelShouldPublishDeletedMessage() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String requestIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(requestIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+
+        String deletedQueue = "test-itip-deleted-" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(deletedQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(deletedQueue, "calendar:event:deleted", "");
+        BlockingQueue<JsonNode> deletedMessages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), deletedQueue);
+
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        awaitAtMost.untilAsserted(() -> assertThat(deletedMessages).hasSize(1));
+    }
+
+    @Test
+    protected void itipRequestShouldPublishUpdatedMessage() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String updatedQueue = "test-itip-updated-inbox-" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(updatedQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(updatedQueue, "calendar:event:updated", "");
+        BlockingQueue<JsonNode> updatedMessages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), updatedQueue);
+
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), body).block();
+
+        awaitAtMost.untilAsserted(() -> assertThat(updatedMessages).hasSize(1));
+    }
+
+    @Test
     protected void shouldNotPublishEventRequestWhenOrganizerSelfInvitedWithoutMailto() throws Exception {
         // GIVEN
         // Bind a fresh queue listening to calendar:event:request

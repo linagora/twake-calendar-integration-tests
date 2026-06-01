@@ -54,4 +54,18 @@ public class SabreV4SearchAMQPMessageTest extends SearchAMQPMessageContract {
     protected void itipRequestShouldResultInEventInDefaultCalendar() {
 
     }
+
+    @Disabled("Only true for Sabre 4.7 where ITIP CANCEL also emits calendar:event:deleted")
+    @Override
+    @Test
+    protected void itipCancelShouldPublishDeletedMessage() {
+
+    }
+
+    @Disabled("Only true for Sabre 4.7 where ITIP REQUEST emits calendar:event:updated")
+    @Override
+    @Test
+    protected void itipRequestShouldPublishUpdatedMessage() {
+
+    }
 }
