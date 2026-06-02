@@ -1175,6 +1175,13 @@ public abstract class SearchAMQPMessageContract {
         return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
     }
 
+    private BlockingQueue<JsonNode> listenToFreshQueue(String queuePrefix, String exchange) throws IOException {
+        String queueName = queuePrefix + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, exchange, "");
+        return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+    }
+
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
                                         String summary,
                                         String location,
@@ -1268,6 +1275,240 @@ public abstract class SearchAMQPMessageContract {
                     assertThat(eventPath).endsWith(".ics");
                     assertThat(message.path("rawEvent").asText()).contains("UID:" + eventUid);
                 }));
+    }
+
+    @Test
+    protected void itipCancelShouldPublishDeletedMessage() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String requestIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(requestIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+
+        String deletedQueue = "test-itip-deleted-" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(deletedQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(deletedQueue, "calendar:event:deleted", "");
+        BlockingQueue<JsonNode> deletedMessages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), deletedQueue);
+
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        awaitAtMost.untilAsserted(() -> assertThat(deletedMessages).hasSize(1));
+    }
+
+    @Test
+    protected void itipCancelShouldPublishSamePayloadToCancelAndDeleted() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String requestIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String bobCalendarUri = "/calendars/" + bob.id();
+        String requestBody = ITIPJsonBodyRequest.builder()
+            .ical(requestIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+
+        // Sabre 4.7 emits both exchanges for the same delete intent from the search indexer perspective.
+        // This test keeps that behavior visible for the request/cancel investigation.
+        BlockingQueue<JsonNode> cancelMessages = listenToFreshQueue("test-itip-cancel-", "calendar:event:cancel");
+        BlockingQueue<JsonNode> deletedMessages = listenToFreshQueue("test-itip-deleted-", "calendar:event:deleted");
+
+        String cancelIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:CANCEL
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080100Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            STATUS:CANCELLED
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String cancelBody = ITIPJsonBodyRequest.builder()
+            .ical(cancelIcs)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("CANCEL")
+            .buildJson();
+        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(cancelMessages).hasSize(1);
+            assertThat(deletedMessages).hasSize(1);
+        });
+
+        assertThat(cancelMessages.peek()).isEqualTo(deletedMessages.peek());
+    }
+
+    @Test
+    protected void itipRequestShouldPublishUpdatedMessage() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        String updatedQueue = "test-itip-updated-inbox-" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(updatedQueue, false, true, true, null);
+        dockerExtension().getChannel().queueBind(updatedQueue, "calendar:event:updated", "");
+        BlockingQueue<JsonNode> updatedMessages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), updatedQueue);
+
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), body).block();
+
+        awaitAtMost.untilAsserted(() -> assertThat(updatedMessages).hasSize(1));
+    }
+
+    @Test
+    protected void itipRequestShouldPublishSamePayloadToRequestAndUpdated() throws Exception {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), bob.email());
+
+        // Sabre 4.7 emits both exchanges for the same index intent from the search indexer perspective.
+        // This test keeps that behavior visible for the request/cancel investigation.
+        BlockingQueue<JsonNode> requestMessages = listenToFreshQueue("test-itip-request-", "calendar:event:request");
+        BlockingQueue<JsonNode> updatedMessages = listenToFreshQueue("test-itip-updated-", "calendar:event:updated");
+
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), body).block();
+
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(requestMessages).hasSize(1);
+            assertThat(updatedMessages).hasSize(1);
+        });
+
+        assertThat(requestMessages.peek()).isEqualTo(updatedMessages.peek());
     }
 
     @Test
