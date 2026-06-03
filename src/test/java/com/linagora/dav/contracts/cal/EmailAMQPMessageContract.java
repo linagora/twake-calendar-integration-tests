@@ -43,8 +43,6 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
-import net.minidev.json.parser.ParseException;
-
 public abstract class EmailAMQPMessageContract {
 
     public static final boolean NOT_COUNTER = false;
@@ -60,34 +58,36 @@ public abstract class EmailAMQPMessageContract {
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
+    private OpenPaasUser bob;
+    private OpenPaasUser alice;
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() throws IOException {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+        bob = dockerExtension().newTestUser();
+        alice = dockerExtension().newTestUser();
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:notificationEmail:send", "");
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnEventCreation() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+    void shouldReceiveNotificationEmailMessageOnEventCreation() {
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -116,8 +116,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         String expected = """
@@ -131,16 +131,16 @@ public abstract class EmailAMQPMessageContract {
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "isNewEvent": true
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
@@ -151,8 +151,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     public void shouldReceiveNotificationEmailMessageOnEventCreationWith1DVALARM() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String eventUid = UUID.randomUUID().toString();
@@ -189,50 +187,47 @@ public abstract class EmailAMQPMessageContract {
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{summary}", "Sprint planning #01")
             .replace("{dtstart}", "30250411T100000")
             .replace("{dtend}", "30250411T110000")
             .replace("{partStat}", "NEEDS-ACTION");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThat(message.path("event").asText()).contains("TRIGGER:-PT1D")));
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnEventUpdate() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
+    void shouldReceiveNotificationEmailMessageOnEventUpdate() {
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #02",
             "Twake Meeting Room 2",
             "This is a meeting to discuss the sprint planning for the next 2 weeks.",
             "30250411T150000",
             "30250411T160000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -261,8 +256,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         String expected = """
@@ -317,16 +312,16 @@ public abstract class EmailAMQPMessageContract {
                 }
               }
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
@@ -337,36 +332,33 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnLocationUpdate() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room 2",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .inPath("changes")
                     .isEqualTo("""
@@ -381,36 +373,33 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnDescriptionUpdate() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next two weeks.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .inPath("changes")
                     .isEqualTo("""
@@ -425,36 +414,33 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnSummaryUpdate() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #02",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
                     .inPath("changes")
                     .isEqualTo("""
@@ -468,26 +454,23 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnEventCancel() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
+    void shouldReceiveNotificationEmailMessageOnEventCancel() {
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
         BlockingQueue<JsonNode> messages = listenToQueue();
 
-        calDavClient.deleteCalendarEvent(testUser, eventUid);
+        calDavClient.deleteCalendarEvent(bob, eventUid);
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -514,8 +497,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         String expected = """
@@ -528,16 +511,16 @@ public abstract class EmailAMQPMessageContract {
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
@@ -547,29 +530,26 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnEventReply() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
+    void shouldReceiveNotificationEmailMessageOnEventReply() {
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
@@ -577,7 +557,7 @@ public abstract class EmailAMQPMessageContract {
             "30250411T110000",
             "ACCEPTED",
             NOT_COUNTER);
-        calDavClient.upsertCalendarEvent(testUser2, attendeeEventId, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(alice, attendeeEventId, updatedCalendarData);
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -604,8 +584,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=ACCEPTED;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         String expected = """
@@ -618,16 +598,16 @@ public abstract class EmailAMQPMessageContract {
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> bob.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
@@ -637,29 +617,26 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnEventCounter() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
+    void shouldReceiveNotificationEmailMessageOnEventCounter() {
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
 
-        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String updatedCalendarData = generateCounterCalendarData(
             eventUid,
-            testUser.email(),
-            testUser2.email(),
+            bob.email(),
+            alice.email(),
             "Sprint planning #01",
             "Twake Meeting Room",
             "This is a meeting to discuss the sprint planning for the next week.",
@@ -667,11 +644,11 @@ public abstract class EmailAMQPMessageContract {
             "30250411T160000");
         CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
             updatedCalendarData,
-            testUser2.email(),
-            testUser.email(),
+            alice.email(),
+            bob.email(),
             eventUid,
             1);
-        calDavClient.sendITIP(testUser2, attendeeEventId, counterRequest);
+        calDavClient.sendITIP(alice, attendeeEventId, counterRequest);
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -701,8 +678,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
         String expectedOldEventIcs = """
             BEGIN:VCALENDAR
@@ -732,8 +709,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         String expected = """
@@ -747,16 +724,16 @@ public abstract class EmailAMQPMessageContract {
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
               "oldEvent": "${json-unit.any-string}"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{eventUid}", eventUid)
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> bob.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expected);
@@ -771,7 +748,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnEventCounterWithExternalRecipient() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String externalBobEmail = "bob-organizer-" + UUID.randomUUID() + "@external-domain.com";
 
         String eventUid = UUID.randomUUID().toString();
@@ -866,9 +842,7 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveNotificationEmailMessageOnRecurringEventWithExdate() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+    void shouldReceiveNotificationEmailMessageOnRecurringEventWithExdate() {
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         String eventUid = UUID.randomUUID().toString();
@@ -893,13 +867,13 @@ public abstract class EmailAMQPMessageContract {
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email());
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
 
-        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost
-            .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
+            .until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent)
             .get();
 
         // --- Expected ICS extracted for readability ---
@@ -923,8 +897,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         // --- Expected JSON ---
@@ -939,14 +913,14 @@ public abstract class EmailAMQPMessageContract {
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "isNewEvent": true
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{attendeeEventId}", attendeeEventId);
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expectedJsonString);
@@ -956,10 +930,7 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
-    void shouldReceiveCancelMessageWhenRecurringEventOccurrenceIsExcluded() throws ParseException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
+    void shouldReceiveCancelMessageWhenRecurringEventOccurrenceIsExcluded() {
         String eventUid = UUID.randomUUID().toString();
 
         // Create a recurring event
@@ -981,20 +952,20 @@ public abstract class EmailAMQPMessageContract {
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email());
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
 
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
 
         String attendeeEventId = awaitAtMost
-            .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
+            .until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent)
             .get();
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         // Update the event by adding an EXDATE (exclude one occurrence)
         String updatedCalendarData = initialCalendarData.replace("SUMMARY:Weekly meeting",
             "SUMMARY:Weekly meeting\nEXDATE;TZID=Asia/Ho_Chi_Minh:21250411T090000");
-        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
 
         // --- Expected CANCEL ICS ---
         String expectedCancelIcs = """
@@ -1016,8 +987,8 @@ public abstract class EmailAMQPMessageContract {
             STATUS:CANCELLED
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         String expectedJsonString = """
@@ -1030,15 +1001,15 @@ public abstract class EmailAMQPMessageContract {
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expectedJsonString);
@@ -1052,9 +1023,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldReceiveNotificationEmailMessageOnRecurringEventOccurrenceUpdate() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
 
         // Create recurring event (weekly on Tuesday 09:00–10:00)
@@ -1076,13 +1044,13 @@ public abstract class EmailAMQPMessageContract {
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email());
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
 
-        calDavClient.upsertCalendarEvent(testUser, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
 
         String attendeeEventId = awaitAtMost
-            .until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent)
+            .until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent)
             .get();
 
         // Override one occurrence (move from 21/09 09:00–10:00 → 22/09 14:00–15:00)
@@ -1117,11 +1085,11 @@ public abstract class EmailAMQPMessageContract {
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
-            .replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email());
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
 
         BlockingQueue<JsonNode> messages = listenToQueue();
-        calDavClient.upsertCalendarEvent(testUser, eventUid, updatedOccurrenceData);
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedOccurrenceData);
 
         // --- Expected ICS for the updated occurrence ---
         String expectedEventIcs = """
@@ -1143,8 +1111,8 @@ public abstract class EmailAMQPMessageContract {
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             END:VEVENT
             END:VCALENDAR
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
             .replace("{eventUid}", eventUid);
 
         // --- Expected JSON with changes ---
@@ -1188,15 +1156,15 @@ public abstract class EmailAMQPMessageContract {
                 }
               }
             }
-            """.replace("{organizerEmail}", testUser.email())
-            .replace("{attendeeEmail}", testUser2.email())
-            .replace("{organizerId}", testUser.id())
-            .replace("{attendeeId}", testUser2.id())
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
             .replace("{attendeeEventId}", attendeeEventId);
 
         awaitAtMost.untilAsserted(() -> {
             assertThat(messages)
-                .filteredOn(message -> testUser2.email().equals(message.path("recipientEmail").asText()))
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
                         .isEqualTo(expectedJsonString);
@@ -1866,8 +1834,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenSingleEventVALARMTriggerIsUpdated() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         String eventUid = UUID.randomUUID().toString();
 
         // GIVEN: Bob creates a single event with Alice and an email VALARM
@@ -1930,9 +1896,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenRecurringEventVALARMTriggerIsUpdated() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
 
         // GIVEN: Bob creates a recurring event with Alice and an email VALARM
@@ -1996,9 +1959,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenRecurringOccurrenceVALARMTriggerIsUpdated() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
 
         // GIVEN: Bob creates a recurring event with an overridden occurrence and Alice as attendee
@@ -2101,9 +2061,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenCLASSIsUpdated() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
 
         // GIVEN: Bob creates a single event with Alice and public visibility
@@ -2140,9 +2097,6 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenTRANSPIsUpdated() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
-
         String eventUid = UUID.randomUUID().toString();
 
         // GIVEN: Bob creates a single opaque event with Alice
