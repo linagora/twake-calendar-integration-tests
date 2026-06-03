@@ -62,6 +62,9 @@ public abstract class ResourceAMQPMessageContract {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
     }
 
+    protected void afterResourceSetup(OpenPaaSResource resource) {
+    }
+
     @Test
     void shouldReceiveMessageFromEventResourceCreatedExchange() throws IOException {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "resource:calendar:event:created", "");
@@ -72,6 +75,7 @@ public abstract class ResourceAMQPMessageContract {
             .getTwakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser)
             .block();
+        afterResourceSetup(resource);
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -157,6 +161,7 @@ public abstract class ResourceAMQPMessageContract {
             .getTwakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser)
             .block();
+        afterResourceSetup(resource);
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
@@ -259,6 +264,7 @@ public abstract class ResourceAMQPMessageContract {
             .getTwakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser)
             .block();
+        afterResourceSetup(resource);
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = generateCalendarData(
