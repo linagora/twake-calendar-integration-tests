@@ -1865,6 +1865,319 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
+    protected void shouldNotSendNotificationEmailWhenSingleEventVALARMTriggerIsUpdated() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Bob creates a single event with Alice and an email VALARM
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:VALARM update meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Bob invites Alice to verify VALARM-only updates.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{attendeeEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT15M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{organizerEmail}
+            SUMMARY:Test alarm
+            DESCRIPTION:Event reminder
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+            .hasSize(1));
+        messages.clear();
+
+        // WHEN: Bob only updates the VALARM trigger
+        String updatedCalendarData = initialCalendarData.replace("TRIGGER:-PT15M", "TRIGGER:-PT30M");
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
+
+        // THEN: Alice should not receive any notification email
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for " + alice.email())
+                .isEmpty());
+    }
+
+    @Test
+    protected void shouldNotSendNotificationEmailWhenRecurringEventVALARMTriggerIsUpdated() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Bob creates a recurring event with Alice and an email VALARM
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            RRULE:FREQ=WEEKLY;COUNT=3
+            SUMMARY:Recurring VALARM update meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Bob invites Alice to verify recurring VALARM-only updates.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{attendeeEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT15M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{organizerEmail}
+            SUMMARY:Test alarm
+            DESCRIPTION:Event reminder
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+            .hasSize(1));
+        messages.clear();
+
+        // WHEN: Bob only updates the VALARM trigger for the recurring event
+        String updatedCalendarData = initialCalendarData.replace("TRIGGER:-PT15M", "TRIGGER:-PT30M");
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
+
+        // THEN: Alice should not receive any notification email
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for " + alice.email())
+                .isEmpty());
+    }
+
+    @Test
+    protected void shouldNotSendNotificationEmailWhenRecurringOccurrenceVALARMTriggerIsUpdated() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Bob creates a recurring event with an overridden occurrence and Alice as attendee
+        String initialCalendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            RRULE:FREQ=WEEKLY;COUNT=3
+            SUMMARY:Recurring occurrence VALARM update meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Bob invites Alice to verify occurrence VALARM-only updates.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{attendeeEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT15M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{organizerEmail}
+            SUMMARY:Test alarm
+            DESCRIPTION:Event reminder
+            END:VALARM
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:30250418T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250418T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250418T110000
+            SUMMARY:Recurring occurrence VALARM update meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Bob invites Alice to verify occurrence VALARM-only updates.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{attendeeEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT15M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{organizerEmail}
+            SUMMARY:Test alarm
+            DESCRIPTION:Event reminder
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+            .hasSizeGreaterThan(1));
+        messages.clear();
+
+        // WHEN: Bob only updates the VALARM trigger of the overridden occurrence
+        String occurrenceValarm = """
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:30250418T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250418T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250418T110000
+            SUMMARY:Recurring occurrence VALARM update meeting
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:Bob invites Alice to verify occurrence VALARM-only updates.
+            ORGANIZER;CN=Bob:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{attendeeEmail}
+            BEGIN:VALARM
+            TRIGGER:-PT15M
+            ACTION:EMAIL
+            ATTENDEE:mailto:{organizerEmail}
+            SUMMARY:Test alarm
+            DESCRIPTION:Event reminder
+            END:VALARM
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email());
+        String updatedCalendarData = initialCalendarData.replace(occurrenceValarm,
+            occurrenceValarm.replace("TRIGGER:-PT15M", "TRIGGER:-PT30M"));
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
+
+        // THEN: Alice should not receive any notification email
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for " + alice.email())
+                .isEmpty());
+    }
+
+    @Test
+    protected void shouldNotSendNotificationEmailWhenCLASSIsUpdated() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Bob creates a single event with Alice and public visibility
+        String initialCalendarData = generateCalendarData(
+            eventUid,
+            bob.email(),
+            alice.email(),
+            "Visibility update meeting",
+            "Twake Meeting Room",
+            "Visibility-only update.",
+            "30250411T100000",
+            "30250411T110000")
+            .replace("DESCRIPTION:Visibility-only update.",
+                "DESCRIPTION:Visibility-only update.\nCLASS:PUBLIC\nTRANSP:OPAQUE");
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+            .hasSize(1));
+        messages.clear();
+
+        // WHEN: Bob only updates the event CLASS
+        String updatedCalendarData = initialCalendarData.replace("CLASS:PUBLIC", "CLASS:PRIVATE");
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
+
+        // THEN: Alice should not receive any notification email
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for " + alice.email())
+                .isEmpty());
+    }
+
+    @Test
+    protected void shouldNotSendNotificationEmailWhenTRANSPIsUpdated() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN: Bob creates a single opaque event with Alice
+        String initialCalendarData = generateCalendarData(
+            eventUid,
+            bob.email(),
+            alice.email(),
+            "Visibility update meeting",
+            "Twake Meeting Room",
+            "Visibility-only update.",
+            "30250411T100000",
+            "30250411T110000")
+            .replace("DESCRIPTION:Visibility-only update.",
+                "DESCRIPTION:Visibility-only update.\nCLASS:PUBLIC\nTRANSP:OPAQUE");
+        BlockingQueue<JsonNode> messages = listenToQueue();
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+            .hasSize(1));
+        messages.clear();
+
+        // WHEN: Bob only updates the event TRANSP
+        String updatedCalendarData = initialCalendarData.replace("TRANSP:OPAQUE", "TRANSP:TRANSPARENT");
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedCalendarData);
+
+        // THEN: Alice should not receive any notification email
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for " + alice.email())
+                .isEmpty());
+    }
+
+    @Test
     void shouldReceiveNotificationEmailMessageWhenRecurringOverrideInstanceStartTimeIsUpdated() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
