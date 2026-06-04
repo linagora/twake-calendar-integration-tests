@@ -18,10 +18,13 @@
 
 package com.linagora.dav.sabrev4.cal;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
+
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
+import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.contracts.cal.CalDavDelegationContract;
 
 public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
@@ -31,6 +34,19 @@ public class SabreV4CalDavDelegationTest extends CalDavDelegationContract {
     @Override
     public DockerTwakeCalendarExtensionV4 dockerExtension() {
         return dockerExtension;
+    }
+
+    @Override
+    protected void afterResourceSetup(OpenPaaSResource resource) {
+        // Sabre 4.1.5 lazily provisions the technical-token principal on the first DAV request.
+        dockerExtension().davHttpClient()
+            .headers(headers -> headers
+                .add(TWAKE_CALENDAR_TOKEN_HEADER, dockerExtension().twakeCalendarProvisioningService().generateToken())
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/calendars/" + resource.id() + ".json")
+            .responseSingle((response, responseContent) -> responseContent.asString().then())
+            .block();
     }
 
     @Disabled("Fixed in Sabre 4.7 (com.linagora.dav.sabrev4_7.cal.SabreV4CalDavDelegationTest)")
