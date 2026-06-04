@@ -34,20 +34,6 @@ public class SabreV4SearchAMQPMessageTest extends SearchAMQPMessageContract {
         return dockerExtension;
     }
 
-    @Disabled("https://github.com/linagora/esn-sabre/issues/235 Fixed in 4.7.0")
-    @Test
-    @Override
-    protected void shouldReceiveOnlyOneMessageFromEventCancelExchange()  {
-
-    }
-
-    @Disabled("https://github.com/linagora/esn-sabre/issues/235 Fixed in 4.7.0")
-    @Override
-    @Test
-    protected void shouldReceiveOnlyOneMessageFromEventRequestExchange()  {
-
-    }
-
     @Disabled("Fixed in 4.7.0")
     @Override
     @Test
