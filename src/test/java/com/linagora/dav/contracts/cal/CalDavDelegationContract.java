@@ -108,6 +108,9 @@ public abstract class CalDavDelegationContract {
         alice = dockerExtension().newTestUser();
     }
 
+    protected void afterResourceSetup(OpenPaaSResource resource) {
+    }
+
     @Test
     void listCalendarsShouldShowDelegatedCalendar() {
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -2967,6 +2970,7 @@ public abstract class CalDavDelegationContract {
             .getTwakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
+        afterResourceSetup(resource);
 
         String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
         delegateResourceToAdmin(resource, bob, technicalToken);
