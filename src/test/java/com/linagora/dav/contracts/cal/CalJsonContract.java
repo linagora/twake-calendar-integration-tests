@@ -3282,4 +3282,272 @@ public abstract class CalJsonContract {
             .doesNotContain(description)
             .doesNotContain("Bob's private event");
     }
+
+    @Test
+    public void reportShouldPreservePrivateRecurringEventTimingWhenSanitizing() throws JsonProcessingException {
+        // GIVEN: shared calendar support is enabled.
+        dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .enableSharedCalendarModule()
+            .block();
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN: Bob makes his calendar readable by subscribed users.
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // GIVEN: Bob has a private recurring event with an excluded occurrence.
+        String eventUid = UUID.randomUUID().toString();
+        String summary = "Bob's private recurring event";
+        String description = "Private recurring details";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300601T080000Z
+            DTSTART:20300601T090000Z
+            DTEND:20300601T100000Z
+            SUMMARY:%s
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            RRULE:FREQ=DAILY;COUNT=3
+            EXDATE:20300602T090000Z
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // GIVEN: Alice subscribes to Bob's shared calendar.
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice reports Bob's private event through the subscribed calendar.
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Depth", "0")
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        // THEN: private details are hidden from Alice.
+        assertThat(response.body())
+            .contains("[\"summary\",{},\"text\",\"Busy\"]")
+            .doesNotContain(summary)
+            .doesNotContain(description);
+
+        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+
+        // THEN: recurrence timing is still preserved after sanitization.
+        assertThat(result).containsExactly(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-01T09:00:00Z")
+                .dtend("2030-06-01T10:00:00Z")
+                .recurrenceId("2030-06-01T09:00:00Z")
+                .build(),
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-03T09:00:00Z")
+                .dtend("2030-06-03T10:00:00Z")
+                .recurrenceId("2030-06-03T09:00:00Z")
+                .build());
+    }
+
+    @Test
+    public void reportShouldPreservePrivateRecurringEventRDATETimingWhenSanitizing() throws JsonProcessingException {
+        // GIVEN: shared calendar support is enabled.
+        dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .enableSharedCalendarModule()
+            .block();
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN: Bob makes his calendar readable by subscribed users.
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // GIVEN: Bob has a private event with an additional recurrence date.
+        String eventUid = UUID.randomUUID().toString();
+        String summary = "Bob's private rdate event";
+        String description = "Private rdate details";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300601T080000Z
+            DTSTART:20300601T090000Z
+            DTEND:20300601T100000Z
+            SUMMARY:%s
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            RDATE:20300603T090000Z
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // GIVEN: Alice subscribes to Bob's shared calendar.
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice reports Bob's private event through the subscribed calendar.
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Depth", "0")
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        // THEN: private details are hidden from Alice.
+        assertThat(response.body())
+            .contains("[\"summary\",{},\"text\",\"Busy\"]")
+            .doesNotContain(summary)
+            .doesNotContain(description);
+
+        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+
+        // THEN: the additional recurrence date is still preserved after sanitization.
+        assertThat(result).containsExactly(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-01T09:00:00Z")
+                .dtend("2030-06-01T10:00:00Z")
+                .recurrenceId("2030-06-01T09:00:00Z")
+                .build(),
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-03T09:00:00Z")
+                .dtend("2030-06-03T10:00:00Z")
+                .recurrenceId("2030-06-03T09:00:00Z")
+                .build());
+    }
+
+    @Test
+    public void reportShouldPreservePrivateRecurringEventOverrideTimingWhenSanitizing() throws JsonProcessingException {
+        // GIVEN: shared calendar support is enabled.
+        dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .enableSharedCalendarModule()
+            .block();
+
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // GIVEN: Bob makes his calendar readable by subscribed users.
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // GIVEN: Bob has a private recurring event with one moved occurrence.
+        String eventUid = UUID.randomUUID().toString();
+        String summary = "Bob's private recurring event";
+        String overrideSummary = "Bob's private moved occurrence";
+        String description = "Private recurring details";
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300601T080000Z
+            DTSTART:20300601T090000Z
+            DTEND:20300601T100000Z
+            SUMMARY:%s
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            RRULE:FREQ=DAILY;COUNT=3
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:%s
+            RECURRENCE-ID:20300602T090000Z
+            DTSTAMP:20300601T080000Z
+            DTSTART:20300602T110000Z
+            DTEND:20300602T120000Z
+            SUMMARY:%s
+            DESCRIPTION:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary, description, eventUid, overrideSummary, description);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // GIVEN: Alice subscribes to Bob's shared calendar.
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly shared")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // WHEN: Alice reports Bob's private event through the subscribed calendar.
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Depth", "0")
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
+            .send(body("""
+                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")));
+
+        assertThat(response.status()).isEqualTo(200);
+
+        // THEN: private details are hidden from Alice.
+        assertThat(response.body())
+            .contains("[\"summary\",{},\"text\",\"Busy\"]")
+            .doesNotContain(summary)
+            .doesNotContain(overrideSummary)
+            .doesNotContain(description);
+
+        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+
+        // THEN: the moved occurrence keeps its original RECURRENCE-ID after sanitization.
+        assertThat(result).containsExactly(
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-01T09:00:00Z")
+                .dtend("2030-06-01T10:00:00Z")
+                .recurrenceId("2030-06-01T09:00:00Z")
+                .build(),
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-02T11:00:00Z")
+                .dtend("2030-06-02T12:00:00Z")
+                .recurrenceId("2030-06-02T09:00:00Z")
+                .build(),
+            EventData.builder()
+                .uid(eventUid)
+                .dtstart("2030-06-03T09:00:00Z")
+                .dtend("2030-06-03T10:00:00Z")
+                .recurrenceId("2030-06-03T09:00:00Z")
+                .build());
+    }
 }

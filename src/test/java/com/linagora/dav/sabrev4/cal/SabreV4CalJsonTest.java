@@ -21,6 +21,7 @@ package com.linagora.dav.sabrev4.cal;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.linagora.dav.DockerTwakeCalendarExtensionV4;
 import com.linagora.dav.contracts.cal.CalJsonContract;
 
@@ -37,5 +38,23 @@ public class SabreV4CalJsonTest extends CalJsonContract {
     @Override
     public void reportShouldSanitizePrivateEvents() {
         super.reportShouldSanitizePrivateEvents();
+    }
+
+    @Disabled("Supported only on Sabre 4.7")
+    @Override
+    public void reportShouldPreservePrivateRecurringEventTimingWhenSanitizing() throws JsonProcessingException {
+        super.reportShouldPreservePrivateRecurringEventTimingWhenSanitizing();
+    }
+
+    @Disabled("Supported only on Sabre 4.7")
+    @Override
+    public void reportShouldPreservePrivateRecurringEventRDATETimingWhenSanitizing() throws JsonProcessingException {
+        super.reportShouldPreservePrivateRecurringEventRDATETimingWhenSanitizing();
+    }
+
+    @Disabled("Supported only on Sabre 4.7")
+    @Override
+    public void reportShouldPreservePrivateRecurringEventOverrideTimingWhenSanitizing() throws JsonProcessingException {
+        super.reportShouldPreservePrivateRecurringEventOverrideTimingWhenSanitizing();
     }
 }
