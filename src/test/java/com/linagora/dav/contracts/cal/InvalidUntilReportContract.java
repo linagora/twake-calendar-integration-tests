@@ -23,7 +23,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CalDavClient;
@@ -60,7 +59,6 @@ public abstract class InvalidUntilReportContract {
     }
 
     @Test
-    @Disabled("https://github.com/linagora/esn-sabre/issues/374")
     void timeRangeReportShouldNotFailWhenEventHasInvalidUntil() {
         // GIVEN an event whose RRULE carries an invalid UNTIL value gets ingested
         String eventUid = UUID.randomUUID().toString();
