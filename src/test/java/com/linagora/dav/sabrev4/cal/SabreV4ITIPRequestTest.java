@@ -98,4 +98,16 @@ public class SabreV4ITIPRequestTest extends ITIPRequestContract {
     @Override
     protected void unauthenticatedITIPShouldReturn401AndNotCreateEvent() {
     }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/381 - Fixed in Sabre 4.7")
+    @Override
+    protected void itipRequestShouldBeProcessedWhenAttendeeAddressDiffersFromPrincipalPrimaryAddress() {
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/381 - Fixed in Sabre 4.7")
+    @Override
+    protected void itipReplyShouldBeProcessedWhenOrganizerAddressDiffersFromPrincipalPrimaryAddress() {
+    }
 }

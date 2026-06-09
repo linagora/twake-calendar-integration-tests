@@ -40,7 +40,6 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -3047,7 +3046,6 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    @Disabled("https://github.com/linagora/esn-sabre/issues/381")
     protected void itipRequestShouldBeProcessedWhenAttendeeAddressDiffersFromPrincipalPrimaryAddress() {
         // GIVEN Cedric invites Bob, but the ICS ATTENDEE carries an arbitrary address (an alias / list /
         // forwarded address that the mail layer resolved to Bob) which does NOT string-match Bob's primary address.
@@ -3104,7 +3102,6 @@ public abstract class ITIPRequestContract {
     }
 
     @Test
-    @Disabled("https://github.com/linagora/esn-sabre/issues/381")
     protected void itipReplyShouldBeProcessedWhenOrganizerAddressDiffersFromPrincipalPrimaryAddress() {
         // GIVEN Cedric is the organizer of an event with Bob, but the ORGANIZER address carried by the ICS is an
         // arbitrary address (an alias the mail layer resolved to Cedric) that does NOT string-match Cedric's primary address.
