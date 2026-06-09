@@ -40,6 +40,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -3043,5 +3044,142 @@ public abstract class ITIPRequestContract {
         assertThatCalendar(calendarIc)
             .ignoringParticipantScheduleStatus()
             .isEqualTo(expectedCalendarIcs);
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/381")
+    protected void itipRequestShouldBeProcessedWhenAttendeeAddressDiffersFromPrincipalPrimaryAddress() {
+        // GIVEN Cedric invites Bob, but the ICS ATTENDEE carries an arbitrary address (an alias / list /
+        // forwarded address that the mail layer resolved to Bob) which does NOT string-match Bob's primary address.
+        // The calendar that receives the iTIP is decided by the URL (/calendars/{bob.id()}), not by the ICS address.
+        String eventUid = "event-" + UUID.randomUUID();
+        String arbitraryBobAddress = "bob-alias-" + UUID.randomUUID() + "@external.tld";
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting from Cedric to Bob alias
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, cedric.email(), arbitraryBobAddress);
+
+        // WHEN Cedric sends the REQUEST onto Bob's calendar.
+        // The JSON recipient stays Bob's primary address so the upstream authorization guard (auth user == recipient)
+        // passes: we want to isolate the participant-identity matching, not the auth check.
+        String body = ITIPJsonBodyRequest.builder()
+            .ical(ics)
+            .sender(cedric.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("REQUEST")
+            .buildJson();
+
+        // THEN the iTIP must NOT be rejected with HTTP 400 ("Recipient ... is not organizer, not attendee ...: skipping")
+        // solely because the ICS ATTENDEE address differs from Bob's primary address.
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()), body).block();
+
+        Function<String, List<JsonNode>> bobEventsForUri = uri ->
+            calDavClient.reportCalendarEvents(bob, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String bobDefaultCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
+        awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("Meeting from Cedric to Bob alias");
+            }));
+    }
+
+    @Test
+    @Disabled("https://github.com/linagora/esn-sabre/issues/381")
+    protected void itipReplyShouldBeProcessedWhenOrganizerAddressDiffersFromPrincipalPrimaryAddress() {
+        // GIVEN Cedric is the organizer of an event with Bob, but the ORGANIZER address carried by the ICS is an
+        // arbitrary address (an alias the mail layer resolved to Cedric) that does NOT string-match Cedric's primary address.
+        String eventUid = "event-" + UUID.randomUUID();
+        String arbitraryCedricAddress = "cedric-alias-" + UUID.randomUUID() + "@external.tld";
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080000Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting with Bob via Cedric alias
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, arbitraryCedricAddress, bob.email());
+
+        String organizerEventUri = "/calendars/" + cedric.id() + "/" + cedric.id() + "/" + eventUid + ".ics";
+        calDavClient.upsertCalendarEvent(cedric, URI.create(organizerEventUri), organizerIcs);
+
+        Function<String, List<JsonNode>> cedricEventsForUri = uri ->
+            calDavClient.reportCalendarEvents(cedric, uri,
+                    Instant.parse("2025-09-01T00:00:00Z"),
+                    Instant.parse("2025-11-01T00:00:00Z"))
+                .collectList()
+                .block();
+
+        String cedricDefaultCalendarUri = "/calendars/" + cedric.id() + "/" + cedric.id();
+        assertThat(cedricEventsForUri.apply(cedricDefaultCalendarUri))
+            .anySatisfy(item -> assertThat(item.toString()).contains("NEEDS-ACTION"));
+
+        // WHEN Bob replies ACCEPTED. The ORGANIZER address in the REPLY is the arbitrary alias, not Cedric's primary.
+        String replyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20251003T080500Z
+            DTSTART:20251005T090000Z
+            DTEND:20251005T100000Z
+            SUMMARY:Meeting with Bob via Cedric alias
+            ORGANIZER;CN=Cedric:mailto:%s
+            ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, arbitraryCedricAddress, bob.email());
+
+        // The JSON recipient stays Cedric's primary address so the upstream authorization guard passes:
+        // we want to isolate the participant-identity matching, not the auth check.
+        String replyBody = ITIPJsonBodyRequest.builder()
+            .ical(replyIcs)
+            .sender(bob.email())
+            .recipient(cedric.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+
+        // THEN the REPLY must NOT be rejected with HTTP 400 solely because the ICS ORGANIZER address differs from
+        // Cedric's primary address: the organizer copy's PARTSTAT must be updated to ACCEPTED.
+        calDavClient.sendITIPRequest(cedric, URI.create("/calendars/" + cedric.id()), replyBody).block();
+
+        awaitAtMost.untilAsserted(() -> assertThat(cedricEventsForUri.apply(cedricDefaultCalendarUri))
+            .anySatisfy(item -> {
+                String json = item.toString();
+                assertThat(json).contains(eventUid);
+                assertThat(json).contains("ACCEPTED");
+                assertThat(json).doesNotContain("NEEDS-ACTION");
+            }));
     }
 }
