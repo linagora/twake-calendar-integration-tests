@@ -2,7 +2,6 @@
 
 # $1 Sabre v4 docker image to test against. Thought to integrate integration tests directly into Sabre CI.
 
-docker build --pull -t sabre-v4-it -f Dockerfile.sabre4 .
 if [ -n "$1" ]; then
   echo "Using custom SABRE_4_7_IMAGE: $1"
   if [ "$1" = "esn_sabre_test" ]; then

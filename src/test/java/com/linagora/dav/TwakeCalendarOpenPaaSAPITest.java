@@ -40,7 +40,7 @@ import reactor.netty.http.client.HttpClient;
 
 public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
     @RegisterExtension
-    static DockerTwakeCalendarExtensionV4 extension = new DockerTwakeCalendarExtensionV4();
+    static DockerTwakeCalendarExtensionV4_7 extension = new DockerTwakeCalendarExtensionV4_7();
 
     public OpenPaasUser createUser() {
         return extension.newTestUser();
