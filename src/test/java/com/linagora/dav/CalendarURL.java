@@ -50,6 +50,11 @@ public record CalendarURL(String base, String calendarId) {
         return URI.create(CALENDAR_URL_PATH_PREFIX + "/" + base + "/" + calendarId);
     }
 
+    public URI eventHref(String eventId) {
+        Preconditions.checkArgument(eventId != null, "eventId must not be null");
+        return URI.create(asUri() + "/" + eventId + ".ics");
+    }
+
     public String serialize() {
         return base() + "/" + calendarId;
     }
