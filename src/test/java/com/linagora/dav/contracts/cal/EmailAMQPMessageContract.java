@@ -178,9 +178,9 @@ public abstract class EmailAMQPMessageContract {
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT={partStat};CN=Benoît TELLIER:mailto:{attendeeEmail}
             BEGIN:VALARM
-            TRIGGER:-PT1D
+            TRIGGER:-P1D
             ACTION:EMAIL
-            ATTENDEE:mailto:mailto:mailto:{organizerEmail}
+            ATTENDEE:mailto:{attendeeEmail}
             SUMMARY:{summary}
             DESCRIPTION:This is an automatic alarm sent by OpenPaas
             END:VALARM
@@ -198,7 +198,7 @@ public abstract class EmailAMQPMessageContract {
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
-                .anySatisfy(message -> assertThat(message.path("event").asText()).contains("TRIGGER:-PT1D")));
+                .anySatisfy(message -> assertThat(message.path("event").asText()).contains("TRIGGER:-P1D")));
     }
 
     @Test

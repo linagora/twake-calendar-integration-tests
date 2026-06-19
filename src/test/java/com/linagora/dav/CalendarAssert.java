@@ -59,6 +59,15 @@ public class CalendarAssert extends AbstractAssert<CalendarAssert, Calendar> {
         return this;
     }
 
+    public CalendarAssert ignoringPropertiesInComponents(String componentName, String... propertyNames) {
+        transformations.add(calendar -> {
+            Calendar copy = calendar.copy();
+            CalendarUtil.removePropertiesFromComponents(copy, componentName, propertyNames);
+            return copy;
+        });
+        return this;
+    }
+
     public CalendarAssert ignoringAttendeePartStat(String attendeeEmail) {
         transformations.add(calendar -> {
             Calendar copy = calendar.copy();
