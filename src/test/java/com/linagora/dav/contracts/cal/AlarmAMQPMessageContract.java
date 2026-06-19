@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
@@ -45,13 +46,13 @@ import org.junit.jupiter.api.Assumptions;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
-import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 import com.rabbitmq.client.GetResponse;
 
-import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Property;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class AlarmAMQPMessageContract {
@@ -90,7 +91,7 @@ public abstract class AlarmAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000",
-            testUser.email());
+            testUser2.email());
         BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
@@ -267,7 +268,7 @@ public abstract class AlarmAMQPMessageContract {
                             "attendee",
                             {},
                             "cal-address",
-                            "mailto:{organizerEmail}"
+                            "mailto:{attendeeEmail}"
                           ],
                           [
                             "summary",
@@ -280,6 +281,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -303,7 +310,10 @@ public abstract class AlarmAMQPMessageContract {
                         .when(Option.IGNORING_EXTRA_FIELDS)
                         .whenIgnoringPaths("etag")
                         .isEqualTo(expected);
-                    assertRawEventCalendarEquals(message.path("rawEvent").asText(), calendarData);
+                    assertThatCalendar(message.path("rawEvent").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .ignoringPropertiesInComponents(Component.VALARM, Property.UID)
+                        .isEqualTo(calendarData);
                 }));
     }
 
@@ -324,7 +334,7 @@ public abstract class AlarmAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000",
-            testUser.email());
+            testUser2.email());
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
@@ -338,7 +348,7 @@ public abstract class AlarmAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T150000",
             "30250411T160000",
-            testUser.email());
+            testUser2.email());
         BlockingQueue<JsonNode> messages = listenToQueue();
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
@@ -515,7 +525,7 @@ public abstract class AlarmAMQPMessageContract {
                             "attendee",
                             {},
                             "cal-address",
-                            "mailto:{organizerEmail}"
+                            "mailto:{attendeeEmail}"
                           ],
                           [
                             "summary",
@@ -528,6 +538,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -708,7 +724,7 @@ public abstract class AlarmAMQPMessageContract {
                             "attendee",
                             {},
                             "cal-address",
-                            "mailto:{organizerEmail}"
+                            "mailto:{attendeeEmail}"
                           ],
                           [
                             "summary",
@@ -721,6 +737,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -762,7 +784,7 @@ public abstract class AlarmAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000",
-            testUser.email());
+            testUser2.email());
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
@@ -968,6 +990,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -1160,6 +1188,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -1201,7 +1235,7 @@ public abstract class AlarmAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000",
-            testUser.email());
+            testUser2.email());
         BlockingQueue<JsonNode> messages = listenToQueue();
 
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
@@ -1381,7 +1415,7 @@ public abstract class AlarmAMQPMessageContract {
                             "attendee",
                             {},
                             "cal-address",
-                            "mailto:{organizerEmail}"
+                            "mailto:{attendeeEmail}"
                           ],
                           [
                             "summary",
@@ -1394,6 +1428,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -1432,7 +1472,7 @@ public abstract class AlarmAMQPMessageContract {
             "This is a meeting to discuss the sprint planning for the next week.",
             "30250411T100000",
             "30250411T110000",
-            testUser.email());
+            testUser2.email());
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(testUser2), Optional::isPresent).get();
@@ -1631,6 +1671,12 @@ public abstract class AlarmAMQPMessageContract {
                             {},
                             "text",
                             "This is an automatic alarm sent by OpenPaas"
+                          ],
+                          [
+                            "uid",
+                            {},
+                            "text",
+                            "${json-unit.ignore}"
                           ]
                         ],
                         []
@@ -1842,6 +1888,12 @@ public abstract class AlarmAMQPMessageContract {
                                             {},
                                             "text",
                                             "This is an automatic alarm"
+                                        ],
+                                        [
+                                            "uid",
+                                            {},
+                                            "text",
+                                            "${json-unit.ignore}"
                                         ]
                                     ],
                                     []
@@ -2101,6 +2153,12 @@ public abstract class AlarmAMQPMessageContract {
                                             {},
                                             "text",
                                             "This is an automatic alarm"
+                                        ],
+                                        [
+                                            "uid",
+                                            {},
+                                            "text",
+                                            "${json-unit.ignore}"
                                         ]
                                     ],
                                     []
@@ -2242,7 +2300,7 @@ public abstract class AlarmAMQPMessageContract {
                                         "attendee",
                                         {},
                                         "cal-address",
-                                        "mailto:{organizerEmail}"
+                                        "mailto:{attendeeEmail}"
                                     ],
                                     [
                                         "summary",
@@ -2288,7 +2346,7 @@ public abstract class AlarmAMQPMessageContract {
             BEGIN:VALARM
             TRIGGER:-PT10M
             ACTION:EMAIL
-            ATTENDEE:mailto:{organizerEmail}
+            ATTENDEE:mailto:{attendeeEmail}
             SUMMARY:test alarm
             DESCRIPTION:This is an automatic alarm sent by OpenPaas
             END:VALARM
@@ -2301,19 +2359,14 @@ public abstract class AlarmAMQPMessageContract {
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
                 .anySatisfy(message ->
-                    assertRawEventCalendarEquals(message.path("rawEvent").asText(), expectedEventIcs)));
+                    assertThatCalendar(message.path("rawEvent").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .ignoringPropertiesInComponents(Component.VALARM, Property.UID)
+                        .isEqualTo(expectedEventIcs)));
     }
 
     private BlockingQueue<JsonNode> listenToQueue() {
         return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
-    }
-
-    private void assertRawEventCalendarEquals(String actualRawEventIcs, String expectedEventIcs) {
-        Calendar actualCalendar = CalendarUtil.parseIcsAndSanitize(actualRawEventIcs);
-        Calendar expectedCalendar = CalendarUtil.parseIcsAndSanitize(expectedEventIcs);
-        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-        CalendarUtil.removeParticipantScheduleStatus(expectedCalendar);
-        assertThat(actualCalendar).isEqualTo(expectedCalendar);
     }
 
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,

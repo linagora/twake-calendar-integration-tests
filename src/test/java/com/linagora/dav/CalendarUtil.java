@@ -188,6 +188,18 @@ public class CalendarUtil {
         }
     }
 
+    public static void removePropertiesFromComponents(Calendar calendar, String componentName, String... propertyNames) {
+        calendar.getComponents().stream()
+            .filter(ComponentContainer.class::isInstance)
+            .flatMap(component -> ((ComponentContainer<?>) component).getComponentList().getAll().stream())
+            .filter(component -> componentName.equals(component.getName()))
+            .forEach(component -> {
+                for (String propertyName : propertyNames) {
+                    component.removeAll(propertyName);
+                }
+            });
+    }
+
     public static void removeParticipantScheduleStatus(Calendar calendar) {
         calendar.getComponents(Component.VEVENT).forEach(vevent -> {
             vevent.getProperties(Property.ATTENDEE)
