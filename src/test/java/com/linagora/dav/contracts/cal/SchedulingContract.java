@@ -35,7 +35,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -1969,9 +1968,6 @@ public abstract class SchedulingContract {
 
     @Test
     void attendeeCreatingNewOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
-        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
-            "Fixed with async scheduling");
-
         // Given Bob creates a recurring master event (no override) and invites Alice and Cedric
         String organizerEventUid = "event-" + UUID.randomUUID();
         String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
@@ -2393,9 +2389,6 @@ public abstract class SchedulingContract {
 
     @Test
     void attendeeChangingOrganizerShouldBeRejected() {
-        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
-            "Fixed with async scheduling");
-
         // Given Bob creates an event with Alice and Cedric as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
         String organizerEventIcs = """
@@ -2455,9 +2448,6 @@ public abstract class SchedulingContract {
 
     @Test
     void attendeeChangingOrganizerOnRecurringShouldBeRejected() {
-        Assumptions.assumeTrue(Boolean.parseBoolean(System.getProperty("amqp.scheduling.enabled")),
-            "Fixed with async scheduling");
-
         // Given Bob creates a recurring event with one override, and Alice/Cedric as attendees
         String organizerEventUid = "event-" + UUID.randomUUID();
         String organizerEventIcs = """
