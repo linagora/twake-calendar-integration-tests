@@ -32,8 +32,6 @@ import org.testcontainers.containers.wait.strategy.Wait;
 
 public class DockerTwakeCalendarSetup {
     private static final Logger LOGGER = LoggerFactory.getLogger(DockerTwakeCalendarSetup.class);
-    private static final String AMQP_SCHEDULING_ENABLED_PROPERTY = "amqp.scheduling.enabled";
-    private static final String AMQP_SCHEDULING_ENABLED_DEFAULT = "false";
 
     public enum DockerService {
         CALENDAR_SIDE("twake-calendar-side-service", 8080),
@@ -77,8 +75,6 @@ public class DockerTwakeCalendarSetup {
     }
 
     private DockerTwakeCalendarSetup(String sabreVersion, String principalPrivacy) {
-        String amqpSchedulingEnabled = System.getProperty(AMQP_SCHEDULING_ENABLED_PROPERTY, AMQP_SCHEDULING_ENABLED_DEFAULT);
-        LOGGER.info("Test config: {}={}", AMQP_SCHEDULING_ENABLED_PROPERTY, amqpSchedulingEnabled);
         LOGGER.info("Test config: PRINCIPAL_PRIVACY={}", principalPrivacy);
         try {
             environment = new ComposeContainer(
@@ -95,7 +91,6 @@ public class DockerTwakeCalendarSetup {
                 .waitingFor(DockerService.CALENDAR_SIDE.serviceName(), Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
-                .withEnv("AMQP_SCHEDULING_ENABLED", amqpSchedulingEnabled)
                 .withEnv("PRINCIPAL_PRIVACY", principalPrivacy)
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("sabre_dav " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
