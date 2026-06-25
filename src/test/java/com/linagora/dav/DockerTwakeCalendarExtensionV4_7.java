@@ -24,18 +24,24 @@ public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtensi
 
     private static final boolean PRINCIPAL_PRIVACY_DISABLED = false;
     private static final boolean PRINCIPAL_PRIVACY_ENABLED = true;
+    private static final boolean ORGANIZER_VALIDATION_DISABLED = false;
+    private static final boolean ORGANIZER_VALIDATION_ENABLED = true;
 
     private static DockerTwakeCalendarSetup defaultDockerTwakeCalendarSetup;
 
     private final DockerTwakeCalendarSetup dockerTwakeCalendarSetup;
 
     public DockerTwakeCalendarExtensionV4_7() {
-        this(PRINCIPAL_PRIVACY_DISABLED);
+        this(PRINCIPAL_PRIVACY_DISABLED, ORGANIZER_VALIDATION_DISABLED);
     }
 
     public DockerTwakeCalendarExtensionV4_7(boolean principalPrivacy) {
-        if (principalPrivacy) {
-            dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7, PRINCIPAL_PRIVACY_ENABLED);
+        this(principalPrivacy, ORGANIZER_VALIDATION_DISABLED);
+    }
+
+    private DockerTwakeCalendarExtensionV4_7(boolean principalPrivacy, boolean organizerValidation) {
+        if (principalPrivacy || organizerValidation) {
+            dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7, principalPrivacy, organizerValidation);
             dockerTwakeCalendarSetup.start();
         } else {
             dockerTwakeCalendarSetup = defaultDockerTwakeCalendarSetup();
@@ -44,6 +50,10 @@ public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtensi
 
     public static DockerTwakeCalendarExtensionV4_7 withPrincipalPrivacy() {
         return new DockerTwakeCalendarExtensionV4_7(PRINCIPAL_PRIVACY_ENABLED);
+    }
+
+    public static DockerTwakeCalendarExtensionV4_7 withOrganizerValidation() {
+        return new DockerTwakeCalendarExtensionV4_7(PRINCIPAL_PRIVACY_DISABLED, ORGANIZER_VALIDATION_ENABLED);
     }
 
     @Override
