@@ -258,6 +258,37 @@ public abstract class OrganizerValidationContract {
     }
 
     @Test
+    void delegateCannotUseOwnerAsOrganizerInTheirOwnCalendar() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        // GIVEN Bob delegates his calendar to Alice with write rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        // WHEN Alice creates an event in her own calendar with Bob as organizer
+        DavResponse response = putIcs(alice, alice.id(), uid, """
+            BEGIN:VCALENDAR\r
+            VERSION:2.0\r
+            PRODID:-//Test//Test//EN\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            DTSTART:20250101T090000Z\r
+            DTEND:20250101T100000Z\r
+            SUMMARY:Delegate writes in own calendar with owner as organizer\r
+            ORGANIZER:mailto:%s\r
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:%s\r
+            END:VEVENT\r
+            END:VCALENDAR\r
+            """.formatted(uid, bob.email(), alice.email()));
+
+        // THEN Bob is rejected because he is neither the effective calendar owner nor the requester
+        assertThat(response.status()).isEqualTo(SC_FORBIDDEN);
+        assertThat(response.body()).contains("ORGANIZER");
+    }
+
+    @Test
     void delegateCannotWriteToOwnerCalendarWithThirdPartyAsOrganizer() {
         OpenPaasUser owner = dockerExtension().newTestUser();
         OpenPaasUser delegate = dockerExtension().newTestUser();
