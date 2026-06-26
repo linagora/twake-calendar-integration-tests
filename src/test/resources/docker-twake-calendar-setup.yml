@@ -48,7 +48,7 @@ services:
       - emaily
 
   mongo:
-    image: mongo
+    image: mongo:8.0.6
     networks:
       - emaily
 
