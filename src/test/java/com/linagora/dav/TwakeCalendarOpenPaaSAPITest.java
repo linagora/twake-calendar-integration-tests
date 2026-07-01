@@ -390,7 +390,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .when()
             .redirects().follow(false)
-            .get("api/themes/" + domainId() + "/logo").prettyPeek()
+            .get("api/themes/" + domainId() + "/logo")
             .then()
             .statusCode(301)
             .header("Location", "https://e-calendrier.avocat.fr/calendar/assets/images/white-logo.svg");

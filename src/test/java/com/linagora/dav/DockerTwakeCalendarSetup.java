@@ -98,8 +98,8 @@ public class DockerTwakeCalendarSetup {
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
                 .withEnv("PRINCIPAL_PRIVACY", principalPrivacy)
                 .withEnv("CALDAV_ORGANIZER_VALIDATION", organizerValidation)
-                .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("sabre_dav " + log.getUtf8String()))
-                .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("twake-calendar-side-service " + log.getUtf8String()));
+                .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("[esn-sabre] " + log.getUtf8String()))
+                .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("[twake-calendar-side-service] " + log.getUtf8String()));
         } catch (URISyntaxException e) {
             throw new RuntimeException("Failed to initialize Twake Calendar Setup from docker compose.", e);
         }

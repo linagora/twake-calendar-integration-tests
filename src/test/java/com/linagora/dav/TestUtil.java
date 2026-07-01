@@ -43,7 +43,7 @@ public class TestUtil {
 
     public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
-    public static final boolean DEBUG = true;
+    public static final boolean DEBUG = Boolean.getBoolean("dav.http.debug");
     public static final String TWAKE_CALENDAR_TOKEN_HEADER = "TwakeCalendarToken";
 
     public static Mono<ByteBuf> body(String body) {

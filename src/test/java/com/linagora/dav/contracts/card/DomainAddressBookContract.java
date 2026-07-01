@@ -88,6 +88,7 @@ public abstract class DomainAddressBookContract {
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
                 .toString())
             .build();
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
     protected boolean isolateDomainPerTest() {
