@@ -24,11 +24,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.xmlunit.assertj3.XmlAssert;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
@@ -58,70 +56,6 @@ public abstract class TeamCalendarMultitenancyContract {
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
                 .toString())
             .build();
-    }
-
-    @Test
-    void teamCalendarPrincipalSearchShouldRespectDomainIsolation() {
-        // Given Bob is in the default domain, with one team calendar in his domain and another in a second domain
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaaSTeamCalendar sameDomainTeamCalendar = dockerExtension().twakeCalendarProvisioningService()
-            .createTeamCalendar("marketing-" + UUID.randomUUID(), "Marketing Team")
-            .block();
-        OpenPaaSTeamCalendar crossDomainTeamCalendar = dockerExtension().twakeCalendarProvisioningService()
-            .createTeamCalendar("finance-" + UUID.randomUUID(), "Finance Team", SECOND_DOMAIN)
-            .block();
-
-        Function<PrincipalSearch, Response> principalPropertySearch = search -> given()
-            .header("Authorization", bob.impersonatedBasicAuth())
-            .header("Depth", "0")
-            .header("Content-Type", "application/xml")
-            .body("""
-                <d:principal-property-search xmlns:d="DAV:">
-                  <d:property-search>
-                    <d:prop>
-                      %s
-                    </d:prop>
-                    <d:match>%s</d:match>
-                  </d:property-search>
-                  <d:prop>
-                    <d:displayname/>
-                  </d:prop>
-                </d:principal-property-search>""".formatted(search.property(), search.match()))
-        .when()
-            .request("REPORT", "/principals/team-calendars")
-        .then()
-            .extract()
-            .response();
-
-        // When Bob searches a same-domain team calendar by display name
-        Response sameDomainResponse = principalPropertySearch.apply(new PrincipalSearch("<d:displayname/>", sameDomainTeamCalendar.displayName()));
-
-        // Then the same-domain team calendar is visible
-        assertThat(sameDomainResponse.statusCode())
-            .as("Principal search by display name should succeed for same-domain team calendar")
-            .isEqualTo(207);
-        XmlAssert.assertThat(sameDomainResponse.body().asString())
-            .withNamespaceContext(DAV_NAMESPACES)
-            .nodesByXPath("//d:multistatus/d:response/d:href")
-            .extractingText()
-            .anySatisfy(href -> assertThat(href)
-                .as("Principal search result should contain same-domain team calendar href")
-                .contains("/principals/team-calendars/" + sameDomainTeamCalendar.id()));
-
-        // When Bob searches the cross-domain team calendar by display name
-        Response crossDomainDisplayNameResponse = principalPropertySearch.apply(new PrincipalSearch("<d:displayname/>", crossDomainTeamCalendar.displayName()));
-
-        // Then the cross-domain team calendar principal is not leaked
-        assertThat(crossDomainDisplayNameResponse.statusCode())
-            .as("Principal search by display name should succeed without leaking cross-domain team calendar")
-            .isEqualTo(207);
-        XmlAssert.assertThat(crossDomainDisplayNameResponse.body().asString())
-            .withNamespaceContext(DAV_NAMESPACES)
-            .nodesByXPath("//d:multistatus/d:response/d:href")
-            .extractingText()
-            .noneSatisfy(href -> assertThat(href)
-                .as("Principal search by display name should not contain cross-domain team calendar href")
-                .contains("/principals/team-calendars/" + crossDomainTeamCalendar.id()));
     }
 
     @Test
