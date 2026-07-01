@@ -39,6 +39,7 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.RestAssured;
 
 public abstract class PrincipalMultitenancyContract {
 
@@ -52,6 +53,7 @@ public abstract class PrincipalMultitenancyContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
         bob = dockerExtension().newTestUser();
         alice = dockerExtension().newTestUser();
@@ -198,13 +200,13 @@ public abstract class PrincipalMultitenancyContract {
     }
 
     private String generateJwtFor(OpenPaasUser user) {
-        String quotedJwt = given().log().all()
+        String quotedJwt = given()
             .baseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
                 .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE, "http")
                 .toString())
             .auth().preemptive().basic(user.email(), user.password())
             .when()
-            .post("/api/jwt/generate").prettyPeek()
+            .post("/api/jwt/generate")
         .then()
             .statusCode(SC_OK)
             .extract()

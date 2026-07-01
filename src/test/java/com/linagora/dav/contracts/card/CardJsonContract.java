@@ -55,6 +55,7 @@ public abstract class CardJsonContract {
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
             .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
             .build();
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
     @Test
@@ -1950,7 +1951,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json").prettyPeek()
+            .get("/addressbooks/" + bob.id() + ".json")
         .then()
             .extract()
             .body()

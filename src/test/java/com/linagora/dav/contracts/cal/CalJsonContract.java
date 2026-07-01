@@ -146,6 +146,7 @@ public abstract class CalJsonContract {
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
             .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
             .build();
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
     @Test
@@ -258,19 +259,19 @@ public abstract class CalJsonContract {
     public void shouldSupportOptions() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        given().log().all()
+        given()
             .header("Origin", "https://it-calendar")
             .options("/calendars/" + testUser.id() + ".json")
             .then()
             .statusCode(200);
 
-        given().log().all()
+        given()
             .header("Origin", "https://it-calendar")
             .options("/calendars/" + testUser.id() + "/events.json")
         .then()
             .statusCode(200);
 
-        given().log().all()
+        given()
             .header("Origin", "https://it-calendar")
             .options("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
         .then()
@@ -2779,7 +2780,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
+            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
             .extract()
             .body()
@@ -2824,7 +2825,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
+            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
             .extract()
             .body()
@@ -2912,9 +2913,9 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .header("Accept", "application/json, text/plain, */*")
             .header("Content-Type", "text/html; charset=UTF-8")
-            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read\":true}],\"remove\":[]}}").log().all()
+            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read\":true}],\"remove\":[]}}")
         .when()
-            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json").prettyPeek()
+            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
         .then()
             .statusCode(200);
 
@@ -2924,7 +2925,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
+            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
             .extract()
             .body()
@@ -2968,9 +2969,9 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .header("Accept", "application/json, text/plain, */*")
             .header("Content-Type", "text/html; charset=UTF-8")
-            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read-write\":true}],\"remove\":[]}}").log().all()
+            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read-write\":true}],\"remove\":[]}}")
         .when()
-            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json").prettyPeek()
+            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
         .then()
             .statusCode(200);
 
@@ -2980,7 +2981,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics").prettyPeek()
+            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
             .extract()
             .body()

@@ -30,7 +30,5 @@
                 <appender-ref ref="CONSOLE" />
                 <appender-ref ref="FILE" />
         </root>
-        <logger name="org.apache.james" level="DEBUG" />
         <logger name="org.testcontainers" level="DEBUG"/>
-        <logger name="org.apache.james.metrics" level="INFO"/>
 </configuration>

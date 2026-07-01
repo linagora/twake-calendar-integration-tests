@@ -109,6 +109,7 @@ public abstract class CalendarSharingContract {
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
             .setBaseUri(extension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
             .build();
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 
         bob = extension().newTestUser();
         alice = extension().newTestUser();

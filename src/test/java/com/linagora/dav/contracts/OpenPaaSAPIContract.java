@@ -69,6 +69,7 @@ public abstract class OpenPaaSAPIContract {
             .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
             .setBaseUri(backendURI().toString())
             .build();
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 
         davHttpClient = davHttpClient();
         domainId = domainId();
@@ -480,7 +481,7 @@ public abstract class OpenPaaSAPIContract {
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
         .when()
             .redirects().follow(false)
-            .get("api/themes/" + domainId + "/logo").prettyPeek()
+            .get("api/themes/" + domainId + "/logo")
         .then()
             .statusCode(302)
             .header("Location", "http://localhost:8080/images/white-logo.svg");
@@ -651,7 +652,7 @@ public abstract class OpenPaaSAPIContract {
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .queryParam("shouldResetLink", "true")
         .when()
-            .get("calendar/api/calendars/" + adminId + "/" + adminId + "/secret-link").prettyPeek()
+            .get("calendar/api/calendars/" + adminId + "/" + adminId + "/secret-link")
         .then()
             .extract()
             .body()
@@ -660,7 +661,7 @@ public abstract class OpenPaaSAPIContract {
 
         String body = given()
             .baseUri(secretLink)
-            .get().prettyPeek()
+            .get()
             .then()
             .extract()
             .body()
