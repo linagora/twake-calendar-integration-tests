@@ -28,6 +28,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.xmlunit.assertj3.XmlAssert;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.OpenPaaSTeamCalendar;
@@ -43,10 +45,13 @@ public abstract class TeamCalendarContract {
         "s", "http://sabredav.org/ns",
         "cal", "urn:ietf:params:xml:ns:caldav");
 
+    private CalDavClient calDavClient;
+
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() {
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
@@ -195,6 +200,32 @@ public abstract class TeamCalendarContract {
             .valueByXPath("//d:response[d:href='/calendars/%s/%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
                 .formatted(teamCalendar.id(), teamCalendar.id()))
             .isEqualTo(teamCalendar.displayName());
+    }
+
+    @Test
+    void technicalTokenShouldManageTeamCalendarSharing() {
+        // Given a team calendar and Alice exist in the technical token domain
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("operations-" + UUID.randomUUID(), "Operations Team")
+            .block();
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // When the technical token grants Alice read-write access to the team calendar
+        calDavClient.grantDelegation(teamCalendar.id(), alice, DelegationRight.READ_WRITE, technicalToken);
+
+        // Then Alice sees the delegated team calendar
+        assertThat(calDavClient.findDelegatedCalendar(alice))
+            .as("Alice should see the team calendar after technical token grants delegation")
+            .hasSize(1);
+
+        // When the technical token revokes Alice's delegation
+        calDavClient.revokeDelegation(teamCalendar.id(), alice, technicalToken);
+
+        // Then Alice no longer sees that team calendar delegation
+        assertThat(calDavClient.findDelegatedCalendar(alice))
+            .as("Alice should no longer see the team calendar after technical token revokes delegation")
+            .isEmpty();
     }
 
 }

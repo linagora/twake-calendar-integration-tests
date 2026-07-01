@@ -20,6 +20,7 @@ package com.linagora.dav.contracts;
 
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
 import java.util.UUID;
@@ -29,6 +30,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.xmlunit.assertj3.XmlAssert;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaaSTeamCalendar;
@@ -42,10 +45,13 @@ public abstract class TeamCalendarMultitenancyContract {
     private static final String SECOND_DOMAIN = "second-domain.org";
     private static final Map<String, String> DAV_NAMESPACES = Map.of("d", "DAV:");
 
+    private CalDavClient calDavClient;
+
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     @BeforeEach
     void setUp() {
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
@@ -149,6 +155,37 @@ public abstract class TeamCalendarMultitenancyContract {
             .isEqualTo(403);
     }
 
+    @Test
+    void technicalTokenShouldNotManageCrossDomainTeamCalendarSharing() {
+        // Given Alice and a technical token are in the default domain, while the team calendar is not
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar crossDomainTeamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("security-" + UUID.randomUUID(), "Security Team", SECOND_DOMAIN)
+            .block();
+        String defaultDomainTechnicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // When/Then the default-domain technical token cannot share the cross-domain team calendar
+        assertThatThrownBy(() -> calDavClient.grantDelegation(crossDomainTeamCalendar.id(), alice, DelegationRight.READ, defaultDomainTechnicalToken))
+            .as("Default-domain technical token should not share a cross-domain team calendar")
+            .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
+    }
+
+    @Test
+    void technicalTokenShouldNotShareTeamCalendarWithCrossDomainUser() {
+        // Given a team calendar and a technical token are in the default domain, while Alice is not
+        OpenPaaSTeamCalendar teamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("security-" + UUID.randomUUID(), "Security Team")
+            .block();
+        OpenPaasUser crossDomainAlice = dockerExtension().twakeCalendarProvisioningService()
+            .createUser("alice-" + UUID.randomUUID(), SECOND_DOMAIN)
+            .block();
+        String defaultDomainTechnicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // When/Then the default-domain technical token cannot share the team calendar with the cross-domain user
+        assertThatThrownBy(() -> calDavClient.grantDelegation(teamCalendar.id(), crossDomainAlice, DelegationRight.READ, defaultDomainTechnicalToken))
+            .as("Default-domain technical token should not share a team calendar with a cross-domain user")
+            .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
+    }
 
     private record PrincipalSearch(String property, String match) {
     }
