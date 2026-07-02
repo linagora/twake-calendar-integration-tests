@@ -18,22 +18,32 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.TestUtil.awaitAtMost;
 import static com.linagora.dav.TestUtil.body;
 import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.apache.http.HttpStatus.SC_NO_CONTENT;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
+import java.net.URI;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
+
+import net.fortuna.ical4j.model.parameter.PartStat;
 
 public abstract class OrganizerValidationContract {
 
@@ -315,6 +325,43 @@ public abstract class OrganizerValidationContract {
 
         assertThat(response.status()).isEqualTo(SC_FORBIDDEN);
         assertThat(response.body()).contains("ORGANIZER");
+    }
+
+    @Test
+    void attendeeCanUpdatePartStatOnEventCopyCreatedByInvitation() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        // GIVEN the organizer invites the attendee, scheduling delivers a copy into the attendee calendar
+        calDavClient.upsertCalendarEvent(organizer, uid, """
+            BEGIN:VCALENDAR\r
+            VERSION:2.0\r
+            PRODID:-//Test//Test//EN\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            DTSTART:20250101T090000Z\r
+            DTEND:20250101T100000Z\r
+            SUMMARY:Meeting\r
+            ORGANIZER:mailto:%s\r
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:%s\r
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:%s\r
+            END:VEVENT\r
+            END:VCALENDAR\r
+            """.formatted(uid, organizer.email(), organizer.email(), attendee.email()));
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(attendee), Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event to be propagated to attendee calendar"));
+
+        // WHEN the attendee updates their PARTSTAT on their copy, where the ORGANIZER is someone else
+        String attendeeEventIcs = calDavClient.getCalendarEvent(attendee,
+            URI.create("/calendars/" + attendee.id() + "/" + attendee.id() + "/" + attendeeEventId + ".ics"));
+        String acceptedIcs = CalendarUtil.withAttendeePartStat(attendeeEventIcs, attendee.email(), PartStat.ACCEPTED);
+        DavResponse response = putIcs(attendee, attendee.id(), attendeeEventId, acceptedIcs);
+
+        // THEN the update is accepted
+        assertThat(response.status()).isEqualTo(SC_NO_CONTENT);
     }
 
     private DavResponse putIcs(OpenPaasUser requester, String calendarOwnerId, String uid, String icsContent) {
