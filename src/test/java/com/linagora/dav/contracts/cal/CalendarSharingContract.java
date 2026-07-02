@@ -73,6 +73,7 @@ import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import net.fortuna.ical4j.model.parameter.PartStat;
+import reactor.core.publisher.Mono;
 
 public abstract class CalendarSharingContract {
 
@@ -134,6 +135,132 @@ public abstract class CalendarSharingContract {
         assertThatThrownBy(() -> calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest))
             .isInstanceOf(Exception.class)
             .hasMessageContaining("Unexpected status code");
+    }
+
+    @Test
+    public void cannotReportPrivateCalendar() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        // When: Alice reports Bob's private calendar directly
+        DavResponse response = calDavClient.findEventsByTime(alice, CalendarURL.from(bob.id()), "20300110T000000", "20300110T235959");
+
+        // Then: Alice cannot read Bob's private calendar events
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
+    @Test
+    public void cannotPropfindPrivateCalendar() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri(CalendarURL.from(bob.id()).asUri().toString())
+            .responseSingle((httpResponse, content) -> content.asString()
+                .switchIfEmpty(Mono.just(""))
+                .map(body -> new DavResponse(httpResponse.status().code(), body)))
+            .block();
+
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
+    @Test
+    public void cannotGetPrivateCalendarEvent() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Accept", "text/calendar"))
+            .get()
+            .uri(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
+            .responseSingle((httpResponse, content) -> content.asString()
+                .switchIfEmpty(Mono.just(""))
+                .map(body -> new DavResponse(httpResponse.status().code(), body)))
+            .block();
+
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
+    @Test
+    public void cannotExportPrivateCalendar() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = extension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .get()
+            .uri(CalendarURL.from(bob.id()).asUri() + "?export")
+            .responseSingle((httpResponse, content) -> content.asString()
+                .switchIfEmpty(Mono.just(""))
+                .map(body -> new DavResponse(httpResponse.status().code(), body)))
+            .block();
+
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
+    @Test
+    public void cannotExportJsonPrivateCalendar() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Accept", "application/json"))
+            .get()
+            .uri(CalendarURL.from(bob.id()).asUri() + ".json?export")
+            .responseSingle((httpResponse, content) -> content.asString()
+                .switchIfEmpty(Mono.just(""))
+                .map(body -> new DavResponse(httpResponse.status().code(), body)))
+            .block();
+
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
+    private String createEventInBobPrivateCalendar() {
+        // Given: Bob sets his calendar as private
+        calDavClient.updateCalendarAcl(bob, "");
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20300110T080000Z
+            DTSTART:20300110T090000Z
+            DTEND:20300110T100000Z
+            SUMMARY:Bob private calendar event
+            DESCRIPTION:ABCXYZ111
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid);
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        return eventUid;
     }
 
     @Test
