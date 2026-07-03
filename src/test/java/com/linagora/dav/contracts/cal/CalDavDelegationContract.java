@@ -351,7 +351,9 @@ public abstract class CalDavDelegationContract {
         // WHEN Alice delegates her calendar to Bob
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
-        // THEN Bob can read Alice's SOURCE calendar directly via CalDAV REPORT (not his copy)
+        // THEN Bob cannot read Alice's SOURCE calendar directly via CalDAV REPORT (not his copy).
+        // Depending on the REPORT pipeline, Sabre can reject the request or return
+        // a multistatus response containing a forbidden item.
         String aliceSourceCalendarUri = "/calendars/" + alice.id() + "/" + alice.id();
         DavResponse response = execute(dockerExtension().davHttpClient()
             .headers(headers -> bob.impersonatedBasicAuth(headers)
@@ -377,8 +379,10 @@ public abstract class CalDavDelegationContract {
                 </c:calendar-query>
                 """.formatted(eventUid))));
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body()).contains("<d:status>HTTP/1.1 403 Forbidden</d:status>");
+        assertThat(response.status()).isIn(207, 403);
+        if (response.status() == 207) {
+            assertThat(response.body()).contains("<d:status>HTTP/1.1 403 Forbidden</d:status>");
+        }
     }
 
     @ParameterizedTest
