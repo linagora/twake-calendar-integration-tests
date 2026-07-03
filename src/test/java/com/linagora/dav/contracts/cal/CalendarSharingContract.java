@@ -2337,10 +2337,10 @@ public abstract class CalendarSharingContract {
 
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
 
-        // AND a resource "projector" in the same domain as Alice and Bob
+        // AND a resource "projector" in the same domain as Alice and Bob, administered by Alice so Bob's request is not auto-accepted
         OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
-            .createResource("projector", "Meeting room projector", bob)
+            .createResource("projector", "Meeting room projector", alice)
             .block();
 
         // WHEN: Alice subscribes to the resource calendar

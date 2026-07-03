@@ -2284,7 +2284,7 @@ public abstract class CalDavContract {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
-            .createResource("projector", "This is a projector", testUser)
+            .createResource("projector", "This is a projector", testUser2)
             .block();
 
         String eventUid = UUID.randomUUID().toString();
@@ -2426,7 +2426,7 @@ public abstract class CalDavContract {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
-            .createResource("projector", "This is a projector", testUser)
+            .createResource("projector", "This is a projector", testUser2)
             .block();
 
         String eventUid = UUID.randomUUID().toString();
