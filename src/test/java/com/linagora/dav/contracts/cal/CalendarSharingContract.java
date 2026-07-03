@@ -154,6 +154,38 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    @Disabled("Wait for new image")
+    public void cannotReadPrivateCalendarDataWithFilterlessCalendarQueryReport() {
+        createEventInBobPrivateCalendar();
+
+        // The filter-less XML calendar-query is the fast path used by the reindex task.
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/xml")
+                .add("Depth", "1"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(CalendarURL.from(bob.id()).asUri().toString())
+            .send(body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag/>
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR"/>
+                    </c:filter>
+                </c:calendar-query>
+                """)));
+
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain("BEGIN:VCALENDAR");
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
+    @Test
     public void cannotPropfindPrivateCalendar() {
         String eventUid = createEventInBobPrivateCalendar();
 
