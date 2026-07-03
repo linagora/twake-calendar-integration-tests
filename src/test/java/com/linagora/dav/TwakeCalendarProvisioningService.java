@@ -20,6 +20,7 @@ package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -103,6 +104,27 @@ public class TwakeCalendarProvisioningService {
         return createResource(name, description, admin, createDomainIfNotExists(domainName).getObjectId("_id"));
     }
 
+    public Mono<OpenPaaSTeamCalendar> createTeamCalendar(String name, String displayName) {
+        return createTeamCalendar(name, displayName, DEFAULT_DOMAIN);
+    }
+
+    public Mono<OpenPaaSTeamCalendar> createTeamCalendar(String name, String displayName, String domainName) {
+        Document domain = createDomainIfNotExists(domainName);
+        Document teamCalendarToSave = new Document()
+            .append("name", name)
+            .append("displayName", displayName)
+            .append("domainId", domain.getObjectId("_id"))
+            .append("domainName", domainName)
+            .append("timestamps", new Document()
+                .append("creation", Date.from(Instant.now()))
+                .append("updatedAt", Date.from(Instant.now())));
+
+        return Mono.from(database.getCollection("team_calendars").insertOne(teamCalendarToSave))
+            .flatMap(success -> Mono.from(
+                database.getCollection("team_calendars").find(new Document("_id", success.getInsertedId())).first()))
+            .map(OpenPaaSTeamCalendar::fromDocument);
+    }
+
     private Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, ObjectId domainId) {
         Document resourceToSave = new Document()
             .append("name", name)
@@ -111,13 +133,13 @@ public class TwakeCalendarProvisioningService {
             .append("icon", "home")
             .append("deleted", false)
             .append("domain", domainId)
-            .append("creator", new org.bson.types.ObjectId(admin.id()))
+            .append("creator", new ObjectId(admin.id()))
             .append("administrators", List.of(new Document()
                 .append("id", admin.id())
                 .append("objectType", "user")))
             .append("timestamps", new Document()
-                .append("creation", java.util.Date.from(java.time.Instant.now()))
-                .append("updatedAt", java.util.Date.from(java.time.Instant.now())));
+                .append("creation", Date.from(Instant.now()))
+                .append("updatedAt", Date.from(Instant.now())));
 
         return Mono.from(database.getCollection("resources").insertOne(resourceToSave))
             .flatMap(success -> Mono.from(
