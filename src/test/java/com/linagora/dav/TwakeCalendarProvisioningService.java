@@ -29,6 +29,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
@@ -37,6 +39,7 @@ import com.mongodb.reactivestreams.client.MongoCollection;
 import com.mongodb.reactivestreams.client.MongoDatabase;
 
 import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
@@ -45,6 +48,7 @@ public class TwakeCalendarProvisioningService {
     public static final String DEFAULT_DOMAIN = "open-paas.org";
 
     private static final TechnicalTokenService technicalTokenService = new TechnicalTokenService.Impl("technicalTokenSecret", Duration.ofSeconds(3600));
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final MongoDatabase database;
     private final HttpClient httpClient;
@@ -109,20 +113,38 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Mono<OpenPaaSTeamCalendar> createTeamCalendar(String name, String displayName, String domainName) {
-        Document domain = createDomainIfNotExists(domainName);
-        Document teamCalendarToSave = new Document()
-            .append("name", name)
-            .append("displayName", displayName)
-            .append("domainId", domain.getObjectId("_id"))
-            .append("domainName", domainName)
-            .append("timestamps", new Document()
-                .append("creation", Date.from(Instant.now()))
-                .append("updatedAt", Date.from(Instant.now())));
+        createDomainIfNotExists(domainName);
 
-        return Mono.from(database.getCollection("team_calendars").insertOne(teamCalendarToSave))
-            .flatMap(success -> Mono.from(
-                database.getCollection("team_calendars").find(new Document("_id", success.getInsertedId())).first()))
-            .map(OpenPaaSTeamCalendar::fromDocument);
+        ObjectNode requestBody = OBJECT_MAPPER.createObjectNode()
+            .put("name", name)
+            .put("displayName", displayName);
+
+        return httpClient.headers(headers -> headers.add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .post()
+            .uri("/domains/" + domainName + "/team-calendars")
+            .send(Mono.just(Unpooled.wrappedBuffer(requestBody.toString().getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> responseContent.asString(StandardCharsets.UTF_8)
+                .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                .flatMap(responseBody -> {
+                    if (response.status().code() == 201) {
+                        return parseTeamCalendar(responseBody);
+                    }
+                    return Mono.error(new RuntimeException("Failed to create team calendar through webadmin:"
+                        + response.status().code() + " " + responseBody));
+                }));
+    }
+
+    private Mono<OpenPaaSTeamCalendar> parseTeamCalendar(String responseBody) {
+        try {
+            var json = OBJECT_MAPPER.readTree(responseBody);
+            return Mono.just(new OpenPaaSTeamCalendar(
+                json.path("id").asText(),
+                json.path("name").asText(),
+                json.path("displayName").asText(),
+                json.path("domainName").asText()));
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("Failed to parse team calendar webadmin response", e));
+        }
     }
 
     private Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, ObjectId domainId) {
