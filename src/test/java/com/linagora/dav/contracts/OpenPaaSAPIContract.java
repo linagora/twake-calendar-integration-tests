@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,11 @@ public abstract class OpenPaaSAPIContract {
 
         davHttpClient = davHttpClient();
         domainId = domainId();
+    }
+
+    @AfterEach
+    void tearDown() {
+        RestAssured.reset();
     }
 
     @Test

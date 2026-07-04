@@ -56,6 +56,7 @@ public abstract class TeamCalendarContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         RestAssured.requestSpecification = new RequestSpecBuilder()
