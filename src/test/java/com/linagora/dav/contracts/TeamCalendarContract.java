@@ -1,0 +1,582 @@
+/********************************************************************
+ *  As a subpart of Twake Mail, this file is edited by Linagora.    *
+ *                                                                  *
+ *  https://twake-mail.com/                                         *
+ *  https://linagora.com                                            *
+ *                                                                  *
+ *  This file is subject to The Affero Gnu Public License           *
+ *  version 3.                                                      *
+ *                                                                  *
+ *  https://www.gnu.org/licenses/agpl-3.0.en.html                   *
+ *                                                                  *
+ *  This program is distributed in the hope that it will be         *
+ *  useful, but WITHOUT ANY WARRANTY; without even the implied      *
+ *  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR         *
+ *  PURPOSE. See the GNU Affero General Public License for          *
+ *  more details.                                                   *
+ ********************************************************************/
+
+package com.linagora.dav.contracts;
+
+import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.xmlunit.assertj3.XmlAssert;
+
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarURL;
+import com.linagora.dav.DavResponse;
+import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
+import com.linagora.dav.OpenPaaSTeamCalendar;
+import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.dto.share.SubscribedCalendarRequest;
+
+import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.response.Response;
+
+public abstract class TeamCalendarContract {
+    private static final Map<String, String> DAV_NAMESPACES = Map.of(
+        "d", "DAV:",
+        "cal", "urn:ietf:params:xml:ns:caldav");
+    private static final String PUBLIC_READ_RIGHT = "{DAV:}read";
+
+    private CalDavClient calDavClient;
+
+    public abstract DockerTwakeCalendarExtension dockerExtension();
+
+    @BeforeEach
+    void setUp() {
+        RestAssured.reset();
+        calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+        RestAssured.requestSpecification = new RequestSpecBuilder()
+            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
+                .getServiceUri(DockerService.SABRE_DAV, "http")
+                .toString())
+            .build();
+    }
+
+    @Test
+    void currentUserPrincipalShouldLinkTheTeamCalendarPrincipal() {
+        // Given a team calendar exists in the default domain
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("sales", "Sales Team");
+
+        // When the team calendar is authenticated through admin impersonation
+        Response response = propfind(teamCalendar, "/", 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:current-user-principal/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then the current user principal points to the team calendar namespace
+        assertThat(response.statusCode())
+            .as("Team calendar admin impersonation should expose current-user-principal")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//d:current-user-principal/d:href")
+            .isEqualTo(teamCalendar.principalHref());
+    }
+
+    @Test
+    void teamCalendarPrincipalShouldExposeDisplayName() {
+        // Given a team calendar exists in the default domain
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("support", "Support Team");
+
+        // When its DAV principal properties are requested
+        Response response = propfind(teamCalendar,
+            "/principals/team-calendars/" + teamCalendar.id(), 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then the principal exposes the team calendar display name
+        assertThat(response.statusCode())
+            .as("Team calendar principal PROPFIND should return display name")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname")
+            .isEqualTo(teamCalendar.displayName());
+    }
+
+    @Test
+    void teamCalendarPrincipalShouldResolveCalendarHome() {
+        // Given a team calendar exists in the default domain
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("engineering", "Engineering Team");
+
+        // When its CalDAV calendar home is discovered
+        Response discoveryResponse = propfind(teamCalendar,
+            "/principals/team-calendars/" + teamCalendar.id(), 0, """
+                <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:prop>
+                    <c:calendar-home-set/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then the calendar home-set points to the team calendar home
+        assertThat(discoveryResponse.statusCode())
+            .as("Team calendar principal PROPFIND should resolve calendar-home-set")
+            .isEqualTo(207);
+        XmlAssert.assertThat(discoveryResponse.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//cal:calendar-home-set/d:href")
+            .isEqualTo("/calendars/" + teamCalendar.id() + "/");
+    }
+
+    @Test
+    void teamCalendarDefaultCalendarShouldBeAvailableOnFirstAccess() {
+        // Given a team calendar exists
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("product", "Product Team");
+
+        // When its default calendar is accessed for the first time
+        Response response = propfind(teamCalendar,
+            "/calendars/" + teamCalendar.id() + "/" + teamCalendar.id(), 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then the first request succeeds without requiring lazy provisioning to be retried
+        assertThat(response.statusCode())
+            .as("First access to team calendar default calendar should trigger lazy provisioning successfully")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .nodesByXPath("//d:multistatus/d:response/d:href")
+            .extractingText()
+            .contains("/calendars/" + teamCalendar.id() + "/" + teamCalendar.id() + "/");
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//d:response[d:href='/calendars/%s/%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
+                .formatted(teamCalendar.id(), teamCalendar.id()))
+            .isEqualTo(teamCalendar.displayName());
+    }
+
+    @Test
+    void technicalTokenShouldManageTeamCalendarSharing() {
+        // Given a team calendar and Alice exist in the technical token domain
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+
+        // When the technical token grants Alice read-write access to the team calendar
+        calDavClient.grantDelegation(teamCalendar.id(), alice, DelegationRight.READ_WRITE, technicalToken);
+
+        // Then Alice sees the delegated team calendar
+        assertThat(calDavClient.findDelegatedCalendar(alice))
+            .as("Alice should see the team calendar after technical token grants delegation")
+            .hasSize(1);
+
+        // When the technical token revokes Alice's delegation
+        calDavClient.revokeDelegation(teamCalendar.id(), alice, technicalToken);
+
+        // Then Alice no longer sees that team calendar delegation
+        assertThat(calDavClient.findDelegatedCalendar(alice))
+            .as("Alice should no longer see the team calendar after technical token revokes delegation")
+            .isEmpty();
+    }
+
+    @Test
+    void teamCalendarDelegateeShouldSeeDelegatedCalendarThroughPropfind() {
+        // Given a team calendar is delegated to Alice by the technical token
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+
+        // When Alice lists her calendar home through PROPFIND
+        Response response = propfind(alice, "/calendars/" + alice.id(), 1, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then Alice sees the delegated team calendar as a calendar home child
+        assertThat(response.statusCode())
+            .as("Delegatee PROPFIND on calendar home should succeed")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .nodesByXPath("//d:multistatus/d:response/d:href")
+            .extractingText()
+            .contains(delegatedCalendar.asUri() + "/");
+    }
+
+    @Test
+    void teamCalendarDelegateeShouldSeeDelegatedCalendarPropertiesThroughPropfind() {
+        // Given a team calendar is delegated to Alice by the technical token
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+
+        // When Alice requests the delegated team calendar properties through PROPFIND
+        Response response = propfind(alice, delegatedCalendar.asUri().toString(), 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                    <d:resourcetype/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then Alice sees team calendar properties through the delegated calendar URL
+        assertThat(response.statusCode())
+            .as("Delegatee PROPFIND on delegated team calendar should succeed")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
+                .formatted(delegatedCalendar.asUri()))
+            .isEqualTo(teamCalendar.displayName());
+        assertThat(response.body().asString())
+            .as("Delegated team calendar should be advertised as a CalDAV calendar collection")
+            .contains("<d:collection/>", "<cal:calendar/>");
+    }
+
+    @Test
+    void readOnlyTeamCalendarDelegateeShouldOnlySeeReadPrivilegesThroughPropfind() {
+        // Given a team calendar is delegated to Alice as read-only by the technical token
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+
+        // When Alice requests privileges on the delegated team calendar through PROPFIND
+        Response response = propfind(alice, delegatedCalendar.asUri().toString(), 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:current-user-privilege-set/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then Alice only sees read privileges
+        assertThat(response.statusCode())
+            .as("Delegatee PROPFIND on read-only team calendar privileges should succeed")
+            .isEqualTo(207);
+        assertThat(response.body().asString())
+            .as("Read-only delegated team calendar should not advertise write privileges")
+            .contains(delegatedCalendar.asUri() + "/", "<d:read/>")
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+    }
+
+    @Test
+    void readWriteTeamCalendarDelegateeShouldCreateEvent() {
+        // Given Alice has read-write delegation on a team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Alice creates an event in the delegated team calendar
+        calDavClient.upsertCalendarEvent(alice, delegatedCalendar, eventUid,
+            calendarData(eventUid, "Alice creates team event"));
+
+        // Then Alice can read it from the delegated team calendar
+        DavResponse response = findEventsByTime(alice, delegatedCalendar);
+        assertThat(response.status())
+            .as("Alice should report events from the delegated team calendar")
+            .isEqualTo(200);
+        assertThat(response.body())
+            .as("Alice should see the event she created in the team calendar")
+            .contains(eventUid);
+    }
+
+    @Test
+    void readOnlyTeamCalendarDelegateeShouldNotCreateEvent() {
+        // Given Alice has read-only delegation on a team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When/Then Alice cannot create an event in the delegated team calendar
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, delegatedCalendar, eventUid,
+            calendarData(eventUid, "Alice tries to create team event")))
+            .as("Read-only team calendar delegatee should not create events")
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void teamCalendarMemberShouldSeeEventCreatedByAnotherMember() {
+        // Given Alice and Bob are members of the same team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL bobDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Alice creates an event in the delegated team calendar
+        calDavClient.upsertCalendarEvent(alice, aliceDelegatedCalendar, eventUid,
+            calendarData(eventUid, "Alice creates event for Bob"));
+
+        // Then Bob can read the event from his delegated team calendar
+        DavResponse response = findEventsByTime(bob, bobDelegatedCalendar);
+        assertThat(response.status())
+            .as("Bob should report team calendar events as a member")
+            .isEqualTo(200);
+        assertThat(response.body())
+            .as("Bob should see Alice's event because he is also a team calendar member")
+            .contains(eventUid);
+    }
+
+    @Test
+    void nonTeamCalendarMemberShouldNotSeeEventCreatedByMember() {
+        // Given Alice is a team calendar member while Bob is not
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // And the team calendar is private
+        calDavClient.updateTeamCalendarAcl(teamCalendar, "");
+
+        // When Alice creates an event in the delegated team calendar
+        calDavClient.upsertCalendarEvent(alice, aliceDelegatedCalendar, eventUid,
+            calendarData(eventUid, "Alice creates private team event"));
+
+        // Then Bob cannot read it from the team calendar because he is not a member
+        DavResponse response = findEventsByTime(bob, teamCalendarCanonicalUrl);
+        assertThat(response.status())
+            .as("Non-member Bob should not report events from the team calendar")
+            .isIn(403, 404);
+        assertThat(response.body())
+            .as("Non-member Bob should not see Alice's team calendar event")
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    void publicReadTeamCalendarShouldBeVisibleToNonMemberThroughPropfind() {
+        // Given a team calendar is publicly readable while Bob is not a member
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.updateTeamCalendarAcl(teamCalendar, PUBLIC_READ_RIGHT);
+
+        // When Bob requests the public team calendar properties through PROPFIND
+        Response response = propfind(bob, teamCalendarCanonicalUrl.asUri().toString(), 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                    <d:resourcetype/>
+                    <d:current-user-privilege-set/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then Bob sees the team calendar as a readable public calendar collection
+        assertThat(response.statusCode())
+            .as("Non-member Bob should PROPFIND a publicly readable team calendar")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
+                .formatted(teamCalendarCanonicalUrl.asUri()))
+            .isEqualTo(teamCalendar.displayName());
+        assertThat(response.body().asString())
+            .as("Publicly readable team calendar should advertise read access without write privileges")
+            .contains(teamCalendarCanonicalUrl.asUri() + "/", "<d:collection/>", "<cal:calendar/>", "<d:read/>")
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+    }
+
+    @Test
+    void publicReadTeamCalendarShouldExposeMemberEventToNonMember() {
+        // Given Alice creates an event in a publicly readable team calendar while Bob is not a member
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.updateTeamCalendarAcl(teamCalendar, PUBLIC_READ_RIGHT);
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(alice, aliceDelegatedCalendar, eventUid,
+            calendarData(eventUid, "Alice creates public team event"));
+
+        // When Bob reports events from the public team calendar
+        DavResponse response = findEventsByTime(bob, teamCalendarCanonicalUrl);
+
+        // Then Bob can read the event because the team calendar is public
+        assertThat(response.status())
+            .as("Non-member Bob should report events from a publicly readable team calendar")
+            .isEqualTo(200);
+        assertThat(response.body())
+            .as("Non-member Bob should see Alice's event because the team calendar is public")
+            .contains(eventUid);
+    }
+
+    @Test
+    void publicReadTeamCalendarShouldBeSubscribableByNonMember() {
+        // Given a team calendar is publicly readable while Alice is not a member
+        OpenPaasUser teamMember = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL teamMemberDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, teamMember, DelegationRight.READ_WRITE);
+        calDavClient.updateTeamCalendarAcl(teamCalendar, PUBLIC_READ_RIGHT);
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(teamMember, teamMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, "Team member creates public team event"));
+
+        // And Alice prepares a read-only subscription to the public team calendar
+        SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(teamCalendar.id())
+            .name("Operations Team mirror")
+            .color("#00FF00")
+            .readOnly(true)
+            .build();
+
+        // When Alice subscribes to the public team calendar
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+
+        // Then Alice sees the subscribed team calendar in her calendar home
+        Response propfindResponse = propfind(alice, "/calendars/" + alice.id(), 1, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""");
+
+        assertThat(propfindResponse.statusCode())
+            .as("Alice should list her calendar home after subscribing to a public team calendar")
+            .isEqualTo(207);
+        XmlAssert.assertThat(propfindResponse.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .nodesByXPath("//d:multistatus/d:response/d:href")
+            .extractingText()
+            .contains(subscribedCalendar.asUri() + "/");
+
+        // And Alice can read team calendar events through the subscribed mirror
+        DavResponse eventsResponse = findEventsByTime(alice, subscribedCalendar);
+        assertThat(eventsResponse.status())
+            .as("Alice should report events from the subscribed public team calendar")
+            .isEqualTo(200);
+        assertThat(eventsResponse.body())
+            .as("Alice should see team calendar events through the subscribed mirror")
+            .contains(eventUid);
+    }
+
+    @Test
+    void nonTeamCalendarMemberShouldNotSeePrivateTeamCalendarThroughCalendarHomePropfind() {
+        // Given a private team calendar is delegated to Alice
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+
+        // When Bob, who is not a member, lists his calendar home through PROPFIND
+        Response response = propfind(bob, "/calendars/" + bob.id(), 1, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then Bob does not discover the private team calendar
+        assertThat(response.statusCode())
+            .as("Non-member Bob should list his own calendar home successfully")
+            .isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .nodesByXPath("//d:multistatus/d:response/d:href")
+            .extractingText()
+            .noneSatisfy(href -> assertThat(href)
+                .as("Bob's calendar home should not expose a team calendar he is not a member of")
+                .contains("/calendars/" + teamCalendar.id() + "/" + teamCalendar.id() + "/"));
+    }
+
+    @Test
+    void nonTeamCalendarMemberShouldNotPropfindPrivateTeamCalendar() {
+        // Given a private team calendar is delegated to Alice
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+
+        // When Bob, who is not a member, requests the private team calendar directly through PROPFIND
+        Response response = propfind(bob, teamCalendarCanonicalUrl.asUri().toString(), 0, """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""");
+
+        // Then Bob cannot access the private team calendar
+        assertThat(response.statusCode())
+            .as("Non-member Bob should not directly PROPFIND a private team calendar")
+            .isIn(403, 404);
+    }
+
+    private String calendarData(String eventUid, String summary) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300101T080000Z
+            DTSTART:20300110T090000Z
+            DTEND:20300110T100000Z
+            SUMMARY:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, summary);
+    }
+
+    private OpenPaaSTeamCalendar newTeamCalendar(String namePrefix, String displayName) {
+        return dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar(namePrefix + "-" + UUID.randomUUID(), displayName)
+            .block();
+    }
+
+    private CalendarURL delegateTeamCalendarTo(OpenPaaSTeamCalendar teamCalendar, OpenPaasUser user, DelegationRight right) {
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.grantDelegation(teamCalendar.id(), user, right, technicalToken);
+        List<CalendarURL> delegatedCalendars = calDavClient.findDelegatedCalendar(user);
+        assertThat(delegatedCalendars)
+            .as("User should have one delegated team calendar")
+            .hasSize(1);
+        return delegatedCalendars.getFirst();
+    }
+
+    private Response propfind(OpenPaaSTeamCalendar teamCalendar, String path, int depth, String requestBody) {
+        return propfind(teamCalendar.email(), path, depth, requestBody);
+    }
+
+    private Response propfind(OpenPaasUser user, String path, int depth, String requestBody) {
+        return propfind(user.email(), path, depth, requestBody);
+    }
+
+    private Response propfind(String userEmail, String path, int depth, String requestBody) {
+        return given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(userEmail))
+            .header("Depth", depth)
+            .header("Content-Type", "application/xml")
+            .body(requestBody)
+        .when()
+            .request("PROPFIND", path)
+        .then()
+            .extract()
+            .response();
+    }
+
+    private DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
+        return calDavClient.findEventsByTime(user, calendarURL, "20300110T000000", "20300110T235959");
+    }
+
+}

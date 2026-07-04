@@ -677,6 +677,10 @@ public class CalDavClient {
         updateCalendarAcl(user, URI.create(calendarURL.asUri() + ".json"), publicRight);
     }
 
+    public void updateTeamCalendarAcl(OpenPaaSTeamCalendar teamCalendar, String publicRight) {
+        updateCalendarAcl(teamCalendar.email(), URI.create(CalendarURL.from(teamCalendar.id()).asUri() + ".json"), publicRight);
+    }
+
     /**
      * <p>Examples of {@code public_right} values:
      * <ul>
@@ -700,6 +704,10 @@ public class CalDavClient {
      * </ul>
      */
     public void updateCalendarAcl(OpenPaasUser user, URI calendarURL, String publicRight) {
+        updateCalendarAcl(user.email(), calendarURL, publicRight);
+    }
+
+    public void updateCalendarAcl(String impersonatedEmail, URI calendarURL, String publicRight) {
         String uri = calendarURL.toString();
         String payload = """
             {
@@ -707,7 +715,7 @@ public class CalDavClient {
             }
             """.formatted(publicRight);
 
-        httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
+        httpClient.headers(headers -> headers.add(HttpHeaderNames.AUTHORIZATION, OpenPaasUser.impersonatedBasicAuth(impersonatedEmail))
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*")
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
             .request(HttpMethod.valueOf("ACL"))
