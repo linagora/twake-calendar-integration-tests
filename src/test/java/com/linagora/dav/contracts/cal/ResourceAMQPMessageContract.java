@@ -153,9 +153,10 @@ public abstract class ResourceAMQPMessageContract {
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
-            .createResource("projector", "This is a projector", testUser)
+            .createResource("projector", "This is a projector", resourceAdmin)
             .block();
 
         String eventUid = UUID.randomUUID().toString();
@@ -255,9 +256,10 @@ public abstract class ResourceAMQPMessageContract {
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
-            .createResource("projector", "This is a projector", testUser)
+            .createResource("projector", "This is a projector", resourceAdmin)
             .block();
 
         String eventUid = UUID.randomUUID().toString();
