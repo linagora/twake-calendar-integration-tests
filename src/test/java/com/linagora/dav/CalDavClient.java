@@ -410,6 +410,33 @@ public class CalDavClient {
             }).block();
     }
 
+    /**
+     * Sends an ITIP request the way the imap.linagora.com web client does: a POST to the event URL
+     * carrying an "X-Http-Method-Override: ITIP" header, rather than using the custom ITIP verb.
+     * The server's XHttpMethodOverridePlugin is expected to route it through the ITIP handler.
+     */
+    public void sendITIPViaMethodOverride(OpenPaasUser openPaaSUser, String attendeeEventUid, CounterRequest counterRequest) {
+        URI uri = URI.create("/calendars/" + openPaaSUser.id() + "/" + openPaaSUser.id() + "/" + attendeeEventUid + ".ics");
+        httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
+                .add("Content-Type", "application/calendar+json")
+                .add("Accept", "application/json, text/plain, */*")
+                .add("X-Http-Method-Override", "ITIP"))
+            .post()
+            .uri(uri.toString())
+            .send(Mono.just(Unpooled.wrappedBuffer(counterRequest.toJson().getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when posting calendar object '%s'
+                        %s
+                        """.formatted(response.status().code(), uri.toString(), responseBody))));
+            }).block();
+    }
+
     public void grantDelegation(OpenPaasUser user, String calendarId, OpenPaasUser delegatedUser, DelegationRight right) {
         grantDelegations(user, calendarId, Map.of(delegatedUser, right));
     }
