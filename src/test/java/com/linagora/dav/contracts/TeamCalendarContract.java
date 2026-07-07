@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts;
 
 import static io.restassured.RestAssured.given;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -28,6 +29,8 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.xmlunit.assertj3.XmlAssert;
 
 import com.linagora.dav.CalDavClient;
@@ -417,6 +420,222 @@ public abstract class TeamCalendarContract {
         assertThat(response.body())
             .as("Non-member Bob should see Alice's event because the team calendar is public")
             .contains(eventUid);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
+    void publicReadTeamCalendarShouldExposeClassifiedMemberEventDetailsToMember(String eventClass) {
+        // Given Alice and Bob are members of a team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL bobDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ);
+        // And the team calendar is public-read
+        calDavClient.updateTeamCalendarAcl(teamCalendar, PUBLIC_READ_RIGHT);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Alice creates a classified event in the team calendar
+        calDavClient.upsertCalendarEvent(alice, aliceDelegatedCalendar, eventUid,
+            """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Example Corp.//CalDAV Client//EN
+                BEGIN:VEVENT
+                UID:{eventUid}
+                DTSTAMP:20300101T080000Z
+                DTSTART:20300110T090000Z
+                DTEND:20300110T100000Z
+                ORGANIZER:mailto:{organizerEmail}
+                SUMMARY:Sensitive {eventClass} team event
+                DESCRIPTION:Sensitive {eventClass} team details
+                LOCATION:Sensitive {eventClass} room
+                CLASS:{eventClass}
+                END:VEVENT
+                END:VCALENDAR
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", alice.email())
+                .replace("{eventClass}", eventClass));
+
+        // Then Bob can read the classified event details from the JSON time-range REPORT on his delegated team calendar
+        String body = given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bob.email()))
+            .header("Depth", 0)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body("""
+                {
+                    "match": {
+                        "start": "20300110T000000",
+                        "end": "20300110T235959"
+                    }
+                }
+                """)
+        .when()
+            .request("REPORT", bobDelegatedCalendar.asUri() + ".json")
+        .then()
+            .statusCode(200)
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body)
+            .node("_embedded.dav:item").isArray().hasSizeGreaterThanOrEqualTo(1);
+        assertThat(body)
+            .as("Team calendar member Bob should see classified event details")
+            .contains(eventUid,
+                "Sensitive {eventClass} team event".replace("{eventClass}", eventClass),
+                "Sensitive {eventClass} team details".replace("{eventClass}", eventClass),
+                "Sensitive {eventClass} room".replace("{eventClass}", eventClass));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
+    void publicReadTeamCalendarShouldNotExposeClassifiedMemberEventDetailsToNonMember(String eventClass) {
+        // Given Alice creates a classified event in a publicly readable team calendar while Charlie is not a member
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.updateTeamCalendarAcl(teamCalendar, PUBLIC_READ_RIGHT);
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(alice, aliceDelegatedCalendar, eventUid,
+            """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Example Corp.//CalDAV Client//EN
+                BEGIN:VEVENT
+                UID:{eventUid}
+                DTSTAMP:20300101T080000Z
+                DTSTART:20300110T090000Z
+                DTEND:20300110T100000Z
+                ORGANIZER:mailto:{organizerEmail}
+                ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{attendeeEmail}
+                SUMMARY:Sensitive {eventClass} team event
+                DESCRIPTION:Sensitive {eventClass} team details
+                LOCATION:Sensitive {eventClass} room
+                CLASS:{eventClass}
+                END:VEVENT
+                END:VCALENDAR
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", alice.email())
+                .replace("{attendeeEmail}", attendee.email())
+                .replace("{eventClass}", eventClass));
+
+        // When Charlie requests a JSON time-range REPORT from the public team calendar
+        String body = given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(charlie.email()))
+            .header("Depth", 0)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body("""
+                {
+                    "match": {
+                        "start": "20300110T000000",
+                        "end": "20300110T235959"
+                    }
+                }
+                """)
+        .when()
+            .request("REPORT", teamCalendarCanonicalUrl.asUri() + ".json")
+        .then()
+            .statusCode(200)
+            .extract()
+            .body()
+            .asString();
+
+        // Then Charlie can read the public calendar but cannot see classified event details in the JSON response
+        assertThatJson(body)
+            .node("_embedded.dav:item").isArray().hasSizeGreaterThanOrEqualTo(1);
+        assertThat(body)
+            .as("Non-member Charlie should not see classified event sensitive details")
+            .doesNotContain(
+                "Sensitive {eventClass} team event".replace("{eventClass}", eventClass),
+                "Sensitive {eventClass} team details".replace("{eventClass}", eventClass),
+                "Sensitive {eventClass} room".replace("{eventClass}", eventClass),
+                attendee.email());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
+    void publicReadTeamCalendarShouldNotExposeClassifiedMemberEventDetailsInCalendarDataToNonMember(String eventClass) {
+        // Given Alice is a member of a team calendar while Charlie is not a member
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        // And the team calendar is public-read
+        calDavClient.updateTeamCalendarAcl(teamCalendar, PUBLIC_READ_RIGHT);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Alice creates a classified event in the team calendar
+        calDavClient.upsertCalendarEvent(alice, aliceDelegatedCalendar, eventUid,
+            """
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Example Corp.//CalDAV Client//EN
+                BEGIN:VEVENT
+                UID:{eventUid}
+                DTSTAMP:20300101T080000Z
+                DTSTART:20300110T090000Z
+                DTEND:20300110T100000Z
+                ORGANIZER:mailto:{organizerEmail}
+                ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{attendeeEmail}
+                SUMMARY:Sensitive {eventClass} team event
+                DESCRIPTION:Sensitive {eventClass} team details
+                LOCATION:Sensitive {eventClass} room
+                CLASS:{eventClass}
+                END:VEVENT
+                END:VCALENDAR
+                """.replace("{eventUid}", eventUid)
+                .replace("{organizerEmail}", alice.email())
+                .replace("{attendeeEmail}", attendee.email())
+                .replace("{eventClass}", eventClass));
+
+        // When Charlie requests XML CalDAV calendar-data from the public team calendar
+        String body = given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(charlie.email()))
+            .header("Depth", 1)
+            .header("Content-Type", "application/xml")
+            .header("Accept", "application/xml")
+            .body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                    <d:prop>
+                        <d:getetag />
+                        <c:calendar-data/>
+                    </d:prop>
+                    <c:filter>
+                        <c:comp-filter name="VCALENDAR">
+                            <c:comp-filter name="VEVENT">
+                                <c:prop-filter name="UID">
+                                    <c:text-match collation="i;octet">{eventUid}</c:text-match>
+                                </c:prop-filter>
+                            </c:comp-filter>
+                        </c:comp-filter>
+                    </c:filter>
+                </c:calendar-query>
+                """.replace("{eventUid}", eventUid))
+        .when()
+            .request("REPORT", teamCalendarCanonicalUrl.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract()
+            .body()
+            .asString();
+
+        // Then Charlie can read the public calendar but cannot see classified event details in the XML calendar-data response
+        assertThat(body)
+            .as("Non-member Charlie should not see classified event sensitive details in XML calendar-data")
+            .contains(eventUid)
+            .doesNotContain(
+                "Sensitive {eventClass} team event".replace("{eventClass}", eventClass),
+                "Sensitive {eventClass} team details".replace("{eventClass}", eventClass),
+                "Sensitive {eventClass} room".replace("{eventClass}", eventClass),
+                attendee.email());
     }
 
     @Test
