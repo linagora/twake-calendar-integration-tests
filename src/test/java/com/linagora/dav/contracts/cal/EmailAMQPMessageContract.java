@@ -747,6 +747,142 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
+    void shouldReceiveNotificationEmailMessageOnEventCounterSentViaMethodOverride() {
+        // Reproduces TCALENDAR-925: the imap.linagora.com web client submits a COUNTER as a POST
+        // to the event URL carrying "X-Http-Method-Override: ITIP", not the raw ITIP verb.
+        // The XHttpMethodOverridePlugin must expose the overridden method to downstream plugins so
+        // that AMQPSchedulePlugin publishes the organizer notification. Without that, the COUNTER
+        // silently falls into async buffering and is never published, so the organizer is never
+        // notified of the proposed new time.
+        String eventUid = UUID.randomUUID().toString();
+        String initialCalendarData = generateCalendarData(
+            eventUid,
+            bob.email(),
+            alice.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialCalendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        String updatedCalendarData = generateCounterCalendarData(
+            eventUid,
+            bob.email(),
+            alice.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T150000",
+            "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            updatedCalendarData,
+            alice.email(),
+            bob.email(),
+            eventUid,
+            1);
+        calDavClient.sendITIPViaMethodOverride(alice, attendeeEventId, counterRequest);
+        String expectedEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            METHOD:COUNTER
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T150000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T160000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next w
+             eek.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{eventUid}", eventUid);
+        String expectedOldEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This is a meeting to discuss the sprint planning for the next w
+             eek.
+            ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER;SCHEDULE-STATUS=1.1:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{eventUid}", eventUid);
+
+        String expected = """
+            {
+              "senderEmail": "{attendeeEmail}",
+              "recipientEmail": "{organizerEmail}",
+              "method": "COUNTER",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "{attendeeId}",
+              "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
+              "oldEvent": "${json-unit.any-string}"
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{eventUid}", eventUid)
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> bob.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .isEqualTo(expected);
+
+                    assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
+
+                    assertThatCalendar(message.path("oldEvent").asText())
+                        .ignoringParticipantScheduleStatus()
+                        .isEqualTo(expectedOldEventIcs);
+                }));
+    }
+
+    @Test
     void shouldReceiveNotificationEmailMessageOnEventCounterWithExternalRecipient() {
         String externalBobEmail = "bob-organizer-" + UUID.randomUUID() + "@external-domain.com";
 
