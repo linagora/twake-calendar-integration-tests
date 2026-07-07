@@ -43,6 +43,8 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import net.javacrumbs.jsonunit.core.Option;
+
 public abstract class EmailAMQPMessageContract {
 
     public static final boolean NOT_COUNTER = false;
@@ -143,6 +145,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -324,6 +327,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -360,6 +364,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                     .inPath("changes")
                     .isEqualTo("""
                         {
@@ -401,6 +406,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                     .inPath("changes")
                     .isEqualTo("""
                         {
@@ -442,6 +448,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                     .inPath("changes")
                     .isEqualTo("""
                         {
@@ -523,6 +530,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -610,6 +618,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> bob.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -736,6 +745,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> bob.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -831,6 +841,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> externalBobEmail.equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -923,6 +934,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expectedJsonString);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -1012,6 +1024,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expectedJsonString);
 
                     assertThatCalendar(message.path("event").asText())
@@ -1167,6 +1180,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expectedJsonString);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);
@@ -1472,6 +1486,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                     .isEqualTo(expectedInternalAttendeeNotification)));
     }
 
@@ -1580,6 +1595,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> externalAttendeeEmail.equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                     .isEqualTo(expectedExternalAttendeeNotification)));
     }
 
@@ -1655,6 +1671,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()))
                 .anySatisfy(message -> assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                     .isEqualTo(expectedRecurringAcceptedNotification)));
     }
 
@@ -2303,6 +2320,7 @@ public abstract class EmailAMQPMessageContract {
                 .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()) && message.has("changes"))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expectedJsonString);
 
                     assertThatCalendar(message.path("event").asText()).isEqualTo(expectedEventIcs);

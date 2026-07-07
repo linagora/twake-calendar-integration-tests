@@ -85,6 +85,7 @@ import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.parameter.PartStat;
+import net.javacrumbs.jsonunit.core.Option;
 import reactor.core.publisher.Mono;
 
 public abstract class CalDavDelegationContract {
@@ -1164,6 +1165,7 @@ public abstract class CalDavDelegationContract {
         String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
         awaitAtMost.untilAsserted(() ->
             assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .when(Option.IGNORING_EXTRA_FIELDS)
                 .isEqualTo("""
                     {
                       "calendarPath": "%s",
@@ -1189,6 +1191,7 @@ public abstract class CalDavDelegationContract {
         String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
         awaitAtMost.untilAsserted(() ->
             assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .when(Option.IGNORING_EXTRA_FIELDS)
                 .isEqualTo("""
                     {
                       "calendarPath": "%s",
@@ -1214,6 +1217,7 @@ public abstract class CalDavDelegationContract {
         String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
         awaitAtMost.untilAsserted(() ->
             assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .when(Option.IGNORING_EXTRA_FIELDS)
                 .isEqualTo("""
                     {
                       "calendarPath": "%s",
@@ -1256,7 +1260,7 @@ public abstract class CalDavDelegationContract {
                 .filter(isDelegationUpdated)
                 .toList();
             assertThat(delegationUpdated).hasSize(1);
-            assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+            assertThatJson(delegationUpdated.getFirst().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
         });
 
         // And make sure no duplicates arrive a bit later (race with async AMQP publishing).
@@ -1267,7 +1271,7 @@ public abstract class CalDavDelegationContract {
                     .filter(isDelegationUpdated)
                     .toList();
                 assertThat(delegationUpdated).hasSize(1);
-                assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+                assertThatJson(delegationUpdated.getFirst().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
             });
     }
 
@@ -1302,7 +1306,7 @@ public abstract class CalDavDelegationContract {
                 .filter(isDelegationUpdated)
                 .toList();
             assertThat(delegationUpdated).hasSize(1);
-            assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+            assertThatJson(delegationUpdated.getFirst().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
         });
 
         Awaitility.await()
@@ -1312,7 +1316,7 @@ public abstract class CalDavDelegationContract {
                     .filter(isDelegationUpdated)
                     .toList();
                 assertThat(delegationUpdated).hasSize(1);
-                assertThatJson(delegationUpdated.getFirst().toString()).isEqualTo(expected);
+                assertThatJson(delegationUpdated.getFirst().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
             });
     }
 
@@ -1332,6 +1336,7 @@ public abstract class CalDavDelegationContract {
         String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
         awaitAtMost.untilAsserted(() ->
             assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .when(Option.IGNORING_EXTRA_FIELDS)
                 .isEqualTo("""
                     {
                       "calendarPath": "%s",
@@ -1340,6 +1345,62 @@ public abstract class CalDavDelegationContract {
                       }
                     }
                     """.formatted(sourcePath))));
+    }
+
+    @Test
+    protected void amqpDelegationUpdatedShouldCarryConnectedUserOfGranter() throws Exception {
+        String queueName = "delegation-connected-user-grant-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        // WHEN: Bob grants a delegation on his own calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        // THEN: the emitted message reports Bob - who actually performed the action - as the connected user
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json -> {
+                assertThat(json.path("calendarPath").asText()).isEqualTo(sourcePath);
+                assertThat(json.path("calendarProps").path("delegation_updated").asBoolean()).isTrue();
+                assertThat(json.path("connectedUser").asText()).isEqualTo("principals/users/" + bob.id());
+            }));
+    }
+
+    @Test
+    protected void amqpEventMessageShouldCarryConnectedUserOfDelegateActingOnOwnerCalendar() throws Exception {
+        String queueName = "delegation-connected-user-write-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:event:created", "");
+        dockerExtension().getChannel().queueBind(queueName, "calendar:event:updated", "");
+
+        // GIVEN: Bob delegates his calendar to Alice with write rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+
+        CalendarURL sharedCalendarURL = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        // WHEN: Alice - the delegate - creates an event on Bob's calendar
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .location("Twake Meeting Room")
+            .description("This is a meeting to discuss the sprint planning for the next week.")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, sharedCalendarURL, eventUid, calendarData);
+
+        // THEN: the emitted message reports Alice - who actually performed the action - and not Bob (the owner) as the connected user
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json ->
+                assertThat(json.path("connectedUser").asText()).isEqualTo("principals/users/" + alice.id())));
     }
 
     @Test
