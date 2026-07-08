@@ -30,6 +30,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.xmlunit.assertj3.XmlAssert;
 
@@ -297,6 +298,34 @@ public abstract class TeamCalendarContract {
             .contains(eventUid);
     }
 
+    @ParameterizedTest(name = "{0} can create a team calendar event")
+    @CsvSource({
+        "member, READ_WRITE",
+        "manager, ADMIN"
+    })
+    void writeEnabledTeamCalendarMemberShouldCreateEventWithSelfOrganizer(String role, DelegationRight right) {
+        // Given Bob has write access on a team calendar
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, right);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Bob creates an event in the team calendar with himself as organizer
+        Response putResponse = putCalendarEvent(bob, delegatedCalendar, eventUid,
+            calendarData(eventUid, role + " creates team event", bob.email()));
+
+        // Then the request is accepted
+        assertThat(putResponse.statusCode())
+            .as("Write-enabled %s should create a team calendar event with themselves as organizer".formatted(role))
+            .isIn(201, 204);
+
+        // Then the event is stored in the team calendar
+        Response reportResponse = reportEventsByTime(bob, delegatedCalendar);
+        assertThat(reportResponse.body().asString())
+            .as("Team calendar should contain the event created by the write-enabled %s".formatted(role))
+            .contains(eventUid);
+    }
+
     @Test
     void readOnlyTeamCalendarDelegateeShouldNotCreateEvent() {
         // Given Alice has read-only delegation on a team calendar
@@ -311,6 +340,113 @@ public abstract class TeamCalendarContract {
             .as("Read-only team calendar delegatee should not create events")
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void viewerTeamCalendarMemberShouldNotCreateEvent() {
+        // Given Bob has viewer access on a team calendar
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Bob creates an event in the team calendar with himself as organizer
+        Response putResponse = putCalendarEvent(bob, delegatedCalendar, eventUid,
+            calendarData(eventUid, "Viewer tries to create team event", bob.email()));
+
+        // Then the request is rejected
+        assertThat(putResponse.statusCode())
+            .as("Viewer should not create a team calendar event")
+            .isEqualTo(403);
+
+        // Then the event is not stored in the team calendar
+        Response reportResponse = reportEventsByTime(bob, delegatedCalendar);
+        assertThat(reportResponse.body().asString())
+            .as("Team calendar should not contain the event rejected for a viewer")
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    void nonTeamCalendarMemberShouldNotCreateEvent() {
+        // Given Bob is not a member of a private team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.updateTeamCalendarAcl(teamCalendar, "");
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Bob creates an event in the team calendar with himself as organizer
+        Response putResponse = putCalendarEvent(bob, teamCalendarCanonicalUrl, eventUid,
+            calendarData(eventUid, "Non-member tries to create team event", bob.email()));
+
+        // Then the request is rejected
+        assertThat(putResponse.statusCode())
+            .as("Non-member should not create a private team calendar event")
+            .isIn(403, 404);
+
+        // Then the event is not stored in the team calendar
+        Response reportResponse = reportEventsByTime(alice, aliceDelegatedCalendar);
+        assertThat(reportResponse.body().asString())
+            .as("Team calendar should not contain the event rejected for a non-member")
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    void writeEnabledTeamCalendarMemberShouldNotCreateEventWithNonMemberOrganizer() {
+        // Given Bob has write access on a team calendar
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ_WRITE);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        // When Bob creates an event with a non-member organizer
+        Response putResponse = putCalendarEvent(bob, delegatedCalendar, eventUid,
+            calendarData(eventUid, "Bob tries to create team event with non-member organizer", "external-or-non-member@domain.tld"));
+
+        // Then the request is rejected
+        assertThat(putResponse.statusCode())
+            .as("Write-enabled member should not create a team calendar event with a non-member organizer")
+            .isEqualTo(403);
+        assertThat(putResponse.body().asString())
+            .as("Rejected non-member organizer response should mention ORGANIZER")
+            .contains("ORGANIZER");
+
+        // Then the event is not stored in the team calendar
+        Response reportResponse = reportEventsByTime(bob, delegatedCalendar);
+        assertThat(reportResponse.body().asString())
+            .as("Team calendar should not contain the event rejected for a non-member organizer")
+            .doesNotContain(eventUid);
+    }
+
+    @Test
+    void viewerTeamCalendarMemberShouldNotUpdateEvent() {
+        // Given Bob creates an event in a team calendar and Charlie only has viewer access
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL bobDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ_WRITE);
+        CalendarURL charlieDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, charlie, DelegationRight.READ);
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bob, bobDelegatedCalendar, eventUid,
+            calendarData(eventUid, "Bob creates event readable by viewer", bob.email()));
+
+        // When Charlie tries to update the event
+        Response updateResponse = putCalendarEvent(charlie, charlieDelegatedCalendar, eventUid,
+            calendarData(eventUid, "Viewer tries to update team event", bob.email()));
+
+        // Then the update is rejected
+        assertThat(updateResponse.statusCode())
+            .as("Viewer should not update team calendar events")
+            .isEqualTo(403);
+
+        // Then the original event remains unchanged
+        DavResponse bobReadResponse = findEventsByTime(bob, bobDelegatedCalendar);
+        assertThat(bobReadResponse.body())
+            .as("Team calendar event should keep the original summary after viewer rejected update")
+            .contains(eventUid, "Bob creates event readable by viewer")
+            .doesNotContain("Viewer tries to update team event");
     }
 
     @Test
@@ -757,6 +893,23 @@ public abstract class TeamCalendarContract {
             """.formatted(eventUid, summary);
     }
 
+    private String calendarData(String eventUid, String summary, String organizerEmail) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300101T080000Z
+            DTSTART:20300110T090000Z
+            DTEND:20300110T100000Z
+            ORGANIZER:mailto:%s
+            SUMMARY:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, organizerEmail, summary);
+    }
+
     private OpenPaaSTeamCalendar newTeamCalendar(String namePrefix, String displayName) {
         return dockerExtension().twakeCalendarProvisioningService()
             .createTeamCalendar(namePrefix + "-" + UUID.randomUUID(), displayName)
@@ -794,8 +947,41 @@ public abstract class TeamCalendarContract {
             .response();
     }
 
+    private Response putCalendarEvent(OpenPaasUser user, CalendarURL calendarURL, String eventUid, String requestBody) {
+        return given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(user.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(requestBody)
+        .when()
+            .put(calendarURL.eventHref(eventUid).toString())
+        .then()
+            .extract()
+            .response();
+    }
+
     private DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
         return calDavClient.findEventsByTime(user, calendarURL, "20300110T000000", "20300110T235959");
+    }
+
+    private Response reportEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
+        return given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(user.email()))
+            .header("Depth", 0)
+            .header("Accept", "application/json")
+            .body("""
+                {
+                    "match": {
+                        "start": "20300110T000000",
+                        "end": "20300110T235959"
+                    }
+                }
+                """)
+        .when()
+            .request("REPORT", calendarURL.asUri() + ".json")
+        .then()
+            .statusCode(200)
+            .extract()
+            .response();
     }
 
 }

@@ -25,7 +25,7 @@ import com.linagora.dav.contracts.TeamCalendarContract;
 
 public class SabreV4TeamCalendarTest extends TeamCalendarContract {
     @RegisterExtension
-    static DockerTwakeCalendarExtensionV4_7 dockerExtension = new DockerTwakeCalendarExtensionV4_7();
+    static DockerTwakeCalendarExtensionV4_7 dockerExtension = DockerTwakeCalendarExtensionV4_7.withOrganizerValidation();
 
     @Override
     public DockerTwakeCalendarExtensionV4_7 dockerExtension() {
