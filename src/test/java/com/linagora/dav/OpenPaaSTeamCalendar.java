@@ -18,17 +18,7 @@
 
 package com.linagora.dav;
 
-import org.bson.Document;
-
 public record OpenPaaSTeamCalendar(String id, String name, String displayName, String domainName) {
-    public static OpenPaaSTeamCalendar fromDocument(Document document) {
-        return new OpenPaaSTeamCalendar(
-            document.getObjectId("_id").toString(),
-            document.getString("name"),
-            document.getString("displayName"),
-            document.getString("domainName"));
-    }
-
     public String email() {
         return id + "@" + domainName;
     }
