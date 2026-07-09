@@ -152,6 +152,41 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void eventImportShouldNotPropagateEventToAttendeeCalendar() {
+        // Given an event organized by Alice with Bob as attendee
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Imported meeting with Bob
+            ORGANIZER:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{aliceEmail}", alice.email())
+            .replace("{bobEmail}", bob.email());
+
+        // When Alice imports the event instead of creating it
+        calDavClient.importCalendarEvent(alice, organizerEventUid, organizerEventIcs);
+
+        // Then the event lands in Alice calendar
+        assertThat(awaitFirstEventId(alice)).isEqualTo(organizerEventUid);
+
+        // And scheduling is bypassed: Bob never receives a copy
+        calmlyAwait.during(5, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(calDavClient.findFirstEventId(bob)).isEmpty());
+    }
+
+    @Test
     void eventUpdateByOrganizerShouldPropagateToAttendeeCalendar() {
         // Given Bob created an initial event with Cedric
         String organizerEventUid = "event-" + UUID.randomUUID();

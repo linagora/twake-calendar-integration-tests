@@ -214,6 +214,113 @@ public abstract class OrganizerValidationContract {
     }
 
     @Test
+    void importEventWithAttendeeButNoOrganizerShouldBeAccepted() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        DavResponse response = importIcs(user, user.id(), uid, """
+            BEGIN:VCALENDAR\r
+            VERSION:2.0\r
+            PRODID:-//Test//Test//EN\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            DTSTART:20250101T090000Z\r
+            DTEND:20250101T100000Z\r
+            SUMMARY:Attendee without organizer\r
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:%s\r
+            END:VEVENT\r
+            END:VCALENDAR\r
+            """.formatted(uid, attendee.email()));
+
+        assertThat(response.status()).isEqualTo(SC_CREATED);
+    }
+
+    @Test
+    void importEventWithOrganizerNotResolvableToPrincipalShouldBeAccepted() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        DavResponse response = importIcs(user, user.id(), uid, """
+            BEGIN:VCALENDAR\r
+            VERSION:2.0\r
+            PRODID:-//Test//Test//EN\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            DTSTART:20250101T090000Z\r
+            DTEND:20250101T100000Z\r
+            SUMMARY:Meeting\r
+            ORGANIZER:mailto:unknown-nobody@example-nonexistent.invalid\r
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:other@example.com\r
+            END:VEVENT\r
+            END:VCALENDAR\r
+            """.formatted(uid));
+
+        assertThat(response.status()).isEqualTo(SC_CREATED);
+    }
+
+    @Test
+    void importEventWithOrganizerMatchingAnotherValidUserShouldBeAccepted() {
+        OpenPaasUser owner = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        DavResponse response = importIcs(owner, owner.id(), uid, """
+            BEGIN:VCALENDAR\r
+            VERSION:2.0\r
+            PRODID:-//Test//Test//EN\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            DTSTART:20250101T090000Z\r
+            DTEND:20250101T100000Z\r
+            SUMMARY:Meeting\r
+            ORGANIZER:mailto:%s\r
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:%s\r
+            END:VEVENT\r
+            END:VCALENDAR\r
+            """.formatted(uid, otherUser.email(), owner.email()));
+
+        assertThat(response.status()).isEqualTo(SC_CREATED);
+    }
+
+    @Test
+    void importRecurringEventWithMismatchedOrganizersShouldBeAccepted() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        DavResponse response = importIcs(user, user.id(), uid, """
+            BEGIN:VCALENDAR\r
+            VERSION:2.0\r
+            PRODID:-//Test//Test//EN\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            DTSTART:20250101T090000Z\r
+            DTEND:20250101T100000Z\r
+            RRULE:FREQ=DAILY;COUNT=2\r
+            SUMMARY:Recurring master\r
+            ORGANIZER:mailto:%s\r
+            END:VEVENT\r
+            BEGIN:VEVENT\r
+            UID:%s\r
+            DTSTAMP:20250101T000000Z\r
+            RECURRENCE-ID:20250102T090000Z\r
+            DTSTART:20250102T100000Z\r
+            DTEND:20250102T110000Z\r
+            SUMMARY:Override with different organizer\r
+            ORGANIZER:mailto:%s\r
+            END:VEVENT\r
+            END:VCALENDAR\r
+            """.formatted(uid, user.email(), uid, otherUser.email()));
+
+        assertThat(response.status()).isEqualTo(SC_CREATED);
+    }
+
+    @Test
     void delegateCanWriteToOwnerCalendarWithOwnerAsOrganizer() {
         OpenPaasUser owner = dockerExtension().newTestUser();
         OpenPaasUser delegate = dockerExtension().newTestUser();
@@ -370,6 +477,19 @@ public abstract class OrganizerValidationContract {
                 .add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
             .uri("/calendars/" + calendarOwnerId + "/" + calendarOwnerId + "/" + uid + ".ics")
+            .send(body(icsContent))
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
+            .block();
+    }
+
+    private DavResponse importIcs(OpenPaasUser requester, String calendarOwnerId, String uid, String icsContent) {
+        return dockerExtension().davHttpClient()
+            .headers(headers -> requester.impersonatedBasicAuth(headers)
+                .add("Content-Type", "text/plain"))
+            .put()
+            .uri("/calendars/" + calendarOwnerId + "/" + calendarOwnerId + "/" + uid + ".ics?import")
             .send(body(icsContent))
             .responseSingle((response, content) -> content.asString()
                 .defaultIfEmpty("")
