@@ -93,7 +93,7 @@ public abstract class CardDavContract {
     @ParameterizedTest(name = "[{index}] {0}")
     @MethodSource("unauthenticatedEndpoints")
     protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
-        OpenPaasUser testUser = dockerExtension().newTestUser("");
+        OpenPaasUser testUser = dockerExtension().newTestUser();
         String realUserId = testUser.id();
         String resolvedPath = input.pathTemplate().replace("{userId}", realUserId);
         Optional<String> resolvedPayload = input.payloadTemplate().map(payload -> payload.replace("{userId}", realUserId));

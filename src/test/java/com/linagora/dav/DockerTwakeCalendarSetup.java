@@ -109,7 +109,8 @@ public class DockerTwakeCalendarSetup {
         environment.start();
         twakeCalendarProvisioningService = new TwakeCalendarProvisioningService(
             getServiceUri(DockerService.MONGO, "mongodb").toString(),
-            getServiceUri(DockerService.CALENDAR_SIDE_ADMIN, "http").toString());
+            getServiceUri(DockerService.CALENDAR_SIDE_ADMIN, "http").toString(),
+            getServiceUri(DockerService.SABRE_DAV, "http").toString());
     }
 
     public void stop() {

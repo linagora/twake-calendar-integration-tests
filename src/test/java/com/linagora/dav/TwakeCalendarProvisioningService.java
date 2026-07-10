@@ -39,6 +39,7 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
 
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpMethod;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
@@ -46,18 +47,33 @@ public class TwakeCalendarProvisioningService {
     public static final String PASSWORD = "secret";
     public static final String DEFAULT_DOMAIN = "open-paas.org";
 
+    public enum TeamCalendarRole {
+        VIEWER("\"dav:read\": true"),
+        MEMBER("\"dav:read-write\": true"),
+        MANAGER("\"dav:administration\": true");
+
+        private final String davRight;
+
+        TeamCalendarRole(String davRight) {
+            this.davRight = davRight;
+        }
+    }
+
     private static final TechnicalTokenService technicalTokenService = new TechnicalTokenService.Impl("technicalTokenSecret", Duration.ofSeconds(3600));
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final MongoDatabase database;
     private final HttpClient httpClient;
+    private final HttpClient davHttpClient;
 
-    public TwakeCalendarProvisioningService(String mongoUri, String calendarSideServiceUri) {
+    public TwakeCalendarProvisioningService(String mongoUri, String calendarSideServiceUri, String sabreDavUri) {
         MongoClient mongoClient = MongoClients.create(mongoUri);
         database = mongoClient.getDatabase("esn_docker");
 
         httpClient = HttpClient.create()
             .baseUrl(calendarSideServiceUri);
+        davHttpClient = HttpClient.create()
+            .baseUrl(sabreDavUri);
     }
 
     public Document openPaasDomain() {
@@ -88,15 +104,18 @@ public class TwakeCalendarProvisioningService {
     public Mono<OpenPaasUser> createUser() {
         String usernameLocalPart = "user_" + UUID.randomUUID();
         return createUserInUsersRepository(usernameLocalPart + "@" + DEFAULT_DOMAIN)
-            .then(createUserInMongo(usernameLocalPart, DEFAULT_DOMAIN));
+            .then(createUserInMongo(usernameLocalPart, DEFAULT_DOMAIN))
+            .flatMap(this::provisionPersonalDefaultCalendar);
     }
 
     public Mono<OpenPaasUser> createUser(String localPart) {
-        return createUserInMongo(localPart, DEFAULT_DOMAIN);
+        return createUserInMongo(localPart, DEFAULT_DOMAIN)
+            .flatMap(this::provisionPersonalDefaultCalendar);
     }
 
     public Mono<OpenPaasUser> createUser(String localPart, String domainName) {
-        return createUserInMongo(localPart, domainName);
+        return createUserInMongo(localPart, domainName)
+            .flatMap(this::provisionPersonalDefaultCalendar);
     }
 
     public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin) {
@@ -138,6 +157,37 @@ public class TwakeCalendarProvisioningService {
                 json.path("name").asText(),
                 json.path("displayName").asText(),
                 json.path("domainName").asText()));
+    }
+
+    public Mono<Void> addTeamCalendarMember(OpenPaaSTeamCalendar teamCalendar, OpenPaasUser user, TeamCalendarRole role) {
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {
+                    "dav:href": "mailto:%s",
+                    %s
+                  }
+                ],
+                "remove": []
+              }
+            }
+            """.formatted(user.email(), role.davRight);
+
+        return httpClient.headers(headers -> headers.add(HttpHeaderNames.CONTENT_TYPE, "application/json")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .post()
+            .uri("/domains/" + teamCalendar.domainName() + "/team-calendars/" + teamCalendar.id() + "/members/invitee")
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("Failed to add team calendar member through webadmin:"
+                        + response.status().code() + " " + responseBody)));
+            });
     }
 
     private Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, ObjectId domainId) {
@@ -209,6 +259,21 @@ public class TwakeCalendarProvisioningService {
             .flatMap(success ->
                 Mono.from(database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
             .map(OpenPaasUser::fromDocument);
+    }
+
+    private Mono<OpenPaasUser> provisionPersonalDefaultCalendar(OpenPaasUser user) {
+        return davHttpClient.headers(user::impersonatedBasicAuth)
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/" + user.id())
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 207) {
+                    return Mono.just(user);
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(responseBody -> Mono.error(new RuntimeException("Failed to provision personal default calendar for user "
+                        + user.email() + ": " + response.status().code() + " " + responseBody)));
+            });
     }
 
     public Mono<Void> enableSharedCalendarModule() {
