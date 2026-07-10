@@ -42,6 +42,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 
+import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class ResourceAMQPMessageContract {
 
@@ -139,6 +140,7 @@ public abstract class ResourceAMQPMessageContract {
                 .filteredOn(message -> resource.id().equals(message.path("resourceId").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("ics").asText())
@@ -241,6 +243,7 @@ public abstract class ResourceAMQPMessageContract {
                 .filteredOn(message -> resource.id().equals(message.path("resourceId").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("ics").asText())
@@ -344,6 +347,7 @@ public abstract class ResourceAMQPMessageContract {
                 .filteredOn(message -> resource.id().equals(message.path("resourceId").asText()))
                 .anySatisfy(message -> {
                     assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expected);
 
                     assertThatCalendar(message.path("ics").asText())

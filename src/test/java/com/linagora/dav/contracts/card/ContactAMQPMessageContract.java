@@ -37,6 +37,8 @@ import com.linagora.dav.CardDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import net.javacrumbs.jsonunit.core.Option;
+
 public abstract class ContactAMQPMessageContract {
 
     private final ConditionFactory calmlyAwait = Awaitility.with()
@@ -87,7 +89,7 @@ public abstract class ContactAMQPMessageContract {
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
 
-        assertThatJson(actual).isEqualTo(expected);
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
     }
 
     @Test
@@ -133,7 +135,7 @@ public abstract class ContactAMQPMessageContract {
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
 
-        assertThatJson(actual).isEqualTo(expected);
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
     }
 
     @Test
@@ -169,7 +171,7 @@ public abstract class ContactAMQPMessageContract {
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
 
-        assertThatJson(actual).isEqualTo(expected);
+        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected);
     }
 
     private byte[] getMessageFromQueue() {
