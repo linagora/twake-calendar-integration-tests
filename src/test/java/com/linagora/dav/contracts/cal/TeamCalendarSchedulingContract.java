@@ -257,6 +257,40 @@ public abstract class TeamCalendarSchedulingContract {
             .isEqualTo(partStat));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"ACCEPTED", "DECLINED"})
+    void teamCalendarMemberPartStatUpdateShouldPropagateToNonMemberAttendeeCopy(String partStatValue) {
+        // Given bobMember creates a Team Calendar event with aliceMember and nonMember as attendees
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email(), nonMember.email()), "Team calendar member reply"));
+        URI aliceMemberEventUri = awaitCalendarObjectUriByEventUid(aliceMember, CalendarURL.from(aliceMember.id()), eventUid);
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+        PartStat partStat = partStatValue.equals("ACCEPTED") ? PartStat.ACCEPTED : PartStat.DECLINED;
+
+        // When aliceMember updates her participation status from her attendee copy
+        String aliceMemberEventIcs = calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri);
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(aliceMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(CalendarUtil.withAttendeePartStat(aliceMemberEventIcs, aliceMember.email(), partStat))
+        .when()
+            .put(aliceMemberEventUri.toString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then the Team Calendar event reflects aliceMember participation status
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)), aliceMember.email()))
+            .as("Team Calendar event should reflect aliceMember PARTSTAT %s".formatted(partStatValue))
+            .isEqualTo(partStat));
+
+        // And nonMember attendee copy also reflects aliceMember participation status
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(nonMember, nonMemberEventUri), aliceMember.email()))
+            .isEqualTo(partStat));
+    }
+
     @Test
     void attendeeReplyShouldIgnoreForgedTeamCalendarIdWhenCalendarDoesNotContainEventUid() throws IOException {
         // Given bobMember creates a Team Calendar event
@@ -314,6 +348,36 @@ public abstract class TeamCalendarSchedulingContract {
         // Then the Team Calendar event reflects the attendee reply
         awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
                 calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+            .isEqualTo(PartStat.ACCEPTED));
+    }
+
+    @Test
+    void itipReplyFromNonMemberParticipantShouldUpdateTeamCalendarWhenRecipientStillHasAccess() {
+        // Given bobMember created a Team Calendar event with nonMember as participant
+        String eventUid = "team-event-" + UUID.randomUUID();
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Team Calendar non-member ITIP reply"));
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)), nonMember.email()))
+            .isEqualTo(PartStat.NEEDS_ACTION));
+
+        // When bobMember receives an ITIP REPLY sent by nonMember and pointing to the Team Calendar ID
+        String replyBody = itipReplyBody(eventUid, teamCalendar.id(), bobMember.email(), nonMember.email());
+
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .body(replyBody)
+        .when()
+            .request("ITIP", "/calendars/" + bobMember.id())
+        .then()
+            .statusCode(204);
+
+        // Then the Team Calendar event reflects the nonMember reply
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)), nonMember.email()))
             .isEqualTo(PartStat.ACCEPTED));
     }
 
