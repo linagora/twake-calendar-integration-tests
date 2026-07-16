@@ -47,6 +47,7 @@ import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
+import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
@@ -287,6 +288,119 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     @Test
+    void itipReplyShouldUpdateTeamCalendarWhenRecipientStillHasAccess() {
+        // Given bobMember created a Team Calendar event and still has write access
+        String eventUid = "team-event-" + UUID.randomUUID();
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email()), "Team Calendar ITIP reply"));
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+            .isEqualTo(PartStat.NEEDS_ACTION));
+
+        // When bobMember receives an ITIP REPLY that points to the Team Calendar ID
+        String replyBody = itipReplyBody(eventUid, teamCalendar.id(), bobMember.email(), aliceMember.email());
+
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .body(replyBody)
+        .when()
+            .request("ITIP", "/calendars/" + bobMember.id())
+        .then()
+            .statusCode(204);
+
+        // Then the Team Calendar event reflects the attendee reply
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+            .isEqualTo(PartStat.ACCEPTED));
+    }
+
+    @Test
+    void itipReplyShouldNotUseTeamCalendarIdToBypassAcl() {
+        // Given bobMember created a Team Calendar event while he still had access
+        String eventUid = "team-event-" + UUID.randomUUID();
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email()), "Team Calendar ACL bypass guard"));
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(aliceMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+            .isEqualTo(PartStat.NEEDS_ACTION));
+
+        // And bobMember no longer has access to the Team Calendar
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.revokeDelegation(teamCalendar.id(), bobMember, technicalToken);
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+        .when()
+            .get(teamCalendarCanonicalUrl.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
+
+        // When bobMember receives an ITIP REPLY that points to the Team Calendar ID
+        String replyBody = itipReplyBody(eventUid, teamCalendar.id(), bobMember.email(), aliceMember.email());
+
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .body(replyBody)
+        .when()
+            .request("ITIP", "/calendars/" + bobMember.id())
+        .then()
+            .statusCode(204);
+
+        // Then the forged Team Calendar ID does not let bobMember update the Team Calendar
+        awaitAtMost.during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(aliceMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+                .isEqualTo(PartStat.NEEDS_ACTION));
+    }
+
+    @Test
+    void itipReplyShouldNotUseTeamCalendarIdToBypassReadOnlyAcl() {
+        // Given bobMember created a Team Calendar event while he still had write access
+        String eventUid = "team-event-" + UUID.randomUUID();
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email()), "Team Calendar read-only ACL guard"));
+        awaitAtMost.untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                calDavClient.getCalendarEvent(aliceMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+            .isEqualTo(PartStat.NEEDS_ACTION));
+
+        // And bobMember is downgraded to read-only access on the Team Calendar
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.revokeDelegation(teamCalendar.id(), bobMember, technicalToken);
+        calDavClient.updateTeamCalendarAcl(teamCalendar, "{DAV:}read");
+        awaitAtMost.untilAsserted(() -> given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+        .when()
+            .get(teamCalendarCanonicalUrl.eventHref(eventUid).toString())
+        .then()
+            .statusCode(200));
+
+        // When bobMember receives an ITIP REPLY that points to the Team Calendar ID
+        String replyBody = itipReplyBody(eventUid, teamCalendar.id(), bobMember.email(), aliceMember.email());
+
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .body(replyBody)
+        .when()
+            .request("ITIP", "/calendars/" + bobMember.id())
+        .then()
+            .statusCode(204);
+
+        // Then the forged Team Calendar ID does not let bobMember update the Team Calendar
+        awaitAtMost.during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(aliceMember, teamCalendarCanonicalUrl.eventHref(eventUid)), aliceMember.email()))
+                .isEqualTo(PartStat.NEEDS_ACTION));
+    }
+
+    @Test
     void teamCalendarEventCreationWithAlarmShouldPropagateAlarmToAttendeeCalendar() {
         // Given bobMember is a write-enabled Team Calendar member
         String eventUid = "team-event-" + UUID.randomUUID();
@@ -498,6 +612,36 @@ public abstract class TeamCalendarSchedulingContract {
         }
 
         return icsContent.replaceFirst("(?m)^ORGANIZER", property + "\nORGANIZER");
+    }
+
+    private String itipReplyBody(String eventUid, String teamCalendarId, String organizerEmail, String attendeeEmail) {
+        String replyIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            METHOD:REPLY
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20300101T080000Z
+            DTSTART:20300110T090000Z
+            DTEND:20300110T100000Z
+            X-OPENPAAS-TEAM-CALENDAR-ID:{teamCalendarId}
+            ORGANIZER:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{teamCalendarId}", teamCalendarId)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail);
+
+        return ITIPJsonBodyRequest.builder()
+            .uid(eventUid)
+            .sender(attendeeEmail)
+            .recipient(organizerEmail)
+            .ical(replyIcs)
+            .method("REPLY")
+            .buildJson();
     }
 
     private BlockingQueue<JsonNode> listenToFreshQueue(String queuePrefix, String exchange) throws IOException {
