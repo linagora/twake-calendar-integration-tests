@@ -307,45 +307,59 @@ public abstract class TeamCalendarSchedulingContract {
         });
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"SUMMARY", "DTSTART", "DTEND", "DESCRIPTION"})
-    void managerMemberShouldNotChangeOrganizerControlledFieldsWhenNotOrganizer(String forbiddenProperty) {
+    @Test
+    void writeMemberShouldChangeEventDetailsWhenOrganizerIsWriteMember() {
         // Given bobMember created a Team Calendar event where managerMember is an attendee but not the organizer
         OpenPaasUser managerMember = dockerExtension().newTestUser();
         dockerExtension().twakeCalendarProvisioningService()
             .addTeamCalendarMember(teamCalendar, managerMember, TeamCalendarRole.MANAGER)
             .block();
-        CalendarURL managerDelegatedCalendar = calDavClient.findDelegatedCalendar(managerMember).getFirst();
+        List<CalendarURL> managerDelegatedCalendars = calDavClient.findDelegatedCalendar(managerMember);
+        assertThat(managerDelegatedCalendars)
+            .as("Manager should have one delegated team calendar")
+            .hasSize(1);
+        CalendarURL managerDelegatedCalendar = managerDelegatedCalendars.getFirst();
         String eventUid = "team-event-" + UUID.randomUUID();
-        String initialCalendarData = calendarData(eventUid, bobMember.email(), List.of(managerMember.email(), aliceMember.email()),
-            "Initial manager attendee meeting", "DESCRIPTION:Initial manager attendee description\n");
-        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid, initialCalendarData);
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(managerMember.email(), aliceMember.email()),
+                "Initial manager editable meeting", "DESCRIPTION:Initial manager editable description\n"));
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
 
-        // When managerMember directly changes an organizer-controlled field without becoming the organizer
+        // When managerMember updates event details while keeping bobMember as organizer
+        String updatedEvent = calendarData(eventUid, bobMember.email(), List.of(managerMember.email(), aliceMember.email()),
+                "Manager changed meeting", "DESCRIPTION:Manager changed description\n")
+            .replace("DTSTART:20300110T090000Z", "DTSTART:20300110T110000Z")
+            .replace("DTEND:20300110T100000Z", "DTEND:20300110T120000Z");
         given()
             .header("Authorization", OpenPaasUser.impersonatedBasicAuth(managerMember.email()))
             .header("Content-Type", "text/calendar ; charset=utf-8")
-            .body(changeOrganizerControlledField(initialCalendarData, forbiddenProperty))
+            .body(updatedEvent)
         .when()
             .put(managerDelegatedCalendar.eventHref(eventUid).toString())
         .then()
-            .statusCode(403)
-            .body(containsString(forbiddenProperty));
+            .statusCode(anyOf(is(201), is(204)));
 
-        // Then the Team Calendar copy keeps organizer-controlled fields unchanged
-        CalendarUtil.CalendarExtractor storedEvent = CalendarUtil.toExtractor(
-            calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
-        assertSoftly(softly -> {
-            softly.assertThat(storedEvent.extractPropertyValue(Property.ORGANIZER))
-                .isEqualTo("mailto:" + bobMember.email());
-            softly.assertThat(storedEvent.extractPropertyValue(Property.SUMMARY))
-                .isEqualTo("Initial manager attendee meeting");
-            softly.assertThat(storedEvent.extractPropertyValue(Property.DTSTART))
-                .isEqualTo("20300110T090000Z");
-            softly.assertThat(storedEvent.extractPropertyValue(Property.DTEND))
-                .isEqualTo("20300110T100000Z");
-            softly.assertThat(storedEvent.extractPropertyValue(Property.DESCRIPTION))
-                .isEqualTo("Initial manager attendee description");
+        // Then both delegated and canonical Team Calendar copies expose the manager update
+        awaitAtMost.untilAsserted(() -> {
+            CalendarUtil.CalendarExtractor delegatedEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(managerMember, managerDelegatedCalendar.eventHref(eventUid)));
+            CalendarUtil.CalendarExtractor canonicalEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)));
+            assertSoftly(softly -> {
+                List.of(delegatedEvent, canonicalEvent)
+                    .forEach(event -> {
+                        softly.assertThat(event.extractPropertyValue(Property.ORGANIZER))
+                            .isEqualTo("mailto:" + bobMember.email());
+                        softly.assertThat(event.extractPropertyValue(Property.SUMMARY))
+                            .isEqualTo("Manager changed meeting");
+                        softly.assertThat(event.extractPropertyValue(Property.DTSTART))
+                            .isEqualTo("20300110T110000Z");
+                        softly.assertThat(event.extractPropertyValue(Property.DTEND))
+                            .isEqualTo("20300110T120000Z");
+                        softly.assertThat(event.extractPropertyValue(Property.DESCRIPTION))
+                            .isEqualTo("Manager changed description");
+                    });
+            });
         });
     }
 
@@ -910,16 +924,6 @@ public abstract class TeamCalendarSchedulingContract {
                 .replace("{eventUid}", eventUid)
                 .replace("{occurrenceOrganizerEmail}", occurrenceOrganizerEmail)
                 .replace("{summary}", summary));
-    }
-
-    private String changeOrganizerControlledField(String calendarData, String propertyName) {
-        return switch (propertyName) {
-            case Property.SUMMARY -> calendarData.replace("SUMMARY:Initial manager attendee meeting", "SUMMARY:Manager changed summary");
-            case Property.DTSTART -> calendarData.replace("DTSTART:20300110T090000Z", "DTSTART:20300110T110000Z");
-            case Property.DTEND -> calendarData.replace("DTEND:20300110T100000Z", "DTEND:20300110T120000Z");
-            case Property.DESCRIPTION -> calendarData.replace("DESCRIPTION:Initial manager attendee description", "DESCRIPTION:Manager changed description");
-            default -> throw new IllegalArgumentException("Unsupported organizer-controlled field: " + propertyName);
-        };
     }
 
     private String readFirstAlarmTrigger(String icsContent) {
