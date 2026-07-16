@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.cal;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -170,6 +171,238 @@ public abstract class TeamCalendarSchedulingContract {
                 softly.assertThat(aliceMemberEvent.extractPropertyValue(Property.UID)).isEqualTo(eventUid);
                 softly.assertThat(aliceMemberEvent.extractPropertyValue(Property.ORGANIZER)).isEqualTo("mailto:" + bobMember.email());
                 softly.assertThat(aliceMemberEvent.extractPropertyValue(Property.SUMMARY)).isEqualTo("Updated Team Calendar meeting");
+            });
+        });
+    }
+
+    @Test
+    void writeMemberShouldChangeOrganizerToAnotherWriteMember() {
+        // Given bobMember created a Team Calendar event as organizer with another attendee
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email(), nonMember.email()), "Initial organizer"));
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+
+        // When bobMember transfers ORGANIZER to aliceMember, who is also write-enabled
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(calendarData(eventUid, aliceMember.email(), List.of(bobMember.email(), nonMember.email()), "Organizer transferred to Alice"))
+        .when()
+            .put(bobMemberDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then delegated, canonical and attendee calendar copies store the new organizer
+        awaitAtMost.untilAsserted(() -> {
+            CalendarUtil.CalendarExtractor delegatedEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
+            CalendarUtil.CalendarExtractor canonicalEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, CalendarURL.from(teamCalendar.id()).eventHref(eventUid)));
+            CalendarUtil.CalendarExtractor nonMemberEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(nonMember, nonMemberEventUri));
+
+            assertSoftly(softly -> {
+                softly.assertThat(delegatedEvent.extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + aliceMember.email());
+                softly.assertThat(canonicalEvent.extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + aliceMember.email());
+                softly.assertThat(nonMemberEvent.extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + aliceMember.email());
+            });
+        });
+    }
+
+    @Test
+    void writeMemberShouldNotChangeOrganizerToNonMember() {
+        // Given bobMember created a Team Calendar event as organizer
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email()), "Initial organizer"));
+
+        // When bobMember tries to transfer ORGANIZER to a valid user who is not a Team Calendar member
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(calendarData(eventUid, nonMember.email(), List.of(aliceMember.email()), "Organizer transferred to non-member"))
+        .when()
+            .put(bobMemberDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(403)
+            .body(containsString("The ORGANIZER must be"));
+
+        // Then the update is rejected and the existing event keeps the original organizer
+        assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)))
+            .extractPropertyValue(Property.ORGANIZER))
+            .isEqualTo("mailto:" + bobMember.email());
+    }
+
+    @Test
+    void writeMemberShouldNotChangeOrganizerToReadOnlyMember() {
+        // Given bobMember created a Team Calendar event as organizer and a viewer is a read-only Team Calendar member
+        OpenPaasUser viewerMember = dockerExtension().newTestUser();
+        dockerExtension().twakeCalendarProvisioningService()
+            .addTeamCalendarMember(teamCalendar, viewerMember, TeamCalendarRole.VIEWER)
+            .block();
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email()), "Initial organizer"));
+
+        // When bobMember tries to transfer ORGANIZER to the read-only member
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(calendarData(eventUid, viewerMember.email(), List.of(aliceMember.email()), "Organizer transferred to viewer"))
+        .when()
+            .put(bobMemberDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(403)
+            .body(containsString("The ORGANIZER must be"));
+
+        // Then the update is rejected because read-only membership is not enough to become organizer
+        assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)))
+            .extractPropertyValue(Property.ORGANIZER))
+            .isEqualTo("mailto:" + bobMember.email());
+    }
+
+    @Test
+    void writeMemberShouldChangeOrganizerToManagerMember() {
+        // Given bobMember created a Team Calendar event as organizer with another attendee and a manager is a write-enabled Team Calendar member
+        OpenPaasUser managerMember = dockerExtension().newTestUser();
+        dockerExtension().twakeCalendarProvisioningService()
+            .addTeamCalendarMember(teamCalendar, managerMember, TeamCalendarRole.MANAGER)
+            .block();
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email(), nonMember.email()), "Initial organizer"));
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+
+        // When bobMember transfers ORGANIZER to the manager
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(calendarData(eventUid, managerMember.email(), List.of(bobMember.email(), nonMember.email()), "Organizer transferred to manager"))
+        .when()
+            .put(bobMemberDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then delegated, canonical and attendee calendar copies store the new organizer
+        awaitAtMost.untilAsserted(() -> {
+            CalendarUtil.CalendarExtractor delegatedEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
+            CalendarUtil.CalendarExtractor canonicalEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, CalendarURL.from(teamCalendar.id()).eventHref(eventUid)));
+            CalendarUtil.CalendarExtractor nonMemberEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(nonMember, nonMemberEventUri));
+
+            assertSoftly(softly -> {
+                softly.assertThat(delegatedEvent.extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + managerMember.email());
+                softly.assertThat(canonicalEvent.extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + managerMember.email());
+                softly.assertThat(nonMemberEvent.extractPropertyValue(Property.ORGANIZER))
+                    .isEqualTo("mailto:" + managerMember.email());
+            });
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SUMMARY", "DTSTART", "DTEND", "DESCRIPTION"})
+    void managerMemberShouldNotChangeOrganizerControlledFieldsWhenNotOrganizer(String forbiddenProperty) {
+        // Given bobMember created a Team Calendar event where managerMember is an attendee but not the organizer
+        OpenPaasUser managerMember = dockerExtension().newTestUser();
+        dockerExtension().twakeCalendarProvisioningService()
+            .addTeamCalendarMember(teamCalendar, managerMember, TeamCalendarRole.MANAGER)
+            .block();
+        CalendarURL managerDelegatedCalendar = calDavClient.findDelegatedCalendar(managerMember).getFirst();
+        String eventUid = "team-event-" + UUID.randomUUID();
+        String initialCalendarData = calendarData(eventUid, bobMember.email(), List.of(managerMember.email(), aliceMember.email()),
+            "Initial manager attendee meeting", "DESCRIPTION:Initial manager attendee description\n");
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid, initialCalendarData);
+
+        // When managerMember directly changes an organizer-controlled field without becoming the organizer
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(managerMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(changeOrganizerControlledField(initialCalendarData, forbiddenProperty))
+        .when()
+            .put(managerDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(403)
+            .body(containsString(forbiddenProperty));
+
+        // Then the Team Calendar copy keeps organizer-controlled fields unchanged
+        CalendarUtil.CalendarExtractor storedEvent = CalendarUtil.toExtractor(
+            calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
+        assertSoftly(softly -> {
+            softly.assertThat(storedEvent.extractPropertyValue(Property.ORGANIZER))
+                .isEqualTo("mailto:" + bobMember.email());
+            softly.assertThat(storedEvent.extractPropertyValue(Property.SUMMARY))
+                .isEqualTo("Initial manager attendee meeting");
+            softly.assertThat(storedEvent.extractPropertyValue(Property.DTSTART))
+                .isEqualTo("20300110T090000Z");
+            softly.assertThat(storedEvent.extractPropertyValue(Property.DTEND))
+                .isEqualTo("20300110T100000Z");
+            softly.assertThat(storedEvent.extractPropertyValue(Property.DESCRIPTION))
+                .isEqualTo("Initial manager attendee description");
+        });
+    }
+
+    @Test
+    void recurringTeamCalendarUpdateShouldRejectInconsistentOccurrenceOrganizer() {
+        // Given bobMember created a recurring Team Calendar event with a consistent organizer across occurrences
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            recurringCalendarData(eventUid, bobMember.email(), bobMember.email(), List.of(aliceMember.email()), "Consistent recurring organizer"));
+
+        // When bobMember tries to update one occurrence to a different organizer
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(recurringCalendarData(eventUid, bobMember.email(), aliceMember.email(), List.of(aliceMember.email()), "Inconsistent recurring organizer"))
+        .when()
+            .put(bobMemberDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(403);
+
+        // Then the update is rejected before scheduling can pick the wrong organizer from the recurring object
+        CalendarUtil.CalendarExtractor storedEvent = CalendarUtil.toExtractor(
+            calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
+        assertSoftly(softly -> {
+            softly.assertThat(storedEvent.extractEventPropertyValue(Optional.empty(), Property.ORGANIZER))
+                .isEqualTo("mailto:" + bobMember.email());
+            softly.assertThat(storedEvent.extractEventPropertyValue(Optional.of("20300111T090000Z"), Property.ORGANIZER))
+                .isEqualTo("mailto:" + bobMember.email());
+        });
+    }
+
+    @Test
+    void recurringTeamCalendarUpdateShouldAllowConsistentOrganizerTransfer() {
+        // Given bobMember created a recurring Team Calendar event with a consistent organizer across occurrences
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            recurringCalendarData(eventUid, bobMember.email(), bobMember.email(), List.of(aliceMember.email()), "Bob recurring organizer"));
+
+        // When bobMember transfers all recurring occurrences to aliceMember
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(recurringCalendarData(eventUid, aliceMember.email(), aliceMember.email(), List.of(bobMember.email()), "Alice recurring organizer"))
+        .when()
+            .put(bobMemberDelegatedCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then both master and overridden occurrence store the new organizer
+        awaitAtMost.untilAsserted(() -> {
+            CalendarUtil.CalendarExtractor storedEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
+            assertSoftly(softly -> {
+                softly.assertThat(storedEvent.extractEventPropertyValue(Optional.empty(), Property.ORGANIZER))
+                    .isEqualTo("mailto:" + aliceMember.email());
+                softly.assertThat(storedEvent.extractEventPropertyValue(Optional.of("20300111T090000Z"), Property.ORGANIZER))
+                    .isEqualTo("mailto:" + aliceMember.email());
             });
         });
     }
@@ -658,6 +891,35 @@ public abstract class TeamCalendarSchedulingContract {
                 END:VALARM
                 END:VEVENT"""
                 .replace("{alarmTrigger}", alarmTrigger));
+    }
+
+    private String recurringCalendarData(String eventUid, String masterOrganizerEmail, String occurrenceOrganizerEmail,
+                                         List<String> attendeeEmails, String summary) {
+        return calendarData(eventUid, masterOrganizerEmail, attendeeEmails, summary, "RRULE:FREQ=DAILY;COUNT=2\n")
+            .replace("END:VEVENT", """
+                END:VEVENT
+                BEGIN:VEVENT
+                UID:{eventUid}
+                RECURRENCE-ID:20300111T090000Z
+                DTSTAMP:20300101T080000Z
+                DTSTART:20300111T090000Z
+                DTEND:20300111T100000Z
+                ORGANIZER;CN=Organizer:mailto:{occurrenceOrganizerEmail}
+                SUMMARY:{summary} occurrence
+                END:VEVENT"""
+                .replace("{eventUid}", eventUid)
+                .replace("{occurrenceOrganizerEmail}", occurrenceOrganizerEmail)
+                .replace("{summary}", summary));
+    }
+
+    private String changeOrganizerControlledField(String calendarData, String propertyName) {
+        return switch (propertyName) {
+            case Property.SUMMARY -> calendarData.replace("SUMMARY:Initial manager attendee meeting", "SUMMARY:Manager changed summary");
+            case Property.DTSTART -> calendarData.replace("DTSTART:20300110T090000Z", "DTSTART:20300110T110000Z");
+            case Property.DTEND -> calendarData.replace("DTEND:20300110T100000Z", "DTEND:20300110T120000Z");
+            case Property.DESCRIPTION -> calendarData.replace("DESCRIPTION:Initial manager attendee description", "DESCRIPTION:Manager changed description");
+            default -> throw new IllegalArgumentException("Unsupported organizer-controlled field: " + propertyName);
+        };
     }
 
     private String readFirstAlarmTrigger(String icsContent) {
