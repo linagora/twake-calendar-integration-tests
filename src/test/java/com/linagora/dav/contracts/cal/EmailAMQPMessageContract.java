@@ -24,6 +24,7 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,7 +50,11 @@ public abstract class EmailAMQPMessageContract {
 
     public static final boolean NOT_COUNTER = false;
     public static final boolean COUNTER = true;
-    private static final String X_PUBLICLY_CREATED_HEADER = "X-PUBLICLY-CREATED:true";
+    private static final String PUBLIC_AGENDA_METADATA_HEADERS = """
+        X-PUBLICLY-CREATED:true
+        X-PUBLICLY-CREATOR:creator@example.org
+        X-OPENPAAS-BOOKING-LINK:booking-link-id
+        """;
 
     private final ConditionFactory calmlyAwait = Awaitility.with()
         .pollInterval(Duration.ofMillis(500))
@@ -561,10 +566,14 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", bob.email())
             .replace("{attendeeEmail}", alice.email())
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         // Given: attendee already has the accepted public agenda event clone.
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+        assertThat(calDavClient.getCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics")))
+            .contains("X-PUBLICLY-CREATED")
+            .contains("X-PUBLICLY-CREATOR")
+            .contains("X-OPENPAAS-BOOKING-LINK");
         awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent);
         BlockingQueue<JsonNode> messages = listenToQueue();
 
@@ -576,8 +585,7 @@ public abstract class EmailAMQPMessageContract {
             assertThat(messages)
                 .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText())
                     && "CANCEL".equals(message.path("method").asText()))
-                .anySatisfy(message -> assertThat(message.path("event").asText())
-                    .contains("X-PUBLICLY-CREATED")));
+                .anySatisfy(this::assertPublicAgendaMetadataPreserved));
     }
 
     @Test
@@ -1504,7 +1512,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
 
@@ -1551,7 +1559,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", externalAttendeeEmail)
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
 
@@ -1601,7 +1609,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
@@ -1644,7 +1652,7 @@ public abstract class EmailAMQPMessageContract {
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
             .replace("{partStat}", partStat)
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
         String expectedInternalAttendeeNotification = """
@@ -1668,8 +1676,7 @@ public abstract class EmailAMQPMessageContract {
                     assertThatJson(message.toString())
                         .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expectedInternalAttendeeNotification);
-                    assertThat(message.path("event").asText())
-                        .contains("X-PUBLICLY-CREATED");
+                    assertPublicAgendaMetadataPreserved(message);
                 }));
     }
 
@@ -1714,7 +1721,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", externalAttendeeEmail)
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
@@ -1757,7 +1764,7 @@ public abstract class EmailAMQPMessageContract {
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", externalAttendeeEmail)
             .replace("{partStat}", partStat)
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
         String expectedExternalAttendeeNotification = """
@@ -1781,8 +1788,7 @@ public abstract class EmailAMQPMessageContract {
                     assertThatJson(message.toString())
                         .when(Option.IGNORING_EXTRA_FIELDS)
                         .isEqualTo(expectedExternalAttendeeNotification);
-                    assertThat(message.path("event").asText())
-                        .contains("X-PUBLICLY-CREATED");
+                    assertPublicAgendaMetadataPreserved(message);
                 }));
     }
 
@@ -1816,7 +1822,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
@@ -1902,7 +1908,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
@@ -1939,7 +1945,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", attendee.email())
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
 
@@ -1989,7 +1995,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", externalAttendeeEmail)
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
@@ -2026,7 +2032,7 @@ public abstract class EmailAMQPMessageContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", organizer.email())
             .replace("{attendeeEmail}", externalAttendeeEmail)
-            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
 
@@ -2516,6 +2522,13 @@ public abstract class EmailAMQPMessageContract {
 
     private BlockingQueue<JsonNode> listenToQueue() {
         return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+    }
+
+    private void assertPublicAgendaMetadataPreserved(JsonNode message) {
+        assertThat(message.path("event").asText())
+            .contains("X-PUBLICLY-CREATED")
+            .contains("X-PUBLICLY-CREATOR")
+            .contains("X-OPENPAAS-BOOKING-LINK");
     }
 
     private String generateCalendarData(String eventUid, String organizerEmail, String attendeeEmail,
