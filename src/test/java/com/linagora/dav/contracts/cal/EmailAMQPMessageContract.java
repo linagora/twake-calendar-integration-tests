@@ -538,6 +538,49 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
+    void shouldPreservePubliclyCreatedMetadataOnCancelNotificationEmailMessage() {
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART:30250411T100000Z
+            DTEND:30250411T110000Z
+            SUMMARY:Publicly created meeting
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{xPubliclyCreated}", X_PUBLICLY_CREATED_HEADER);
+
+        // Given: attendee already has the accepted public agenda event clone.
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: organizer deletes the public agenda event.
+        calDavClient.deleteCalendarEvent(bob, eventUid);
+
+        // Then: the CANCEL notification payload still carries public agenda metadata.
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText())
+                    && "CANCEL".equals(message.path("method").asText()))
+                .anySatisfy(message -> assertThat(message.path("event").asText())
+                    .contains("X-PUBLICLY-CREATED")));
+    }
+
+    @Test
     void shouldReceiveNotificationEmailMessageOnEventReply() {
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = generateCalendarData(
@@ -1621,9 +1664,13 @@ public abstract class EmailAMQPMessageContract {
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
                 .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()))
-                .anySatisfy(message -> assertThatJson(message.toString())
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
                         .when(Option.IGNORING_EXTRA_FIELDS)
-                    .isEqualTo(expectedInternalAttendeeNotification)));
+                        .isEqualTo(expectedInternalAttendeeNotification);
+                    assertThat(message.path("event").asText())
+                        .contains("X-PUBLICLY-CREATED");
+                }));
     }
 
     @ParameterizedTest
@@ -1730,9 +1777,13 @@ public abstract class EmailAMQPMessageContract {
         awaitAtMost.untilAsserted(() ->
             assertThat(messages)
                 .filteredOn(message -> externalAttendeeEmail.equals(message.path("recipientEmail").asText()))
-                .anySatisfy(message -> assertThatJson(message.toString())
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
                         .when(Option.IGNORING_EXTRA_FIELDS)
-                    .isEqualTo(expectedExternalAttendeeNotification)));
+                        .isEqualTo(expectedExternalAttendeeNotification);
+                    assertThat(message.path("event").asText())
+                        .contains("X-PUBLICLY-CREATED");
+                }));
     }
 
     @Test
