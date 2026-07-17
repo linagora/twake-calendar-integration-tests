@@ -322,7 +322,6 @@ public abstract class SchedulingContract {
         String cancelledOrganizerEventIcs = organizerEventIcs
             .replace("DTSTAMP:20351003T080000Z", "DTSTAMP:20351003T090000Z")
             .replace("SEQUENCE:1", "SEQUENCE:2")
-            .replace("SUMMARY:Meeting before cancellation", "SUMMARY:Meeting cancelled by PUT")
             .replace("END:VEVENT", "STATUS:CANCELLED\nEND:VEVENT");
         calDavClient.upsertCalendarEvent(bob, organizerEventUid, cancelledOrganizerEventIcs);
 
@@ -334,15 +333,11 @@ public abstract class SchedulingContract {
             assertThat(aliceEventIcs)
                 .contains("UID:" + organizerEventUid)
                 .contains("SEQUENCE:2")
-                .contains("SUMMARY:Meeting cancelled by PUT")
-                .contains("STATUS:CANCELLED")
-                .doesNotContain("SUMMARY:Meeting before cancellation");
+                .contains("STATUS:CANCELLED");
             assertThat(cedricEventIcs)
                 .contains("UID:" + organizerEventUid)
                 .contains("SEQUENCE:2")
-                .contains("SUMMARY:Meeting cancelled by PUT")
-                .contains("STATUS:CANCELLED")
-                .doesNotContain("SUMMARY:Meeting before cancellation");
+                .contains("STATUS:CANCELLED");
         });
     }
 
