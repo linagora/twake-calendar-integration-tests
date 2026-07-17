@@ -543,6 +543,61 @@ public abstract class EmailAMQPMessageContract {
     }
 
     @Test
+    void shouldReceiveCancelNotificationEmailMessageWhenOrganizerPutsCancelledStatus() {
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = generateCalendarData(
+            eventUid,
+            bob.email(),
+            alice.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+        URI attendeeEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + attendeeEventId + ".ics");
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        String cancelledCalendarData = calendarData
+            .replace("SEQUENCE:1", "SEQUENCE:2")
+            .replace("END:VEVENT", "STATUS:CANCELLED\nEND:VEVENT");
+        calDavClient.upsertCalendarEvent(bob, eventUid, cancelledCalendarData);
+
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, attendeeEventUri))
+            .contains("STATUS:CANCELLED"));
+
+        String expected = """
+            {
+              "senderEmail": "{organizerEmail}",
+              "recipientEmail": "{attendeeEmail}",
+              "method": "CANCEL",
+              "event": "${json-unit.any-string}",
+              "notify": true,
+              "calendarURI": "{organizerId}",
+              "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
+            }
+            """.replace("{organizerEmail}", bob.email())
+            .replace("{attendeeEmail}", alice.email())
+            .replace("{organizerId}", bob.id())
+            .replace("{attendeeId}", alice.id())
+            .replace("{attendeeEventId}", attendeeEventId);
+
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages)
+                .filteredOn(message -> alice.email().equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThatJson(message.toString())
+                        .when(Option.IGNORING_EXTRA_FIELDS)
+                        .isEqualTo(expected);
+
+                    assertThat(message.path("event").asText())
+                        .contains("METHOD:CANCEL");
+                }));
+    }
+
+    @Test
     void shouldPreservePubliclyCreatedMetadataOnCancelNotificationEmailMessage() {
         String eventUid = UUID.randomUUID().toString();
         String calendarData = """

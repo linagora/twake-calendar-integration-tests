@@ -288,6 +288,65 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void eventCancellationByOrganizerPutShouldPropagateCancelledEventToAllAttendees() {
+        // Given Bob creates an event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            SEQUENCE:1
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Meeting before cancellation
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+        URI aliceCalendarEventUri = awaitCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), organizerEventUid);
+        URI cedricCalendarEventUri = awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), organizerEventUid);
+
+        // When Bob cancels the event through PUT rather than DELETE
+        String cancelledOrganizerEventIcs = organizerEventIcs
+            .replace("DTSTAMP:20351003T080000Z", "DTSTAMP:20351003T090000Z")
+            .replace("SEQUENCE:1", "SEQUENCE:2")
+            .replace("SUMMARY:Meeting before cancellation", "SUMMARY:Meeting cancelled by PUT")
+            .replace("END:VEVENT", "STATUS:CANCELLED\nEND:VEVENT");
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, cancelledOrganizerEventIcs);
+
+        // Then every attendee calendar object is updated with the cancelled event data
+        awaitAtMost.untilAsserted(() -> {
+            String aliceEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri);
+            String cedricEventIcs = calDavClient.getCalendarEvent(cedric, cedricCalendarEventUri);
+
+            assertThat(aliceEventIcs)
+                .contains("UID:" + organizerEventUid)
+                .contains("SEQUENCE:2")
+                .contains("SUMMARY:Meeting cancelled by PUT")
+                .contains("STATUS:CANCELLED")
+                .doesNotContain("SUMMARY:Meeting before cancellation");
+            assertThat(cedricEventIcs)
+                .contains("UID:" + organizerEventUid)
+                .contains("SEQUENCE:2")
+                .contains("SUMMARY:Meeting cancelled by PUT")
+                .contains("STATUS:CANCELLED")
+                .doesNotContain("SUMMARY:Meeting before cancellation");
+        });
+    }
+
+    @Test
     void attendeeAcceptanceShouldPropagateToOrganizerCalendar() {
         // Given Bob creates an event with Cedric as attendee
         String organizerEventUid = "event-" + UUID.randomUUID();
