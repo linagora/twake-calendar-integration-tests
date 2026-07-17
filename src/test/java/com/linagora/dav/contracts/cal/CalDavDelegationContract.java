@@ -133,9 +133,13 @@ public abstract class CalDavDelegationContract {
             .asString();
 
         // THEN a copy of bob calendar is created in Alice calendar list
+        String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
         assertThatJson(response)
-            .inPath("_embedded.dav:calendar[0]")
-            .isEqualTo(String.format("""
+            .inPath("_embedded.dav:calendar")
+            .isArray()
+            .filteredOn(calendar -> delegatedSource.equals(((Map<?, ?>) calendar).get("calendarserver:delegatedsource")))
+            .singleElement()
+            .satisfies(calendar -> assertThatJson(calendar).isEqualTo(String.format("""
                 {
                     "_links": {
                         "self": {
@@ -228,7 +232,7 @@ public abstract class CalDavDelegationContract {
                 }  
                 """.replace("{userId}", alice.id()))
                 .replace("{userId2}", bob.id())
-                .replace("{userEmail}", alice.email()));
+                .replace("{userEmail}", alice.email())));
     }
 
     @ParameterizedTest
@@ -506,9 +510,13 @@ public abstract class CalDavDelegationContract {
             .asString();
 
         // THEN Alice copy of bob calendar is updated accordingly
+        String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
         assertThatJson(response)
-            .inPath("_embedded.dav:calendar[0]")
-            .isEqualTo(String.format("""
+            .inPath("_embedded.dav:calendar")
+            .isArray()
+            .filteredOn(calendar -> delegatedSource.equals(((Map<?, ?>) calendar).get("calendarserver:delegatedsource")))
+            .singleElement()
+            .satisfies(calendar -> assertThatJson(calendar).isEqualTo(String.format("""
                 {
                     "_links": {
                         "self": {
@@ -581,7 +589,7 @@ public abstract class CalDavDelegationContract {
                 }
                 """.replace("{userId}", alice.id()))
                 .replace("{userId2}", bob.id())
-                .replace("{userEmail}", alice.email()));
+                .replace("{userEmail}", alice.email())));
     }
 
     @Test
@@ -2518,9 +2526,13 @@ public abstract class CalDavDelegationContract {
             .asString();
 
         // THEN the right is updated in Alice local copy of Bob original calendar
+        String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
         assertThatJson(response)
-            .inPath("_embedded.dav:calendar[0]")
-            .isEqualTo(String.format("""
+            .inPath("_embedded.dav:calendar")
+            .isArray()
+            .filteredOn(calendar -> delegatedSource.equals(((Map<?, ?>) calendar).get("calendarserver:delegatedsource")))
+            .singleElement()
+            .satisfies(calendar -> assertThatJson(calendar).isEqualTo(String.format("""
                 {
                     "_links": {
                         "self": {
@@ -2593,7 +2605,7 @@ public abstract class CalDavDelegationContract {
                 .replace("{userId2}", bob.id())
                 .replace("{userId3}", cedric.id())
                 .replace("{userEmail}", alice.email())
-                .replace("{userEmail3}", cedric.email()));
+                .replace("{userEmail3}", cedric.email())));
     }
 
     @Test
