@@ -1623,6 +1623,67 @@ public abstract class EmailAMQPMessageContract {
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
+    @Test
+    protected void shouldNotSendCancelNotificationEmailWhenOrganizerDeletesUnacceptedPubliclyCreatedEvent() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser internalAttendee = dockerExtension().newTestUser();
+        String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Unaccepted public agenda booking
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This public agenda booking is not accepted by the organizer yet.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Internal Attendee:mailto:{internalAttendeeEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{externalAttendeeEmail}
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{internalAttendeeEmail}", internalAttendee.email())
+            .replace("{externalAttendeeEmail}", externalAttendeeEmail)
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
+
+        // Given: a public agenda booking exists but the organizer attendee is still NEEDS-ACTION.
+        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: the organizer cancels the unaccepted booking.
+        calDavClient.deleteCalendarEvent(organizer, eventUid);
+
+        // Then: additional attendees should not receive cancellation emails for an unconfirmed booking.
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> "CANCEL".equals(message.path("method").asText()))
+                .filteredOn(message -> internalAttendee.email().equals(message.path("recipientEmail").asText())
+                    || externalAttendeeEmail.equals(message.path("recipientEmail").asText()))
+                .as("Unexpected cancellation email for public agenda additional attendees")
+                .isEmpty());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
     protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) {
