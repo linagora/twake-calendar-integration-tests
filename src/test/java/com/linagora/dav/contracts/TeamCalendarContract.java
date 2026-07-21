@@ -327,6 +327,49 @@ public abstract class TeamCalendarContract {
     }
 
     @Test
+    void teamCalendarMemberShouldReportEventsOnCanonicalUrl() {
+        // Given Bob is a team calendar member and can write through his delegated mirror
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.ADMIN);
+        String eventUid = "team-event-" + UUID.randomUUID();
+
+        Response putResponse = putCalendarEvent(bob, delegatedCalendar, eventUid,
+            calendarData(eventUid, "member creates team event", bob.email()));
+        assertThat(putResponse.statusCode())
+            .as("Team calendar member should create an event through the delegated mirror")
+            .isIn(201, 204);
+
+        // When the client reports against the canonical team calendar URL instead of the delegated mirror
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        Response reportResponse = given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bob.email()))
+            .header("Depth", 0)
+            .header("Accept", "application/json")
+            .header("Content-Type", "text/plain;charset=UTF-8")
+            .body("""
+                {
+                    "match": {
+                        "start": "20300110T000000",
+                        "end": "20300110T235959"
+                    }
+                }
+                """)
+        .when()
+            .request("REPORT", teamCalendarCanonicalUrl.asUri() + ".json")
+        .then()
+            .extract()
+            .response();
+
+        // Then Sabre accepts the canonical URL because Bob has read rights through delegation.
+        assertThat(reportResponse.statusCode())
+            .as("Team calendar member should report events through the canonical URL")
+            .isEqualTo(200);
+        assertThat(reportResponse.body().asString())
+            .contains(eventUid);
+    }
+
+    @Test
     void readOnlyTeamCalendarDelegateeShouldNotCreateEvent() {
         // Given Alice has read-only delegation on a team calendar
         OpenPaasUser alice = dockerExtension().newTestUser();
