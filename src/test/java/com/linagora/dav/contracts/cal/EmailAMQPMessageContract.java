@@ -50,6 +50,7 @@ public abstract class EmailAMQPMessageContract {
 
     public static final boolean NOT_COUNTER = false;
     public static final boolean COUNTER = true;
+    private static final String BOOKER_EMAIL = "creator@example.org";
     private static final String PUBLIC_AGENDA_METADATA_HEADERS = """
         X-PUBLICLY-CREATED:true
         X-PUBLICLY-CREATOR:creator@example.org
@@ -610,6 +611,7 @@ public abstract class EmailAMQPMessageContract {
             SUMMARY:Publicly created meeting
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1549,6 +1551,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1560,6 +1563,7 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
 
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
@@ -1596,6 +1600,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting with an external attendee.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1607,13 +1612,14 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
 
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
     }
 
     @Test
-    protected void shouldNotSendCancelNotificationEmailWhenOrganizerDeletesUnacceptedPubliclyCreatedEvent() {
+    protected void shouldOnlySendCancelNotificationEmailToBookerWhenOrganizerDeletesUnacceptedPubliclyCreatedEvent() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser internalAttendee = dockerExtension().newTestUser();
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
@@ -1644,6 +1650,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This public agenda booking is not accepted by the organizer yet.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Internal Attendee:mailto:{internalAttendeeEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{externalAttendeeEmail}
             {xPubliclyCreated}
@@ -1663,6 +1670,9 @@ public abstract class EmailAMQPMessageContract {
         calDavClient.deleteCalendarEvent(organizer, eventUid);
 
         // Then: additional attendees should not receive cancellation emails for an unconfirmed booking.
+        // The booker is always kept informed: it is their booking.
+        assertBookerNotified(messages, "CANCEL");
+
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(messages)
@@ -1707,6 +1717,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1718,6 +1729,7 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
@@ -1749,6 +1761,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT={partStat};RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1782,6 +1795,8 @@ public abstract class EmailAMQPMessageContract {
                         .isEqualTo(expectedInternalAttendeeNotification);
                     assertPublicAgendaMetadataPreserved(message);
                 }));
+
+        assertBookerNotified(messages, "REQUEST");
     }
 
     @ParameterizedTest
@@ -1818,6 +1833,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting with an external attendee.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1829,6 +1845,7 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
@@ -1860,6 +1877,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting with an external attendee.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT={partStat};RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1893,6 +1911,8 @@ public abstract class EmailAMQPMessageContract {
                         .isEqualTo(expectedExternalAttendeeNotification);
                     assertPublicAgendaMetadataPreserved(message);
                 }));
+
+        assertBookerNotified(messages, "REQUEST");
     }
 
     @Test
@@ -1918,6 +1938,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created recurring meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -1929,6 +1950,7 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
 
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
@@ -1939,6 +1961,7 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, recurringCalendarData);
 
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
         calmlyAwait
             .during(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
@@ -1968,10 +1991,12 @@ public abstract class EmailAMQPMessageContract {
                 .anySatisfy(message -> assertThatJson(message.toString())
                         .when(Option.IGNORING_EXTRA_FIELDS)
                     .isEqualTo(expectedRecurringAcceptedNotification)));
+
+        assertBookerNotified(messages, "REQUEST");
     }
 
     @Test
-    protected void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
+    protected void shouldOnlySendNotificationEmailToBookerWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser attendee = dockerExtension().newTestUser();
 
@@ -2003,6 +2028,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -2013,6 +2039,12 @@ public abstract class EmailAMQPMessageContract {
             .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
+
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
+        calmlyAwait
+            .during(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         // WHEN: Organizer updates PARTSTAT to DECLINED
         String updatedCalendarData = """
@@ -2040,6 +2072,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -2051,14 +2084,20 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
 
-        // THEN: No notification email is sent to the attendee
+        // THEN: The booker is told their booking was refused...
+        assertBookerNotified(messages, "REQUEST");
+
+        // ...while the invited attendee never heard about the booking in the first place.
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
-            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> attendee.email().equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for an attendee of an unaccepted public agenda booking")
+                .isEmpty());
     }
 
     @Test
-    protected void shouldNotSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee() throws InterruptedException, IOException {
+    protected void shouldOnlySendNotificationEmailToBookerWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee() throws InterruptedException, IOException {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
@@ -2090,6 +2129,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting with an external attendee.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -2100,6 +2140,12 @@ public abstract class EmailAMQPMessageContract {
             .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, initialCalendarData);
+
+        // Nobody is told about a booking that is still awaiting the organizer's answer.
+        calmlyAwait
+            .during(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+        BlockingQueue<JsonNode> messages = listenToQueue();
 
         // WHEN: Organizer updates PARTSTAT to DECLINED
         String updatedCalendarData = """
@@ -2127,6 +2173,7 @@ public abstract class EmailAMQPMessageContract {
             DESCRIPTION:This is a publicly created meeting with an external attendee.
             ORGANIZER;CN=Organizer:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=DECLINED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=External Attendee:mailto:{attendeeEmail}
             {xPubliclyCreated}
             END:VEVENT
@@ -2138,10 +2185,16 @@ public abstract class EmailAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(organizer, eventUid, updatedCalendarData);
 
-        // THEN: No notification email is sent to the attendee
+        // THEN: The booker is told their booking was refused...
+        assertBookerNotified(messages, "REQUEST");
+
+        // ...while the invited attendee never heard about the booking in the first place.
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
-            .untilAsserted(() -> assertThat(dockerExtension().getChannel().basicGet(QUEUE_NAME, true)).isNull());
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> externalAttendeeEmail.equals(message.path("recipientEmail").asText()))
+                .as("Unexpected notification email for an attendee of an unaccepted public agenda booking")
+                .isEmpty());
     }
 
     @Test
@@ -2623,6 +2676,13 @@ public abstract class EmailAMQPMessageContract {
 
     private BlockingQueue<JsonNode> listenToQueue() {
         return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+    }
+
+    private void assertBookerNotified(BlockingQueue<JsonNode> messages, String method) {
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .filteredOn(message -> BOOKER_EMAIL.equals(message.path("recipientEmail").asText()))
+            .as("Missing %s notification email for the booker of the public agenda booking", method)
+            .anySatisfy(message -> assertThat(message.path("method").asText()).isEqualTo(method)));
     }
 
     private void assertPublicAgendaMetadataPreserved(JsonNode message) {
