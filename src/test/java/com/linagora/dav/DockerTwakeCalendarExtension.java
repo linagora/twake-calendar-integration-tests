@@ -29,6 +29,10 @@ import org.junit.jupiter.api.extension.ParameterResolver;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
 import reactor.netty.http.client.HttpClient;
 
 public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEachCallback, ParameterResolver {
@@ -105,6 +109,16 @@ public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback
     public HttpClient davHttpClient() {
         return HttpClient.create()
             .baseUrl(getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString());
+    }
+
+    public RequestSpecification webAdminRequestSpecification() {
+        return new RequestSpecBuilder()
+            .setBaseUri(getDockerTwakeCalendarSetupSingleton()
+                .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+                .toString())
+            .setContentType(ContentType.JSON)
+            .setAccept(ContentType.JSON)
+            .build();
     }
 
     public Channel getChannel() {
