@@ -133,7 +133,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "isNewEvent": true
@@ -274,7 +273,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "changes": {
@@ -519,7 +517,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "CANCEL",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
             }
@@ -574,7 +571,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "CANCEL",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
             }
@@ -708,7 +704,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{organizerEmail}",
               "method": "REPLY",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics"
             }
@@ -834,7 +829,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{organizerEmail}",
               "method": "COUNTER",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
               "oldEvent": "${json-unit.any-string}"
@@ -971,7 +965,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{organizerEmail}",
               "method": "COUNTER",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{organizerId}/{organizerId}/{eventUid}.ics",
               "oldEvent": "${json-unit.any-string}"
@@ -1068,7 +1061,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{organizerEmail}",
               "method": "COUNTER",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{attendeeId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{eventUid}.ics",
               "oldEvent": "${json-unit.any-string}"
@@ -1161,7 +1153,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "isNewEvent": true
@@ -1251,7 +1242,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "CANCEL",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics"
             }
@@ -1377,7 +1367,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "changes": {
@@ -1777,7 +1766,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "${json-unit.any-string}",
               "eventPath": "${json-unit.any-string}"
             }
@@ -1889,7 +1877,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "${json-unit.any-string}",
               "eventPath": "${json-unit.regex}^/calendars/.*$"
             }
@@ -1969,7 +1956,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "${json-unit.any-string}",
               "eventPath": "${json-unit.any-string}"
             }
@@ -2584,7 +2570,6 @@ public abstract class EmailAMQPMessageContract {
               "recipientEmail": "{attendeeEmail}",
               "method": "REQUEST",
               "event": "${json-unit.any-string}",
-              "notify": true,
               "calendarURI": "{organizerId}",
               "eventPath": "/calendars/{attendeeId}/{attendeeId}/{attendeeEventId}.ics",
               "changes": {

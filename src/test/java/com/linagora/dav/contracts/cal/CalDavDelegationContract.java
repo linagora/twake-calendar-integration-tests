@@ -52,6 +52,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.xmlunit.assertj3.XmlAssert;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -89,6 +90,7 @@ import net.javacrumbs.jsonunit.core.Option;
 import reactor.core.publisher.Mono;
 
 public abstract class CalDavDelegationContract {
+    private static final Map<String, String> DAV_NAMESPACES = Map.of("d", "DAV:");
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
@@ -2667,30 +2669,75 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
-    void updateNameAndColorOfOriginalCalendarShouldNotAffectCopiedCalendar() {
+    void updateNameOfOriginalCalendarShouldUpdateUncustomizedCopiedCalendarName() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
 
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
+        CalendarURL delegatedCalendar = calDavClient.findUserCalendars(alice).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
         calDavClient.updateCalendarSetting(bob, CalendarURL.from(bob.id()), "new name", "#009688");
 
-        String response = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-            .when()
-            .get("/calendars/" + alice.id() + ".json")
-            .then()
-            .extract()
-            .body()
-            .asString();
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = execute(dockerExtension().davHttpClient()
+                .headers(headers -> alice.impersonatedBasicAuth(headers)
+                    .add("Depth", "0")
+                    .add("Content-Type", "application/xml"))
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri(delegatedCalendar.asUri().toString())
+                .send(body("""
+                    <d:propfind xmlns:d="DAV:">
+                      <d:prop>
+                        <d:displayname/>
+                      </d:prop>
+                    </d:propfind>""")));
 
-        assertThat(response)
-            .doesNotContain("\"dav:name\":\"new name\"")
-            .doesNotContain("\"apple:color\":\"#009688\"");
+            assertThat(response.status()).isEqualTo(207);
+            XmlAssert.assertThat(response.body())
+                .withNamespaceContext(DAV_NAMESPACES)
+                .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
+                    .formatted(delegatedCalendar.asUri()))
+                .isEqualTo("new name");
+        });
+    }
+
+    @Test
+    void updateResourceCalendarNameShouldUpdateUncustomizedDelegatedResourceCalendarName() {
+        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getTwakeCalendarProvisioningService()
+            .createResource("whiteboard", "Shared whiteboard", bob)
+            .block();
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        delegateResourceToAdmin(resource, bob, technicalToken);
+
+        CalendarURL delegatedResourceCalendar = calDavClient.findUserCalendars(bob).collectList().block()
+            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+
+        calDavClient.updateCalendarSetting(technicalToken, CalendarURL.from(resource.id()), "Renamed Resource Calendar", "#009688");
+
+        awaitAtMost.untilAsserted(() -> {
+            DavResponse response = execute(dockerExtension().davHttpClient()
+                .headers(headers -> bob.impersonatedBasicAuth(headers)
+                    .add("Depth", "0")
+                    .add("Content-Type", "application/xml"))
+                .request(HttpMethod.valueOf("PROPFIND"))
+                .uri(delegatedResourceCalendar.asUri().toString())
+                .send(body("""
+                    <d:propfind xmlns:d="DAV:">
+                      <d:prop>
+                        <d:displayname/>
+                      </d:prop>
+                    </d:propfind>""")));
+
+            assertThat(response.status()).isEqualTo(207);
+            XmlAssert.assertThat(response.body())
+                .withNamespaceContext(DAV_NAMESPACES)
+                .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
+                    .formatted(delegatedResourceCalendar.asUri()))
+                .isEqualTo("Renamed Resource Calendar");
+        });
     }
 
     @Test

@@ -42,6 +42,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TestUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.restassured.RestAssured;
@@ -52,6 +53,12 @@ public abstract class TeamCalendarContract {
     private static final Map<String, String> DAV_NAMESPACES = Map.of(
         "d", "DAV:",
         "cal", "urn:ietf:params:xml:ns:caldav");
+    private static final String DISPLAY_NAME_PROPFIND_BODY = """
+        <d:propfind xmlns:d="DAV:">
+          <d:prop>
+            <d:displayname/>
+          </d:prop>
+        </d:propfind>""";
     private static final String PUBLIC_READ_RIGHT = "{DAV:}read";
 
     private CalDavClient calDavClient;
@@ -249,6 +256,59 @@ public abstract class TeamCalendarContract {
         assertThat(response.body().asString())
             .as("Delegated team calendar should be advertised as a CalDAV calendar collection")
             .contains("<d:collection/>", "<cal:calendar/>");
+    }
+
+    @Test
+    void teamCalendarDisplayNameUpdateShouldUpdateUncustomizedMemberDelegatedCalendarName() {
+        // Given Alice and Bob have uncustomized delegated copies of a team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Initial Team Name");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+        CalendarURL bobDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ);
+
+        // When WebAdmin renames the team calendar
+        String renamedDisplayName = "Renamed Team Calendar";
+        updateTeamCalendarDisplayName(teamCalendar, renamedDisplayName);
+
+        // Then the canonical and delegated calendar names follow the new source display name
+        TestUtil.awaitAtMost.untilAsserted(() -> {
+            CalendarURL canonicalCalendar = CalendarURL.from(teamCalendar.id());
+            assertDisplayName(propfind(teamCalendar, canonicalCalendar.asUri().toString(), 0, DISPLAY_NAME_PROPFIND_BODY),
+                canonicalCalendar, renamedDisplayName);
+            assertDisplayName(propfind(alice, aliceDelegatedCalendar.asUri().toString(), 0, DISPLAY_NAME_PROPFIND_BODY),
+                aliceDelegatedCalendar, renamedDisplayName);
+            assertDisplayName(propfind(bob, bobDelegatedCalendar.asUri().toString(), 0, DISPLAY_NAME_PROPFIND_BODY),
+                bobDelegatedCalendar, renamedDisplayName);
+        });
+    }
+
+    @Test
+    void teamCalendarDisplayNameUpdateShouldNotOverwriteCustomizedMemberDelegatedCalendarName() {
+        // Given Alice and Bob have delegated copies of a team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Initial Team Name");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ);
+        CalendarURL bobDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ);
+
+        // And Bob customizes his local delegated calendar name
+        calDavClient.updateCalendarSetting(bob, bobDelegatedCalendar, "Initial Team Name BOB", "#009688");
+
+        // When WebAdmin renames the team calendar
+        String renamedDisplayName = "Renamed Team Calendar";
+        updateTeamCalendarDisplayName(teamCalendar, renamedDisplayName);
+
+        // Then Alice follows the source display name while Bob keeps his customized name
+        TestUtil.awaitAtMost.untilAsserted(() -> {
+            CalendarURL canonicalCalendar = CalendarURL.from(teamCalendar.id());
+            assertDisplayName(propfind(teamCalendar, canonicalCalendar.asUri().toString(), 0, DISPLAY_NAME_PROPFIND_BODY),
+                canonicalCalendar, renamedDisplayName);
+            assertDisplayName(propfind(alice, aliceDelegatedCalendar.asUri().toString(), 0, DISPLAY_NAME_PROPFIND_BODY),
+                aliceDelegatedCalendar, renamedDisplayName);
+            assertDisplayName(propfind(bob, bobDelegatedCalendar.asUri().toString(), 0, DISPLAY_NAME_PROPFIND_BODY),
+                bobDelegatedCalendar, "Initial Team Name BOB");
+        });
     }
 
     @Test
@@ -967,6 +1027,30 @@ public abstract class TeamCalendarContract {
             .as("User should have one delegated team calendar")
             .hasSize(1);
         return delegatedCalendars.getFirst();
+    }
+
+    private void updateTeamCalendarDisplayName(OpenPaaSTeamCalendar teamCalendar, String displayName) {
+        String payload = """
+            {
+              "displayName": "{displayName}"
+            }
+            """.replace("{displayName}", displayName);
+
+        given(dockerExtension().webAdminRequestSpecification())
+            .body(payload)
+        .when()
+            .patch("/domains/{domain}/team-calendars/{teamCalendarId}", teamCalendar.domainName(), teamCalendar.id())
+        .then()
+            .statusCode(200);
+    }
+
+    private void assertDisplayName(Response response, CalendarURL calendarURL, String expectedDisplayName) {
+        assertThat(response.statusCode()).isEqualTo(207);
+        XmlAssert.assertThat(response.body().asString())
+            .withNamespaceContext(DAV_NAMESPACES)
+            .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
+                .formatted(calendarURL.asUri()))
+            .isEqualTo(expectedDisplayName);
     }
 
     private Response propfind(OpenPaaSTeamCalendar teamCalendar, String path, int depth, String requestBody) {
