@@ -33,6 +33,8 @@ import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
@@ -58,7 +60,7 @@ public abstract class CalDavResourceParticipationContract {
 
     @Test
     @Disabled("https://github.com/linagora/esn-sabre/issues/441 - resource administrator lacks {DAV:}write-content on the resource calendar")
-    void resourceAdministratorShouldBeAbleToUpdateParticipation() {
+    void resourceAdministratorShouldBeAbleToUpdateParticipationThroughCanonicalCalendarUrl() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
         OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
@@ -74,6 +76,36 @@ public abstract class CalDavResourceParticipationContract {
         String acceptedCalendarData = generateCalendarData(eventUid, organizer.email(), resource.id(), "ACCEPTED");
 
         assertThatCode(() -> calDavClient.upsertCalendarEvent(resourceAdmin, resourceEventUri, acceptedCalendarData))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void resourceAdministratorShouldBeAbleToUpdateParticipationThroughMirrorCalendarUrl() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", resourceAdmin)
+            .block();
+
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.grantDelegation(resource.id(), resourceAdmin, DelegationRight.READ_WRITE, technicalToken);
+
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(organizer, eventUid, generateCalendarData(eventUid, organizer.email(), resource.id(), "NEEDS-ACTION"));
+
+        CalendarURL mirrorCalendarURL = awaitAtMost.until(() -> calDavClient.findUserCalendars(resourceAdmin)
+                    .filter(url -> !url.base().equals(url.calendarId()))
+                    .next()
+                    .blockOptional(),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Resource administrator has no delegated resource calendar"));
+        URI mirrorEventUri = awaitAtMost.until(
+                () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(resourceAdmin, mirrorCalendarURL, eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected event to be present in delegated resource calendar"));
+        String acceptedCalendarData = generateCalendarData(eventUid, organizer.email(), resource.id(), "ACCEPTED");
+
+        assertThatCode(() -> calDavClient.upsertCalendarEvent(resourceAdmin, mirrorEventUri, acceptedCalendarData))
             .doesNotThrowAnyException();
     }
 
