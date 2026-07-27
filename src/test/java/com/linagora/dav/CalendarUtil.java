@@ -198,14 +198,21 @@ public class CalendarUtil {
 
     public static void removePropertiesFromComponents(Calendar calendar, String componentName, String... propertyNames) {
         calendar.getComponents().stream()
-            .filter(ComponentContainer.class::isInstance)
-            .flatMap(component -> ((ComponentContainer<?>) component).getComponentList().getAll().stream())
+            .flatMap(component -> Stream.concat(Stream.of(component), childComponents(component)))
             .filter(component -> componentName.equals(component.getName()))
             .forEach(component -> {
                 for (String propertyName : propertyNames) {
                     component.removeAll(propertyName);
                 }
             });
+    }
+
+    private static Stream<Component> childComponents(Component component) {
+        if (component instanceof ComponentContainer<?>) {
+            return ((ComponentContainer<?>) component).getComponentList().getAll().stream()
+                .map(Component.class::cast);
+        }
+        return Stream.of();
     }
 
     public static void removeParticipantScheduleStatus(Calendar calendar) {
