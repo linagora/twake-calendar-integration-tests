@@ -1610,12 +1610,8 @@ public abstract class AlarmSchedulingContract {
     }
 
     private String readFirstAlarmTrigger(String icsContent) {
-        return icsContent.lines()
-            .map(String::trim)
-            .filter(line -> line.startsWith("TRIGGER:"))
-            .map(line -> line.substring("TRIGGER:".length()))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Expected VALARM trigger to be present"));
+        return CalendarUtil.toExtractor(icsContent)
+            .extractEventPropertyValue(Optional.empty(), Property.TRIGGER);
     }
 
     private record EmailAlarm(String trigger, Set<String> attendees) {

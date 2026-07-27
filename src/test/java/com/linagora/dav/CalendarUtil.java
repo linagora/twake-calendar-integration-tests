@@ -80,10 +80,14 @@ public class CalendarUtil {
         }
 
         public Property extractProperty(String propertyName) {
+            return extractOptionalProperty(propertyName)
+                .orElseThrow(() -> new AssertionError("Expected VEVENT " + propertyName + " to be present"));
+        }
+
+        public Optional<Property> extractOptionalProperty(String propertyName) {
             return calendar.getComponent(Component.VEVENT)
                 .flatMap(vevent -> vevent.getProperty(propertyName))
-                .map(property -> (Property) property)
-                .orElseThrow(() -> new AssertionError("Expected VEVENT " + propertyName + " to be present"));
+                .map(property -> (Property) property);
         }
 
         public String extractPropertyValue(String propertyName) {
@@ -98,9 +102,13 @@ public class CalendarUtil {
         }
 
         public Property extractEventProperty(Optional<String> recurrenceId, String propertyName) {
-            Component eventComponent = extractEventComponent(recurrenceId);
-            return findProperty(eventComponent, propertyName)
+            return extractOptionalEventProperty(recurrenceId, propertyName)
                 .orElseThrow(() -> new AssertionError("Expected " + propertyName + " to be present for recurrence " + recurrenceId));
+        }
+
+        public Optional<Property> extractOptionalEventProperty(Optional<String> recurrenceId, String propertyName) {
+            Component eventComponent = extractEventComponent(recurrenceId);
+            return findProperty(eventComponent, propertyName);
         }
 
         public String extractEventPropertyValue(Optional<String> recurrenceId, String propertyName) {
