@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.TestUtil.awaitCalendarEntries;
 import static com.linagora.dav.TestUtil.body;
 import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
@@ -29,7 +30,6 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.net.URI;
@@ -68,7 +68,6 @@ import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
-import com.linagora.dav.TestUtil;
 import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
@@ -111,8 +110,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void listCalendarsShouldShowDelegatedCalendar() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
@@ -237,16 +234,13 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @EnumSource(DelegationRight.class)
     void listCalendarsShouldShowDelegatedCalendarInDav(DelegationRight right) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // THEN a copy of bob calendar is created in Alice calendar list
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         // AND: Alice see the subscription in her calendars
         DavResponse response = execute(dockerExtension().davHttpClient()
             .headers(alice::impersonatedBasicAuth)
@@ -267,8 +261,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @EnumSource(DelegationRight.class)
     void listCalendarsShouldShowDelegatedCalendarEventsInDav(DelegationRight right) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
@@ -293,8 +285,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // THEN a copy of bob calendar is created in Alice calendar list
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         // THEN: Alice can report the event in her subscription
         DavResponse response = execute(dockerExtension().davHttpClient()
             .headers(headers -> alice.impersonatedBasicAuth(headers)
@@ -331,8 +322,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @EnumSource(DelegationRight.class)
     void bobCannotReadAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Alice has an event in her calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -392,8 +381,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @EnumSource(DelegationRight.class)
     void bobCannotUpsertInAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Alice delegates her calendar to Bob
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
@@ -425,8 +412,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @EnumSource(DelegationRight.class)
     void bobCannotDeleteInAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Alice has an event in her calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -459,8 +444,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void listCalendarsShouldNotShowDelegatedCalendarWhenDelegationHasBeenRevoked() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Alice has a copy of bob calendar is created in Alice calendar list
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
@@ -488,8 +471,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void listCalendarsShouldShowDelegatedCalendarWithReadWriteRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates read write to Alice
@@ -593,8 +574,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void listCalendarsShouldShowSharingRightOfDelegation() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
@@ -720,8 +699,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
@@ -753,8 +731,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
@@ -844,8 +821,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ_WRITE);
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
@@ -860,8 +836,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
     public void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -887,8 +861,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
 
         // THEN Bob can access the delegated calendar
-        CalendarURL calendarURL = calDavClient.findUserCalendars(bob).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(bob, alice.id());
 
         // WHEN Bob queries the event via CalDAV REPORT
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -934,8 +907,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
     public void privateOrConfidentialEventShouldBeAnonymizedInDavGet(String eventClass) {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -961,8 +932,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
 
         // THEN Bob can access the delegated calendar
-        CalendarURL calendarURL = calDavClient.findUserCalendars(bob).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(bob, alice.id());
 
         // WHEN Bob queries the event via CalDAV GET
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -1001,8 +971,7 @@ public abstract class CalDavDelegationContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
@@ -1046,8 +1015,7 @@ public abstract class CalDavDelegationContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
@@ -1081,8 +1049,7 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.deleteCalendarEvent(testUser, eventUid);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(testUser2).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
@@ -1383,8 +1350,7 @@ public abstract class CalDavDelegationContract {
         // GIVEN: Bob delegates his calendar to Alice with write rights
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL sharedCalendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL sharedCalendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
 
@@ -1410,15 +1376,12 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void putCalendarEventShouldThrowErrorWhenCopiedCalendarOnlyHasReadRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -1440,8 +1403,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void putCalendarEventShouldThrowErrorWhenSourceCalendarOnlyHasReadRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice in read-only mode
@@ -1484,16 +1445,13 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @ValueSource(strings = {"READ_WRITE", "ADMIN"})
     void aliceCanCreateEventsInReadOnlyDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
 
         // THEN a copy of bob calendar is created in Alice calendar list
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         // And: Alice cannot place an event in it
         String eventUid2 = "event-" + UUID.randomUUID();
         String calendarData2 = """
@@ -1525,15 +1483,12 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @ValueSource(strings = {"READ_WRITE", "ADMIN"})
     void upsertedEventViaDelegatedCalendarShouldAppearInOwnerSourceCalendarInDav(String param) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob delegates his calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
 
         // AND Alice gets her delegated calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice creates an event via her delegated calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -1595,8 +1550,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @ValueSource(strings = {"READ_WRITE", "ADMIN"})
     void aliceCanDeleteEventsInDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar with an event
         String eventUid = "event-" + UUID.randomUUID();
@@ -1620,8 +1573,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
 
         // THEN a copy of bob calendar is created in Alice calendar list
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice deletes the event via CalDAV using her delegated calendar
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
@@ -1637,8 +1589,6 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest
     @ValueSource(strings = {"READ_WRITE", "ADMIN"})
     void deletedEventViaDelegatedCalendarShouldBeRemovedFromOwnerSourceCalendarInDav(String param) throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has an event in his calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -1662,8 +1612,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
 
         // AND Alice gets her delegated calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice deletes the event via her delegated calendar
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
@@ -1705,8 +1654,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void deleteCalendarEventShouldThrowErrorWhenCopiedCalendarOnlyHasReadRight() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar with an event
         String eventUid = UUID.randomUUID().toString();
@@ -1725,8 +1672,7 @@ public abstract class CalDavDelegationContract {
         // AND Bob delegates that calendar to Alice with READ only
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice tries to delete the event in Bob calendar copy
         // THEN a 403 error is thrown
@@ -1736,8 +1682,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void deleteFromReadDelegatedCalendarShouldNotDeleteOriginCalendar() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar with an event
         String eventUid = UUID.randomUUID().toString();
@@ -1756,9 +1700,7 @@ public abstract class CalDavDelegationContract {
         // AND Bob delegates that calendar to Alice with READ only
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        CalendarURL mirrorCalendarURL = calDavClient.findUserCalendars(alice)
-            .filter(url -> !url.base().equals(url.calendarId()))
-            .next().block();
+        CalendarURL mirrorCalendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         URI mirrorEventUri = URI.create(mirrorCalendarURL.asUri() + "/" + eventUid + ".ics");
 
         // WHEN Alice deletes the event via the delegated mirror calendar
@@ -1791,8 +1733,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void partStatUpdateFromReadDelegatedAttendeeCalendarShouldNotPropagateToOrganizerCalendar() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser david = dockerExtension().newTestUser();
 
         // GIVEN Bob is the organizer of an event with Alice as attendee
@@ -1837,12 +1777,9 @@ public abstract class CalDavDelegationContract {
 
         // AND Alice delegates her calendar to David with READ only
         calDavClient.grantDelegation(alice, alice.id(), david, DelegationRight.READ);
-        CalendarURL delegatedCalendarURL = awaitAtMost.until(
-                () -> calDavClient.findUserCalendars(david)
-                    .filter(url -> !url.base().equals(url.calendarId()))
-                    .next().blockOptional(),
-                Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present for David"));
+        CalendarURL delegatedCalendarURL = awaitAtMost
+            .ignoreException(IllegalStateException.class)
+            .until(() -> calDavClient.findDelegatedCalendar(david, alice.id()), calendarURL -> calendarURL != null);
 
         // AND David finds the event through his delegated calendar URI
         URI delegatedEventUri = awaitAtMost.until(
@@ -1880,8 +1817,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void putCalendarEventShouldUpdateEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob has an event in his calendar
@@ -1901,8 +1836,7 @@ public abstract class CalDavDelegationContract {
         // AND Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice updates the event in Bob calendar copy
         String updatedCalendarData = TwakeCalendarEvent.builder()
@@ -1930,8 +1864,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void shouldDeleteCalendarEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob has an event in his calendar
@@ -1951,8 +1883,7 @@ public abstract class CalDavDelegationContract {
         // AND Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice deletes the event in Bob calendar copy
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
@@ -1968,16 +1899,13 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void putCalendarEventShouldSendITIPRequestWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -2013,8 +1941,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void deleteCalendarEventShouldSendITIPCancelWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
@@ -2036,8 +1962,7 @@ public abstract class CalDavDelegationContract {
         // AND Bob delegates that calendar to Alice
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice deletes the event in Bob calendar copy
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
@@ -2062,14 +1987,11 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN bob delegated his calendar to Alice in readonly mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice attempts to manage rights on her local copy
         // THEN is gets rejected
@@ -2079,14 +2001,11 @@ public abstract class CalDavDelegationContract {
 
     @Test
     public void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN bob delegated his calendar to Alice in read-write mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice attempts to manage rights on her local copy
         // THEN is gets rejected
@@ -2096,16 +2015,13 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void grantDelegationShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice in read mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice attempts to delegate her local copy to Cedric
         // THEN is gets rejected
@@ -2115,16 +2031,13 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void grantDelegationShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice in read-write mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice attempts to delegate her local copy to Cedric
         // THEN is gets rejected
@@ -2134,7 +2047,6 @@ public abstract class CalDavDelegationContract {
 
     @Test
     public void ownerShouldNotBeAbleToDelegateCalendarToThemself() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
         String calendarId = UUID.randomUUID().toString();
 
         // GIVEN Bob owns a calendar
@@ -2175,18 +2087,15 @@ public abstract class CalDavDelegationContract {
 
     @Test
     public void delegatedAdminShouldNotBeAbleToDelegateCalendarToThemself() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         String calendarId = UUID.randomUUID().toString();
 
         // GIVEN Bob owns a calendar
         // AND Alice has admin delegation on Bob's calendar
         calDavClient.createNewCalendar(bob, calendarId, "Calendar A", 2);
         calDavClient.grantDelegation(bob, calendarId, alice, DelegationRight.ADMIN);
-        CalendarURL delegatedCalendarURL = awaitAtMost.until(
-            () -> calDavClient.findDelegatedCalendar(alice).stream().findFirst(),
-            Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present"));
+        CalendarURL delegatedCalendarURL = awaitAtMost
+            .ignoreException(IllegalStateException.class)
+            .until(() -> calDavClient.findDelegatedCalendar(alice, new CalendarURL(bob.id(), calendarId)), calendarURL -> calendarURL != null);
         String bobCalendarsBeforeSelfDelegation = calDavClient.getUserCalendarsJson(bob);
         String aliceCalendarsBeforeSelfDelegation = calDavClient.getUserCalendarsJson(alice);
 
@@ -2227,15 +2136,12 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void updateCalendarAclShouldRunSuccessfullyWhenDelegatedUserHasAdminRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice in admin mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice attempts to manage rights on her local copy
         calDavClient.updateCalendarAcl(alice, calendarURL, "{DAV:}read");
@@ -2343,16 +2249,13 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void grantDelegationShouldRunSuccessfullyWhenDelegatedUserHasAdminRight() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice in admin mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice delegates her local copy to Cedric
         calDavClient.grantDelegation(alice, calendarURL.calendarId(), cedric, DelegationRight.READ);
@@ -2470,16 +2373,13 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void delegatedAdminShouldBeAbleToKeepOwnDelegationWhenDelegatingCalendar() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob delegates his calendar to Alice in admin mode
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
-        CalendarURL delegatedCalendarURL = awaitAtMost.until(
-            () -> calDavClient.findDelegatedCalendar(alice).stream().findFirst(),
-            Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected Alice delegated calendar to be present"));
+        CalendarURL delegatedCalendarURL = awaitAtMost
+            .ignoreException(IllegalStateException.class)
+            .until(() -> calDavClient.findDelegatedCalendar(alice, bob.id()), calendarURL -> calendarURL != null);
 
         // WHEN Alice delegates Bob's calendar to Cedric while keeping her existing admin delegation
         calDavClient.grantDelegations(alice, delegatedCalendarURL.calendarId(), Map.of(
@@ -2488,15 +2388,19 @@ public abstract class CalDavDelegationContract {
 
         // THEN Cedric receives the delegated calendar
         awaitAtMost.until(
-            () -> calDavClient.findDelegatedCalendar(cedric).stream().findFirst(),
+            () -> {
+                try {
+                    return Optional.of(calDavClient.findDelegatedCalendar(cedric, bob.id()));
+                } catch (IllegalStateException e) {
+                    return Optional.<CalendarURL>empty();
+                }
+            },
             Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Expected Cedric delegated calendar to be present"));
     }
 
     @Test
     void rightMetadataOfCopiedCalendarShouldBeUpdatedWhenOriginalCalendarIsUpdated() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
@@ -2606,13 +2510,10 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void delegatedUserCanUpdateSettingOfCopiedCalendar() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
 
         String response = given()
@@ -2635,13 +2536,10 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void updateNameAndColorOfCopiedCalendarShouldNotAffectOriginalCalendar() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
 
         String response = given()
@@ -2664,13 +2562,10 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void updateNameOfOriginalCalendarShouldUpdateUncustomizedCopiedCalendarName() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
 
-        CalendarURL delegatedCalendar = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL delegatedCalendar = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         calDavClient.updateCalendarSetting(bob, CalendarURL.from(bob.id()), "new name", "#009688");
 
@@ -2706,8 +2601,7 @@ public abstract class CalDavDelegationContract {
         String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
         delegateResourceToAdmin(resource, bob, technicalToken);
 
-        CalendarURL delegatedResourceCalendar = calDavClient.findUserCalendars(bob).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL delegatedResourceCalendar = calDavClient.findDelegatedCalendar(bob, resource.id());
 
         calDavClient.updateCalendarSetting(technicalToken, CalendarURL.from(resource.id()), "Renamed Resource Calendar", "#009688");
 
@@ -2770,20 +2664,15 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
 
-        // GIVEN: Fetch Bob's delegated resource calendar URL
-        CalendarURL resourceCalendarURL = calDavClient.findUserCalendars(bob)
-            .filter(url -> !url.base().equals(url.calendarId()))
-            .next().blockOptional()
-            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
-
         // WHEN: Bob locates the event in the resource calendar
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+        URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
 
         // THEN: Bob can retrieve the event via GET
         DavResponse getResponse = execute(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .get()
-            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics"));
+            .uri(resourceEventUri.toASCIIString()));
 
         assertThat(getResponse.status()).isEqualTo(200);
         assertThat(getResponse.body()).contains(eventUid);
@@ -2795,7 +2684,7 @@ public abstract class CalDavDelegationContract {
         int updateStatusCode = executeNoContent(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .put()
-            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics")
+            .uri(resourceEventUri.toASCIIString())
             .send(body(updatedEventIcs)));
 
         assertThat(updateStatusCode).isEqualTo(204);
@@ -2804,7 +2693,7 @@ public abstract class CalDavDelegationContract {
         DavResponse verifyResponse = execute(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .get()
-            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics"));
+            .uri(resourceEventUri.toASCIIString()));
 
         assertThat(verifyResponse.status()).isEqualTo(200);
         assertThat(verifyResponse.body())
@@ -2848,25 +2737,20 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
 
-        // GIVEN: Fetch Bob's delegated resource calendar URL
-        CalendarURL resourceCalendarURL = calDavClient.findUserCalendars(bob)
-            .filter(url -> !url.base().equals(url.calendarId()))
-            .next().blockOptional()
-            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
-
         // WHEN: Bob updates the resource participation status to ACCEPTED
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+        URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
         DavResponse getResponse = execute(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .get()
-            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics"));
+            .uri(resourceEventUri.toASCIIString()));
 
         String updatedEventIcs = getResponse.body()
             .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
         executeNoContent(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .put()
-            .uri(resourceCalendarURL.asUri().toASCIIString() + "/" + resourceEventId + ".ics")
+            .uri(resourceEventUri.toASCIIString())
             .send(body(updatedEventIcs)));
 
         // THEN: Verify that Alice sees the updated participation status of the resource
@@ -2884,7 +2768,7 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
-    void resourceAdminCanSendItipCounterViaResourceCalendarUri() {
+    void resourceAdminCanSendItipCounterViaResourceEventUri() {
         // GIVEN: a resource "whiteboard" with Bob as administrator
         OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
@@ -2918,6 +2802,8 @@ public abstract class CalDavDelegationContract {
             """.formatted(eventUid, alice.email(), resource.id());
 
         calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
+        String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
+        URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
 
         // WHEN: Bob (resource admin) sends an ITIP COUNTER on behalf of the resource
         String counterIcal = """
@@ -2946,9 +2832,20 @@ public abstract class CalDavDelegationContract {
             .method("COUNTER")
             .buildJson();
 
-        assertThatCode(() ->
-            calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + resource.id()), counterJsonBody).block())
-            .doesNotThrowAnyException();
+        Map.Entry<Integer, String> postResponse = dockerExtension().davHttpClient()
+            .headers(bob::impersonatedBasicAuth)
+            .headers(header -> header.add("Accept", "application/json, text/plain, */*")
+                .add("Content-Type", "application/calendar+json"))
+            .request(HttpMethod.valueOf("ITIP"))
+            .uri(resourceEventUri.toASCIIString())
+            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, content) ->
+                content.asString().defaultIfEmpty("").map(body -> Map.entry(response.status().code(), body)))
+            .block();
+
+        assertThat(postResponse.getKey())
+            .as("POST COUNTER request by resource admin should succeed")
+            .isIn(200, 202, 204);
 
         // THEN: Alice should receive the COUNTER request in her inbox
         String aliceInboxUri = "/calendars/" + alice.id() + "/inbox/";
@@ -3007,16 +2904,12 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
 
         // GIVEN: Bob's delegated resource calendar URL and event href
-        CalendarURL resourceCalendarUrl = calDavClient.findUserCalendars(bob)
-            .filter(url -> !url.base().equals(url.calendarId()))
-            .next().blockOptional()
-            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
-
-        List<String> propfindHrefs = TestUtil.awaitCalendarEntries(
+        CalendarURL resourceCalendarUrl = calDavClient.findDelegatedCalendar(bob, resource.id());
+        List<String> propfindHrefs = awaitCalendarEntries(
             dockerExtension().davHttpClient(),
             bob, resourceCalendarUrl.asUri().toString(), 1);
 
-        // WHEN: Bob (resource admin) sends ITIP COUNTER via calendar URI
+        // WHEN: Bob (resource admin) sends ITIP COUNTER via delegated calendar event URI
         String counterIcal = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -3113,26 +3006,21 @@ public abstract class CalDavDelegationContract {
             """.formatted(eventUid, alice.email(), resource.id());
         calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
 
-        CalendarURL resourceCalendarUrl = calDavClient.findUserCalendars(bob)
-            .filter(url -> !url.base().equals(url.calendarId()))
-            .next().blockOptional()
-            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
-
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
-        URI delegatedEventUri = URI.create(resourceCalendarUrl.asUri().toASCIIString() + "/" + resourceEventId + ".ics");
+        URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
 
         // sanity check: PUT works before revocation
         DavResponse initialGetResponse = execute(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .get()
-            .uri(delegatedEventUri.toASCIIString()));
+            .uri(resourceEventUri.toASCIIString()));
         assertThat(initialGetResponse.status()).isEqualTo(200);
 
         String acceptedEventIcs = initialGetResponse.body().replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
         Supplier<Integer> putAsDelegatedResourceAdmin = () -> executeNoContent(dockerExtension().davHttpClient()
             .headers(bob::impersonatedBasicAuth)
             .put()
-            .uri(delegatedEventUri.toASCIIString())
+            .uri(resourceEventUri.toASCIIString())
             .send(body(acceptedEventIcs)));
 
         int putBeforeRevokeStatus = putAsDelegatedResourceAdmin.get();
@@ -3187,13 +3075,8 @@ public abstract class CalDavDelegationContract {
             """.formatted(eventUid, alice.email(), resource.id());
         calDavClient.upsertCalendarEvent(alice, eventUid, eventIcs);
 
-        CalendarURL resourceCalendarUrl = calDavClient.findUserCalendars(bob)
-            .filter(url -> !url.base().equals(url.calendarId()))
-            .next().blockOptional()
-            .orElseThrow(() -> new AssertionError("Bob has no delegated resource calendar"));
-
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
-        URI delegatedEventUri = URI.create(resourceCalendarUrl.asUri().toASCIIString() + "/" + resourceEventId + ".ics");
+        URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
 
         String counterIcal = """
             BEGIN:VCALENDAR
@@ -3227,7 +3110,7 @@ public abstract class CalDavDelegationContract {
             .headers(header -> header.add("Accept", "application/json, text/plain, */*")
                 .add("Content-Type", "application/calendar+json"))
             .request(HttpMethod.valueOf("ITIP"))
-            .uri(delegatedEventUri.toASCIIString())
+            .uri(resourceEventUri.toASCIIString())
             .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, content) -> Mono.just(response.status().code()))
             .block();
@@ -3274,15 +3157,12 @@ public abstract class CalDavDelegationContract {
 
     @Test
     protected void readOnlyDelegatedCalendarShouldOnlyAdvertiseReadPrivileges() {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice with read-only rights
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice PROPFIND the delegated calendar with current-user-privilege-set property
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -3307,15 +3187,12 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void readWriteDelegatedCalendarShouldAdvertiseWritePrivileges() {
-        OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser alice = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice with read-write rights
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice PROPFIND the delegated calendar with current-user-privilege-set property
         DavResponse response = execute(dockerExtension().davHttpClient()
@@ -3355,8 +3232,7 @@ public abstract class CalDavDelegationContract {
         assertThat(jsonAliceCalendars)
             .contains("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
 
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // AND Alice's calendar list (XML response) contains the delegated calendar copy
         List<String> xmlAliceCalendars = getXmlCalendars(alice);
@@ -3382,8 +3258,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
         // WHEN Alice deletes the calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         calDavClient.deleteCalendar(alice, calendarURL);
 
         // AND Bob's calendar invite still shows Alice with her original delegation access
@@ -3421,8 +3296,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
         // AND Alice deletes the calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         calDavClient.deleteCalendar(alice, calendarURL);
 
         // WHEN Alice re-subscribes to Bob's calendar
@@ -3451,8 +3325,10 @@ public abstract class CalDavDelegationContract {
             END:VEVENT
             END:VCALENDAR
             """.formatted(eventUid);
-        List<CalendarURL> calendarUrls = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).toList();
+        List<CalendarURL> calendarUrls = calDavClient.findUserCalendars(alice)
+            .filter(url -> !url.calendarId().equals(alice.id()))
+            .collectList()
+            .block();
         assertThat(calendarUrls).hasSize(1);
         calDavClient.upsertCalendarEvent(alice, calendarUrls.getFirst(), eventUid, calendarData);
 
@@ -3487,8 +3363,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, bobEventData);
 
         // AND Alice deletes the calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         calDavClient.deleteCalendar(alice, calendarURL);
 
         // AND Bob revokes Alice's delegation
@@ -3503,16 +3378,11 @@ public abstract class CalDavDelegationContract {
             .color("#FF0000")
             .readOnly(true)
             .build();
-        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+        CalendarURL subscribedCalendarURL = calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
 
         // THEN Bob's delegated list does not show Alice with write access
         String bobCalendarsResponse = calDavClient.getUserCalendarsJson(bob);
         assertThat(bobCalendarsResponse).doesNotContain(alice.id());
-
-        List<CalendarURL> calendarUrls = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).toList();
-        assertThat(calendarUrls).hasSize(1);
-        CalendarURL subscribedCalendarURL = calendarUrls.getFirst();
 
         // AND Alice can read Bob's calendar via the subscription
         DavResponse readResponse = calDavClient.findEventsByTime(alice, subscribedCalendarURL, "20300310T000000", "20300510T000000");
@@ -3547,8 +3417,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
 
         // AND Alice deletes the calendar copy
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.calendarId().equals(alice.id())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         calDavClient.deleteCalendar(alice, calendarURL);
 
         // WHEN Alice re-subscribes to Bob's calendar

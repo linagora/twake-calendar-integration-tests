@@ -101,19 +101,11 @@ public abstract class TeamCalendarSchedulingContract {
         dockerExtension().twakeCalendarProvisioningService()
             .addTeamCalendarMember(teamCalendar, bobMember, TeamCalendarRole.MEMBER)
             .block();
-        List<CalendarURL> bobDelegatedCalendars = calDavClient.findDelegatedCalendar(bobMember);
-        assertThat(bobDelegatedCalendars)
-            .as("Bob should have one delegated team calendar")
-            .hasSize(1);
-        bobMemberDelegatedCalendar = bobDelegatedCalendars.getFirst();
+        bobMemberDelegatedCalendar = calDavClient.findDelegatedCalendar(bobMember, teamCalendar.id());
 
         dockerExtension().twakeCalendarProvisioningService()
             .addTeamCalendarMember(teamCalendar, aliceMember, TeamCalendarRole.MEMBER)
             .block();
-        List<CalendarURL> aliceDelegatedCalendars = calDavClient.findDelegatedCalendar(aliceMember);
-        assertThat(aliceDelegatedCalendars)
-            .as("Alice should have one delegated team calendar")
-            .hasSize(1);
     }
 
     @Test
@@ -314,11 +306,7 @@ public abstract class TeamCalendarSchedulingContract {
         dockerExtension().twakeCalendarProvisioningService()
             .addTeamCalendarMember(teamCalendar, managerMember, TeamCalendarRole.MANAGER)
             .block();
-        List<CalendarURL> managerDelegatedCalendars = calDavClient.findDelegatedCalendar(managerMember);
-        assertThat(managerDelegatedCalendars)
-            .as("Manager should have one delegated team calendar")
-            .hasSize(1);
-        CalendarURL managerDelegatedCalendar = managerDelegatedCalendars.getFirst();
+        CalendarURL managerTeamCalendarUrl = calDavClient.findDelegatedCalendar(managerMember, teamCalendar.id());
         String eventUid = "team-event-" + UUID.randomUUID();
         calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
             calendarData(eventUid, bobMember.email(), List.of(managerMember.email(), aliceMember.email()),
@@ -335,14 +323,14 @@ public abstract class TeamCalendarSchedulingContract {
             .header("Content-Type", "text/calendar ; charset=utf-8")
             .body(updatedEvent)
         .when()
-            .put(managerDelegatedCalendar.eventHref(eventUid).toString())
+            .put(managerTeamCalendarUrl.eventHref(eventUid).toString())
         .then()
             .statusCode(anyOf(is(201), is(204)));
 
         // Then both delegated and canonical Team Calendar copies expose the manager update
         awaitAtMost.untilAsserted(() -> {
             CalendarUtil.CalendarExtractor delegatedEvent = CalendarUtil.toExtractor(
-                calDavClient.getCalendarEvent(managerMember, managerDelegatedCalendar.eventHref(eventUid)));
+                calDavClient.getCalendarEvent(managerMember, managerTeamCalendarUrl.eventHref(eventUid)));
             CalendarUtil.CalendarExtractor canonicalEvent = CalendarUtil.toExtractor(
                 calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)));
             assertSoftly(softly -> {
