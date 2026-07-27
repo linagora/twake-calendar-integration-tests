@@ -20,7 +20,6 @@ package com.linagora.dav;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -119,11 +118,34 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin) {
-        return createResource(name, description, admin, openPaasDomain().getObjectId("_id"));
+        return createResource(name, description, admin, DEFAULT_DOMAIN);
     }
 
     public Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, String domainName) {
-        return createResource(name, description, admin, createDomainIfNotExists(domainName).getObjectId("_id"));
+        createDomainIfNotExists(domainName);
+
+        return httpClient.headers(headers -> headers.add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
+            .post()
+            .uri("/domains/" + domainName + "/resources")
+            .send(Mono.just(Unpooled.wrappedBuffer(OBJECT_MAPPER.createObjectNode()
+                .put("name", name)
+                .put("description", description)
+                .put("icon", "home")
+                .put("creator", admin.email())
+                .set("administrators", OBJECT_MAPPER.createArrayNode()
+                    .add(OBJECT_MAPPER.createObjectNode()
+                        .put("email", admin.email())))
+                .toString().getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> responseContent.asString(StandardCharsets.UTF_8)
+                .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                .flatMap(responseBody -> {
+                    if (response.status().code() == 201) {
+                        String resourceId = StringUtils.substringAfterLast(response.responseHeaders().get(HttpHeaderNames.LOCATION), "/");
+                        return getResource(domainName, resourceId);
+                    }
+                    return Mono.error(new RuntimeException("Failed to create resource through webadmin:"
+                        + response.status().code() + " " + responseBody));
+                }));
     }
 
     public Mono<OpenPaaSTeamCalendar> createTeamCalendar(String name, String displayName) {
@@ -190,30 +212,27 @@ public class TwakeCalendarProvisioningService {
             });
     }
 
-    private Mono<OpenPaaSResource> createResource(String name, String description, OpenPaasUser admin, ObjectId domainId) {
-        Document resourceToSave = new Document()
-            .append("name", name)
-            .append("description", description)
-            .append("type", "resource")
-            .append("icon", "home")
-            .append("deleted", false)
-            .append("domain", domainId)
-            .append("creator", new ObjectId(admin.id()))
-            .append("administrators", List.of(new Document()
-                .append("id", admin.id())
-                .append("objectType", "user")))
-            .append("timestamps", new Document()
-                .append("creation", Date.from(Instant.now()))
-                .append("updatedAt", Date.from(Instant.now())));
+    private Mono<OpenPaaSResource> getResource(String domainName, String resourceId) {
+        return httpClient.headers(headers -> headers.add(HttpHeaderNames.ACCEPT, "application/json"))
+            .get()
+            .uri("/domains/" + domainName + "/resources/" + resourceId)
+            .responseSingle((response, responseContent) -> responseContent.asString(StandardCharsets.UTF_8)
+                .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                .flatMap(responseBody -> {
+                    if (response.status().code() == 200) {
+                        return parseResource(responseBody);
+                    }
+                    return Mono.error(new RuntimeException("Failed to get resource through webadmin:"
+                        + response.status().code() + " " + responseBody));
+                }));
+    }
 
-        return Mono.from(database.getCollection("resources").insertOne(resourceToSave))
-            .flatMap(success -> Mono.from(
-                database.getCollection("resources").find(new Document("_id", success.getInsertedId())).first()))
-            .map(doc -> new OpenPaaSResource(
-                doc.getObjectId("_id").toString(),
-                doc.getString("name"),
-                doc.getString("description")
-            ));
+    private Mono<OpenPaaSResource> parseResource(String responseBody) {
+        return Mono.fromCallable(() -> OBJECT_MAPPER.readTree(responseBody))
+            .map(json -> new OpenPaaSResource(
+                json.path("id").asText(),
+                json.path("name").asText(),
+                json.path("description").asText()));
     }
 
     public String generateToken() {
