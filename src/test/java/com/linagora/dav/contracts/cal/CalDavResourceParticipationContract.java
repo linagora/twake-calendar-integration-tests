@@ -93,12 +93,7 @@ public abstract class CalDavResourceParticipationContract {
         String eventUid = UUID.randomUUID().toString();
         calDavClient.upsertCalendarEvent(organizer, eventUid, generateCalendarData(eventUid, organizer.email(), resource.id(), "NEEDS-ACTION"));
 
-        CalendarURL mirrorCalendarURL = awaitAtMost.until(() -> calDavClient.findUserCalendars(resourceAdmin)
-                    .filter(url -> !url.base().equals(url.calendarId()))
-                    .next()
-                    .blockOptional(),
-                Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Resource administrator has no delegated resource calendar"));
+        CalendarURL mirrorCalendarURL = calDavClient.findDelegatedCalendar(resourceAdmin, resource.id());
         URI mirrorEventUri = awaitAtMost.until(
                 () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(resourceAdmin, mirrorCalendarURL, eventUid),
                 Optional::isPresent)
