@@ -80,10 +80,14 @@ public class CalendarUtil {
         }
 
         public Property extractProperty(String propertyName) {
+            return extractOptionalProperty(propertyName)
+                .orElseThrow(() -> new AssertionError("Expected VEVENT " + propertyName + " to be present"));
+        }
+
+        public Optional<Property> extractOptionalProperty(String propertyName) {
             return calendar.getComponent(Component.VEVENT)
                 .flatMap(vevent -> vevent.getProperty(propertyName))
-                .map(property -> (Property) property)
-                .orElseThrow(() -> new AssertionError("Expected VEVENT " + propertyName + " to be present"));
+                .map(property -> (Property) property);
         }
 
         public String extractPropertyValue(String propertyName) {
@@ -98,9 +102,13 @@ public class CalendarUtil {
         }
 
         public Property extractEventProperty(Optional<String> recurrenceId, String propertyName) {
-            Component eventComponent = extractEventComponent(recurrenceId);
-            return findProperty(eventComponent, propertyName)
+            return extractOptionalEventProperty(recurrenceId, propertyName)
                 .orElseThrow(() -> new AssertionError("Expected " + propertyName + " to be present for recurrence " + recurrenceId));
+        }
+
+        public Optional<Property> extractOptionalEventProperty(Optional<String> recurrenceId, String propertyName) {
+            Component eventComponent = extractEventComponent(recurrenceId);
+            return findProperty(eventComponent, propertyName);
         }
 
         public String extractEventPropertyValue(Optional<String> recurrenceId, String propertyName) {
@@ -190,14 +198,21 @@ public class CalendarUtil {
 
     public static void removePropertiesFromComponents(Calendar calendar, String componentName, String... propertyNames) {
         calendar.getComponents().stream()
-            .filter(ComponentContainer.class::isInstance)
-            .flatMap(component -> ((ComponentContainer<?>) component).getComponentList().getAll().stream())
+            .flatMap(component -> Stream.concat(Stream.of(component), childComponents(component)))
             .filter(component -> componentName.equals(component.getName()))
             .forEach(component -> {
                 for (String propertyName : propertyNames) {
                     component.removeAll(propertyName);
                 }
             });
+    }
+
+    private static Stream<Component> childComponents(Component component) {
+        if (component instanceof ComponentContainer<?>) {
+            return ((ComponentContainer<?>) component).getComponentList().getAll().stream()
+                .map(Component.class::cast);
+        }
+        return Stream.of();
     }
 
     public static void removeParticipantScheduleStatus(Calendar calendar) {

@@ -81,10 +81,7 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
-import net.fortuna.ical4j.model.Calendar;
-import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
-import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.javacrumbs.jsonunit.core.Option;
 import reactor.core.publisher.Mono;
@@ -926,13 +923,12 @@ public abstract class CalDavDelegationContract {
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(calendarDataResponse);
-        VEvent event = (VEvent) actualCalendar.getComponent(Component.VEVENT).get();
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(calendarDataResponse);
 
         // The event should be anonymized: SUMMARY = "Busy", no DESCRIPTION, no LOCATION
-        assertThat(event.getProperty(Property.SUMMARY).get().getValue()).isEqualTo("Busy");
-        assertThat(event.getProperty(Property.DESCRIPTION)).isEmpty();
-        assertThat(event.getProperty(Property.LOCATION)).isEmpty();
+        assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
     }
 
     @ParameterizedTest
@@ -977,13 +973,12 @@ public abstract class CalDavDelegationContract {
         assertThat(response.status()).isEqualTo(200);
 
         // THEN Bob sees an anonymized version of the event
-        Calendar actualCalendar = CalendarUtil.parseIcs(response.body());
-        VEvent event = (VEvent) actualCalendar.getComponent(Component.VEVENT).get();
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(response.body());
 
         // The event should be anonymized: SUMMARY = "Busy", no DESCRIPTION, no LOCATION
-        assertThat(event.getProperty(Property.SUMMARY).get().getValue()).isEqualTo("Busy");
-        assertThat(event.getProperty(Property.DESCRIPTION)).isEmpty();
-        assertThat(event.getProperty(Property.LOCATION)).isEmpty();
+        assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
     }
 
     @Test
@@ -1591,11 +1586,10 @@ public abstract class CalDavDelegationContract {
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
-        Calendar actualCalendar = CalendarUtil.parseIcs(calendarDataResponse);
-        VEvent event = (VEvent) actualCalendar.getComponent(Component.VEVENT).get();
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(calendarDataResponse);
 
-        assertThat(event.getProperty(Property.UID).get().getValue()).isEqualTo(eventUid);
-        assertThat(event.getProperty(Property.SUMMARY).get().getValue()).isEqualTo("Alice created event");
+        assertThat(actualCalendar.extractPropertyValue(Property.UID)).isEqualTo(eventUid);
+        assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Alice created event");
     }
 
     @ParameterizedTest
