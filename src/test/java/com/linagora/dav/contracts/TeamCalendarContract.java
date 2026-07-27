@@ -23,7 +23,6 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -1022,11 +1021,7 @@ public abstract class TeamCalendarContract {
     private CalendarURL delegateTeamCalendarTo(OpenPaaSTeamCalendar teamCalendar, OpenPaasUser user, DelegationRight right) {
         String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
         calDavClient.grantDelegation(teamCalendar.id(), user, right, technicalToken);
-        List<CalendarURL> delegatedCalendars = calDavClient.findDelegatedCalendar(user);
-        assertThat(delegatedCalendars)
-            .as("User should have one delegated team calendar")
-            .hasSize(1);
-        return delegatedCalendars.getFirst();
+        return calDavClient.findDelegatedCalendar(user, teamCalendar.id());
     }
 
     private void updateTeamCalendarDisplayName(OpenPaaSTeamCalendar teamCalendar, String displayName) {

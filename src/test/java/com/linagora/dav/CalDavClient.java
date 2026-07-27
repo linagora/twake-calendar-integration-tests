@@ -29,6 +29,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -869,8 +870,29 @@ public class CalDavClient {
     }
 
     public List<CalendarURL> findDelegatedCalendar(OpenPaasUser openPaaSUser) {
+        return findDelegatedCalendar(openPaaSUser, calendarNode -> true);
+    }
+
+    public CalendarURL findDelegatedCalendar(OpenPaasUser openPaaSUser, String sourceCalendarId) {
+        return findDelegatedCalendar(openPaaSUser, CalendarURL.from(sourceCalendarId));
+    }
+
+    public CalendarURL findDelegatedCalendar(OpenPaasUser openPaaSUser, CalendarURL sourceCalendarURL) {
+        String delegatedSource = StringUtils.removeEnd(sourceCalendarURL.asUri().toString(), "/");
+        List<CalendarURL> delegatedCalendars = findDelegatedCalendar(openPaaSUser,
+            calendarNode -> delegatedSource.equals(StringUtils.removeEnd(StringUtils.removeEnd(calendarNode.path("calendarserver:delegatedsource").asText(), ".json"), "/")));
+
+        if (delegatedCalendars.size() != 1) {
+            throw new IllegalStateException("Expected exactly one delegated calendar for source %s and user %s, but found %d"
+                .formatted(delegatedSource, openPaaSUser.email(), delegatedCalendars.size()));
+        }
+        return delegatedCalendars.getFirst();
+    }
+
+    private List<CalendarURL> findDelegatedCalendar(OpenPaasUser openPaaSUser, Predicate<JsonNode> additionalFilter) {
         return findUserCalendarsWithOptions(openPaaSUser, openPaaSUser.id(), true, true, true, true)
             .filter(calendarNode -> calendarNode.has("calendarserver:delegatedsource"))
+            .filter(additionalFilter)
             .map(calendarNode -> calendarNode.path("_links").path("self").path("href").asText())
             .filter(href -> !href.isEmpty())
             .map(this::parseCalendarHref)

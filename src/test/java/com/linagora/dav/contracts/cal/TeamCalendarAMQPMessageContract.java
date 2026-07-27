@@ -24,7 +24,6 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -180,11 +179,7 @@ public abstract class TeamCalendarAMQPMessageContract {
     private CalendarURL delegateTeamCalendarTo(OpenPaaSTeamCalendar teamCalendar, OpenPaasUser user, DelegationRight right) {
         String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
         calDavClient.grantDelegation(teamCalendar.id(), user, right, technicalToken);
-        List<CalendarURL> delegatedCalendars = calDavClient.findDelegatedCalendar(user);
-        assertThat(delegatedCalendars)
-            .as("User should have one delegated team calendar")
-            .hasSize(1);
-        return delegatedCalendars.getFirst();
+        return calDavClient.findDelegatedCalendar(user, teamCalendar.id());
     }
 
     private BlockingQueue<JsonNode> listenToFreshQueue(String queuePrefix, String exchange) throws IOException {

@@ -1938,10 +1938,7 @@ public abstract class CalendarSharingContract {
             .readOnly(true)
             .build();
 
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
         calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
 
         List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
@@ -1965,10 +1962,7 @@ public abstract class CalendarSharingContract {
             .readOnly(true)
             .build();
 
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
         calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
 
         String response = given()
@@ -2258,8 +2252,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // WHEN: alice deletes the calendar copy created by delegation
-        CalendarURL calendarURL = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, resource.id());
         calDavClient.deleteCalendar(alice, calendarURL);
 
         // AND: Alice subscribes to the resource calendar again
@@ -2271,15 +2264,22 @@ public abstract class CalendarSharingContract {
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
-        CalendarURL newCalendarUrl = calDavClient.findUserCalendars(alice).collectList().block()
-            .stream().filter(url -> !url.base().equals(url.calendarId())).findAny().get();
+        CalendarURL newCalendarUrl = calDavClient.findUserCalendars(alice)
+            .filter(url -> !url.base().equals(url.calendarId()))
+            .next()
+            .blockOptional()
+            .orElseThrow();
 
         // THEN: the resource participation in the event should be updated successfully by alice
-        List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, newCalendarUrl.asUri().toString(),
-                Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
-            .collectList().block();
+        JsonNode aliceEvent = awaitAtMost.until(() -> calDavClient.reportCalendarEvents(alice, newCalendarUrl.asUri().toString(),
+                    Instant.parse("2024-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"))
+                .collectList().block()
+                .stream()
+                .filter(eventNode -> eventNode.toString().contains(eventUid))
+                .findFirst(),
+            Optional::isPresent).get();
 
-        String eventHref = aliceEvents.getFirst().path("_links").path("self").path("href").asText();
+        String eventHref = aliceEvent.path("_links").path("self").path("href").asText();
         String modifiedICS = calendarData.replace(
             "ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=resource:mailto:" + resource.id() + "@open-paas.org",
             "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=resource:mailto:" + resource.id() + "@open-paas.org");
