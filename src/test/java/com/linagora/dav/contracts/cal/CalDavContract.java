@@ -75,10 +75,8 @@ import com.linagora.dav.XMLUtil;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
-import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
-import net.fortuna.ical4j.model.parameter.ScheduleStatus;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient.RequestSender;
 import reactor.netty.http.client.HttpClientResponse;
@@ -1872,10 +1870,9 @@ public abstract class CalDavContract {
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav")
         );
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        actualCalendar.removeAll(Property.PRODID);
-
-        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+        assertThatCalendar(CalendarUtil.parseIcs(actual))
+            .ignoringProperties(Property.PRODID)
+            .isEqualTo(CalendarUtil.parseIcs("""
             BEGIN:VCALENDAR
             VERSION:2.0
             CALSCALE:GREGORIAN
@@ -1899,7 +1896,7 @@ public abstract class CalDavContract {
             SEQUENCE:0
             END:VEVENT
             END:VCALENDAR
-            """);
+            """));
     }
 
     @Test
@@ -2168,11 +2165,9 @@ public abstract class CalDavContract {
                 Map.of("cal", "urn:ietf:params:xml:ns:caldav")
             );
 
-            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-            Calendar expectedCalendar = CalendarUtil.parseIcs(updatedCalendarData);
-            expectedCalendar.getComponent(Component.VEVENT).get().getProperty(Property.ATTENDEE).get().add(new ScheduleStatus("2.0"));
-
-            assertThat(actualCalendar).isEqualTo(expectedCalendar);
+            assertThatCalendar(CalendarUtil.parseIcs(actual))
+                .ignoringParticipantScheduleStatus()
+                .isEqualTo(CalendarUtil.parseIcs(updatedCalendarData));
         });
     }
 
@@ -2241,10 +2236,9 @@ public abstract class CalDavContract {
                 Map.of("cal", "urn:ietf:params:xml:ns:caldav")
             );
 
-            Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-            CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-
-            assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+            assertThatCalendar(CalendarUtil.parseIcs(actual))
+                .ignoringParticipantScheduleStatus()
+                .isEqualTo(CalendarUtil.parseIcs("""
                 BEGIN:VCALENDAR
                 VERSION:2.0
                 PRODID:-//Sabre//Sabre VObject 4.1.3//EN
@@ -2274,7 +2268,7 @@ public abstract class CalDavContract {
                 END:VCALENDAR
                 """.replace("{eventUid}", eventUid)
                 .replace("{organizerEmail}", testUser.email())
-                .replace("{attendeeEmail}", testUser2.email()));
+                .replace("{attendeeEmail}", testUser2.email())));
         });
     }
 
@@ -2305,12 +2299,11 @@ public abstract class CalDavContract {
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
 
         String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        actualCalendar.removeAll(Property.PRODID);
-        actualCalendar.getComponent(Component.VEVENT).get().removeAll(Property.DTSTAMP);
-        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-
-        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+        assertThatCalendar(CalendarUtil.parseIcs(actual))
+            .ignoringProperties(Property.PRODID)
+            .ignoringPropertiesInComponents(Component.VEVENT, Property.DTSTAMP)
+            .ignoringParticipantScheduleStatus()
+            .isEqualTo(CalendarUtil.parseIcs("""
             BEGIN:VCALENDAR
             VERSION:2.0
             CALSCALE:GREGORIAN
@@ -2340,7 +2333,7 @@ public abstract class CalDavContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
-            .replace("{resourceId}", resource.id()));
+            .replace("{resourceId}", resource.id())));
     }
 
     @Test
@@ -2460,11 +2453,10 @@ public abstract class CalDavContract {
         calDavClient.upsertCalendarEvent(resource.id(), resourceEventId, updatedCalendarData, token);
 
         String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
-        Calendar actualCalendar = CalendarUtil.parseIcs(actual);
-        actualCalendar.removeAll(Property.PRODID);
-        CalendarUtil.removeParticipantScheduleStatus(actualCalendar);
-
-        assertThat(actualCalendar.toString()).isEqualToNormalizingNewlines("""
+        assertThatCalendar(CalendarUtil.parseIcs(actual))
+            .ignoringProperties(Property.PRODID)
+            .ignoringParticipantScheduleStatus()
+            .isEqualTo(CalendarUtil.parseIcs("""
             BEGIN:VCALENDAR
             VERSION:2.0
             CALSCALE:GREGORIAN
@@ -2495,7 +2487,7 @@ public abstract class CalDavContract {
             """.replace("{eventUid}", eventUid)
             .replace("{organizerEmail}", testUser.email())
             .replace("{attendeeEmail}", testUser2.email())
-            .replace("{resourceId}", resource.id()));
+            .replace("{resourceId}", resource.id())));
     }
 
     @Test
