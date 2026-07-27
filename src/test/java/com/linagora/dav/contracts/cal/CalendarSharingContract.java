@@ -338,9 +338,8 @@ public abstract class CalendarSharingContract {
             .build();
 
         // WHEN: Alice subscribes to Bob's calendar
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: Alice see the subscription in her calendars
         DavResponse response = execute(extension().davHttpClient()
@@ -372,9 +371,8 @@ public abstract class CalendarSharingContract {
             .build();
 
         // WHEN: Alice subscribes to Bob's calendar
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: the subscription do not contain event
         DavResponse response = execute(extension().davHttpClient()
@@ -400,9 +398,8 @@ public abstract class CalendarSharingContract {
             .build();
 
         // WHEN: Alice subscribes to Bob's calendar
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: the subscription is listed
         DavResponse response = execute(extension().davHttpClient()
@@ -453,9 +450,8 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // WHEN: Alice subscribes to Bob's calendar
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: Alice can report the event in her subscription
         DavResponse response = execute(extension().davHttpClient()
@@ -524,9 +520,8 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // WHEN: Alice subscribes to Bob's calendar
-        calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         calDavClient.updateCalendarAcl(bob, "");
 
@@ -3103,10 +3098,8 @@ public abstract class CalendarSharingContract {
             .name("Bob's calendar")
             .color("#FF0000")
             .build();
-        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
-
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice does PROPFIND on the subscribed calendar
         DavResponse response = execute(extension().davHttpClient()
@@ -3143,10 +3136,8 @@ public abstract class CalendarSharingContract {
             .name("Bob's readonly calendar")
             .color("#FF0000")
             .build();
-        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
-
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
         DavResponse response = execute(extension().davHttpClient()
@@ -3188,10 +3179,8 @@ public abstract class CalendarSharingContract {
             .name("projector resource calendar")
             .color("#FF0000")
             .build();
-        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
-
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
         DavResponse response = execute(extension().davHttpClient()
@@ -3230,10 +3219,8 @@ public abstract class CalendarSharingContract {
             .name("Bob's writable calendar")
             .color("#FF0000")
             .build();
-        calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
-
-        List<JsonNode> subscribedList = calDavClient.findUserSubscribedCalendars(alice).collectList().block();
-        String sharedCalendarPath = subscribedList.get(0).get("_links").get("self").get("href").asText().replace(".json", "");
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+        String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
         DavResponse response = execute(extension().davHttpClient()
