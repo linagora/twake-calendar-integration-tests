@@ -28,6 +28,7 @@ import static com.linagora.dav.contracts.cal.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -1791,6 +1792,88 @@ public abstract class CalDavDelegationContract {
         // THEN is gets rejected
         assertThatThrownBy(() -> calDavClient.grantDelegation(alice, calendarURL.calendarId(), cedric, DelegationRight.READ))
             .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegatedUserCannotUpdateCalendarAclViaOwnerCanonicalUrl(DelegationRight right) {
+
+        // GIVEN Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+
+        // WHEN Alice attempts to manage Bob source calendar directly
+        assertThatThrownBy(() -> calDavClient.updateCalendarAcl(alice, CalendarURL.from(bob.id()), "{DAV:}read"))
+            .hasMessageContaining("Unexpected status code: 403 when updating ACL for calendar");
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        // THEN Bob source calendar ACL is not changed by Alice direct canonical URL access
+        assertThat(response)
+            .doesNotContain("\"privilege\":\"{DAV:}read\",\"principal\":\"{DAV:}authenticated\"");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegatedUserCannotGrantDelegationViaOwnerCanonicalUrl(DelegationRight right) {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+
+        String payload = """
+            {
+              "share": {
+                "set": [
+                  {
+                    "dav:href": "mailto:{email}",
+                    "dav:read": true
+                  }
+                ],
+                "remove": []
+              }
+            }
+            """.replace("{email}", cedric.email());
+
+        // WHEN Alice attempts to share Bob source calendar directly
+        int status = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .body(payload)
+        .when()
+            .post(CalendarURL.from(bob.id()).asUri() + ".json")
+        .then()
+            .extract()
+            .statusCode();
+
+        assertThat(status).isEqualTo(SC_FORBIDDEN);
+
+        String response = given()
+            .headers("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("sharedDelegationStatus", "accepted")
+            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("personal", true)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        // THEN Bob source calendar delegation list is not changed by Alice direct canonical URL access
+        assertThat(response)
+            .doesNotContain("mailto:" + cedric.email())
+            .doesNotContain("principals/users/" + cedric.id());
     }
 
     @Test
