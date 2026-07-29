@@ -27,7 +27,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
@@ -59,7 +58,6 @@ public abstract class CalDavResourceParticipationContract {
     }
 
     @Test
-    @Disabled("https://github.com/linagora/esn-sabre/issues/441 - resource administrator lacks {DAV:}write-content on the resource calendar")
     void resourceAdministratorShouldBeAbleToUpdateParticipationThroughCanonicalCalendarUrl() {
         OpenPaasUser organizer = dockerExtension().newTestUser();
         OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
