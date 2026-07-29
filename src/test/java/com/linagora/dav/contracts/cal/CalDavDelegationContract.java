@@ -49,8 +49,8 @@ import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.xmlunit.assertj3.XmlAssert;
 
@@ -108,13 +108,15 @@ public abstract class CalDavDelegationContract {
         alice = dockerExtension().newTestUser();
     }
 
-    @Test
-    void listCalendarsShouldShowDelegatedCalendar() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void listCalendarsShouldShowDelegatedCalendar(DelegationRight right) {
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
+        // THEN a copy of bob calendar is created in Alice calendar list
         String response = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
@@ -127,108 +129,43 @@ public abstract class CalDavDelegationContract {
             .extract()
             .body()
             .asString();
-
-        // THEN a copy of bob calendar is created in Alice calendar list
         String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
         assertThatJson(response)
             .inPath("_embedded.dav:calendar")
             .isArray()
-            .filteredOn(calendar -> delegatedSource.equals(((Map<?, ?>) calendar).get("calendarserver:delegatedsource")))
+            .filteredOn(calendar -> calendar.toString().contains("\"calendarserver:delegatedsource\":\"" + delegatedSource + "\""))
             .singleElement()
-            .satisfies(calendar -> assertThatJson(calendar).isEqualTo(String.format("""
-                {
-                    "_links": {
-                        "self": {
-                            "href": "${json-unit.ignore}"
-                        }
-                    },
-                    "calendarserver:delegatedsource": "/calendars/{userId2}/{userId2}.json",
-                    "dav:name": "#default",
-                    "calendarserver:ctag": "http://sabre.io/ns/sync/1",
-                    "invite": [
-                        {
-                            "href": "principals/users/{userId2}",
-                            "principal": "principals/users/{userId2}",
-                            "properties": [],
-                            "access": 1,
-                            "comment": null,
-                            "inviteStatus": 2
-                        },
-                        {
-                            "href": "mailto:{userEmail}",
-                            "principal": "principals/users/{userId}",
-                            "properties": [],
-                            "access": 5,
-                            "comment": null,
-                            "inviteStatus": 2
-                        }
-                    ],
-                    "acl": [
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId}/calendar-proxy-read",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write-properties",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write-properties",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read-acl",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read-acl",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}share",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}share",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{urn:ietf:params:xml:ns:caldav}read-free-busy",
-                            "principal": "{DAV:}authenticated",
-                            "protected": true
-                        }
-                    ]
-                }  
-                """.replace("{userId}", alice.id()))
-                .replace("{userId2}", bob.id())
-                .replace("{userEmail}", alice.email())));
+            .satisfies(calendar -> assertThatJson(calendar)
+                .when(Option.IGNORING_EXTRA_FIELDS, Option.IGNORING_EXTRA_ARRAY_ITEMS, Option.IGNORING_ARRAY_ORDER)
+                .isEqualTo("""
+                    {
+                        "calendarserver:delegatedsource": "{delegatedSource}",
+                        "invite": [
+                            {
+                                "principal": "principals/users/{ownerId}",
+                                "access": 1
+                            },
+                            {
+                                "principal": "principals/users/{delegateId}",
+                                "access": {shareAccess}
+                            }
+                        ],
+                        "acl": [
+                            {
+                                "privilege": "{DAV:}read",
+                                "principal": "principals/users/{delegateId}"
+                            },
+                            {
+                                "privilege": "{urn:ietf:params:xml:ns:caldav}read-free-busy",
+                                "principal": "{DAV:}authenticated"
+                            }
+                        ]
+                    }
+                    """
+                    .replace("{delegatedSource}", delegatedSource)
+                    .replace("{ownerId}", bob.id())
+                    .replace("{delegateId}", alice.id())
+                    .replace("{shareAccess}", String.valueOf(right.getShareAccess()))));
     }
 
     @ParameterizedTest
@@ -469,116 +406,15 @@ public abstract class CalDavDelegationContract {
         assertThat(response).doesNotContain("\"calendarserver:delegatedsource\":\"\\/calendars\\/" + bob.id() + "\\/" + bob.id() + ".json\"");
     }
 
-    @Test
-    void listCalendarsShouldShowDelegatedCalendarWithReadWriteRight() {
-
-        // GIVEN Bob has a calendar
-        // WHEN Bob delegates read write to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
-
-        String response = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
-            .queryParam("personal", true)
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + alice.id() + ".json")
-        .then()
-            .extract()
-            .body()
-            .asString();
-
-        // THEN Alice copy of bob calendar is updated accordingly
-        String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
-        assertThatJson(response)
-            .inPath("_embedded.dav:calendar")
-            .isArray()
-            .filteredOn(calendar -> delegatedSource.equals(((Map<?, ?>) calendar).get("calendarserver:delegatedsource")))
-            .singleElement()
-            .satisfies(calendar -> assertThatJson(calendar).isEqualTo(String.format("""
-                {
-                    "_links": {
-                        "self": {
-                            "href": "${json-unit.ignore}"
-                        }
-                    },
-                    "calendarserver:delegatedsource": "/calendars/{userId2}/{userId2}.json",
-                    "dav:name": "#default",
-                    "calendarserver:ctag": "http://sabre.io/ns/sync/1",
-                    "invite": [
-                        {
-                            "href": "principals/users/{userId2}",
-                            "principal": "principals/users/{userId2}",
-                            "properties": [],
-                            "access": 1,
-                            "comment": null,
-                            "inviteStatus": 2
-                        },
-                        {
-                            "href": "mailto:{userEmail}",
-                            "principal": "principals/users/{userId}",
-                            "properties": [],
-                            "access": 3,
-                            "comment": null,
-                            "inviteStatus": 2
-                        }
-                    ],
-                    "acl": [
-                        {
-                            "privilege": "{DAV:}write",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write-properties",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write-properties",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId}/calendar-proxy-read",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{urn:ietf:params:xml:ns:caldav}read-free-busy",
-                            "principal": "{DAV:}authenticated",
-                            "protected": true
-                        }
-                    ]
-                }
-                """.replace("{userId}", alice.id()))
-                .replace("{userId2}", bob.id())
-                .replace("{userEmail}", alice.email())));
-    }
-
-    @Test
-    void listCalendarsShouldShowSharingRightOfDelegation() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void listCalendarsShouldShowSharingRightOfDelegation(DelegationRight right) {
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
+        // THEN the sharing right is shown on Bob source calendar
         String response = given()
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
@@ -591,93 +427,46 @@ public abstract class CalDavDelegationContract {
             .extract()
             .body()
             .asString();
-
-        // THEN the sharing right is shown on Bob source calendar
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[0]")
-            .isEqualTo(String.format("""
-                {
-                    "_links": {
-                        "self": {
-                            "href": "/calendars/{userId2}/{userId2}.json"
-                        }
-                    },
-                    "dav:name": "#default",
-                    "calendarserver:ctag": "http://sabre.io/ns/sync/1",
-                    "invite": [
-                        {
-                            "href": "principals/users/{userId2}",
-                            "principal": "principals/users/{userId2}",
-                            "properties": [],
-                            "access": 1,
-                            "comment": null,
-                            "inviteStatus": 2
+            .satisfies(calendar -> assertThatJson(calendar)
+                .when(Option.IGNORING_EXTRA_FIELDS, Option.IGNORING_EXTRA_ARRAY_ITEMS, Option.IGNORING_ARRAY_ORDER)
+                .isEqualTo("""
+                    {
+                        "_links": {
+                            "self": {
+                                "href": "/calendars/{ownerId}/{ownerId}.json"
+                            }
                         },
-                        {
-                            "href": "mailto:{userEmail}",
-                            "principal": "principals/users/{userId}",
-                            "properties": [],
-                            "access": 5,
-                            "comment": null,
-                            "inviteStatus": 2
-                        }
-                    ],
-                    "acl": [
-                        {
-                            "privilege": "{DAV:}share",
-                            "principal": "principals/users/{userId2}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}share",
-                            "principal": "principals/users/{userId2}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write",
-                            "principal": "principals/users/{userId2}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write",
-                            "principal": "principals/users/{userId2}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write-properties",
-                            "principal": "principals/users/{userId2}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}write-properties",
-                            "principal": "principals/users/{userId2}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId2}",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId2}/calendar-proxy-read",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{DAV:}read",
-                            "principal": "principals/users/{userId2}/calendar-proxy-write",
-                            "protected": true
-                        },
-                        {
-                            "privilege": "{urn:ietf:params:xml:ns:caldav}read-free-busy",
-                            "principal": "{DAV:}authenticated",
-                            "protected": true
-                        }
-                    ]
-                }
-                """.replace("{userId}", alice.id()))
-                .replace("{userId2}", bob.id())
-                .replace("{userEmail}", alice.email()));
+                        "invite": [
+                            {
+                                "principal": "principals/users/{ownerId}",
+                                "access": 1
+                            },
+                            {
+                                "principal": "principals/users/{delegateId}",
+                                "access": {shareAccess}
+                            }
+                        ],
+                        "acl": [
+                            {
+                                "privilege": "{DAV:}share",
+                                "principal": "principals/users/{ownerId}"
+                            },
+                            {
+                                "privilege": "{DAV:}write",
+                                "principal": "principals/users/{ownerId}"
+                            },
+                            {
+                                "privilege": "{DAV:}read",
+                                "principal": "principals/users/{ownerId}"
+                            }
+                        ]
+                    }
+                    """
+                    .replace("{ownerId}", bob.id())
+                    .replace("{delegateId}", alice.id())
+                    .replace("{shareAccess}", String.valueOf(right.getShareAccess()))));
     }
 
     @Test
@@ -711,8 +500,9 @@ public abstract class CalDavDelegationContract {
         assertThat(result.get(0).summary().get()).isEqualTo("Sprint planning #01");
     }
 
-    @Test
-    void cannotReadPrivateEventWhenCalendarIsReadable() throws JsonProcessingException {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegatedUserCannotReadPrivateEventDetails(DelegationRight right) throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
 
@@ -730,7 +520,7 @@ public abstract class CalDavDelegationContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
+        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, right);
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
         DavResponse response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
@@ -801,41 +591,16 @@ public abstract class CalDavDelegationContract {
         AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
     }
 
-    @Test
-    void cannotReadPrivateEventWhenPCalendarIsWritable() throws JsonProcessingException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
-
-        String eventUid = UUID.randomUUID().toString();
-        String calendarData = TwakeCalendarEvent.builder()
-            .uid(eventUid)
-            .organizer(testUser.email())
-            .summary("Sprint planning #01")
-            .location("Twake Meeting Room")
-            .description("This is a meeting to discuss the sprint planning for the next week.")
-            .dtstart("20300411T100000")
-            .dtend("20300411T110000")
-            .clazz("PRIVATE")
-            .build()
-            .toString();
-        calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
-
-        calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ_WRITE);
-        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
-        DavResponse response = calDavClient.findEventsByTime(testUser2,
-            calendarURL,
-            "20300310T000000",
-            "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
-
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).uid()).isEqualTo(eventUid);
-        assertThat(result.get(0).summary().get()).isEqualTo("Busy");
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
-    public void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass) throws Exception {
+    @ParameterizedTest(name = "{0} with {1}")
+    @CsvSource({
+        "PRIVATE, READ",
+        "PRIVATE, READ_WRITE",
+        "PRIVATE, ADMIN",
+        "CONFIDENTIAL, READ",
+        "CONFIDENTIAL, READ_WRITE",
+        "CONFIDENTIAL, ADMIN"
+    })
+    public void privateOrConfidentialEventShouldBeAnonymizedInDavReport(String eventClass, DelegationRight right) throws Exception {
 
         // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -857,8 +622,8 @@ public abstract class CalDavDelegationContract {
             """.formatted(eventUid, eventClass);
         calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
 
-        // WHEN Alice delegates her calendar to Bob with READ access
-        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
+        // WHEN Alice delegates her calendar to Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // THEN Bob can access the delegated calendar
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(bob, alice.id());
@@ -904,9 +669,16 @@ public abstract class CalDavDelegationContract {
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"PRIVATE", "CONFIDENTIAL"})
-    public void privateOrConfidentialEventShouldBeAnonymizedInDavGet(String eventClass) {
+    @ParameterizedTest(name = "{0} with {1}")
+    @CsvSource({
+        "PRIVATE, READ",
+        "PRIVATE, READ_WRITE",
+        "PRIVATE, ADMIN",
+        "CONFIDENTIAL, READ",
+        "CONFIDENTIAL, READ_WRITE",
+        "CONFIDENTIAL, ADMIN"
+    })
+    public void privateOrConfidentialEventShouldBeAnonymizedInDavGet(String eventClass, DelegationRight right) {
 
         // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -928,8 +700,8 @@ public abstract class CalDavDelegationContract {
             """.formatted(eventUid, eventClass);
         calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
 
-        // WHEN Alice delegates her calendar to Bob with READ access
-        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
+        // WHEN Alice delegates her calendar to Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // THEN Bob can access the delegated calendar
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(bob, alice.id());
@@ -1442,13 +1214,13 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403 when create/update calendar object");
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
-    void aliceCanCreateEventsInReadOnlyDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void aliceCanCreateEventsInReadOnlyDelegationWithDAVWhenAtLeastWriteRight(DelegationRight right) throws Exception {
 
         // GIVEN Bob has a calendar
         // WHEN Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // THEN a copy of bob calendar is created in Alice calendar list
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
@@ -1480,12 +1252,12 @@ public abstract class CalDavDelegationContract {
         assertThat(result.get(0).summary().get()).isEqualTo("Alice created event");
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
-    void upsertedEventViaDelegatedCalendarShouldAppearInOwnerSourceCalendarInDav(String param) throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void upsertedEventViaDelegatedCalendarShouldAppearInOwnerSourceCalendarInDav(DelegationRight right) throws Exception {
 
         // GIVEN Bob delegates his calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // AND Alice gets her delegated calendar copy
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
@@ -1547,9 +1319,9 @@ public abstract class CalDavDelegationContract {
         assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Alice created event");
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
-    void aliceCanDeleteEventsInDelegationWithDAVWhenAtLeastWriteRight(String param) throws Exception {
+    @ParameterizedTest(name = "{0}")
+        @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void aliceCanDeleteEventsInDelegationWithDAVWhenAtLeastWriteRight(DelegationRight right) throws Exception {
 
         // GIVEN Bob has a calendar with an event
         String eventUid = "event-" + UUID.randomUUID();
@@ -1570,7 +1342,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // WHEN Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // THEN a copy of bob calendar is created in Alice calendar list
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
@@ -1586,9 +1358,9 @@ public abstract class CalDavDelegationContract {
         assertThat(result).isEmpty();
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"READ_WRITE", "ADMIN"})
-    void deletedEventViaDelegatedCalendarShouldBeRemovedFromOwnerSourceCalendarInDav(String param) throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void deletedEventViaDelegatedCalendarShouldBeRemovedFromOwnerSourceCalendarInDav(DelegationRight right) throws Exception {
 
         // GIVEN Bob has an event in his calendar
         String eventUid = "event-" + UUID.randomUUID();
@@ -1609,7 +1381,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // AND Bob delegates his calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.valueOf(param));
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // AND Alice gets her delegated calendar copy
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
@@ -1815,8 +1587,9 @@ public abstract class CalDavDelegationContract {
             }));
     }
 
-    @Test
-    void putCalendarEventShouldUpdateEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void putCalendarEventShouldUpdateEventInOriginalCalendarWhenCopiedCalendarHasWriteRight(DelegationRight right) throws JsonProcessingException {
 
         // GIVEN Bob has a calendar
         // AND Bob has an event in his calendar
@@ -1834,7 +1607,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // AND Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -1862,8 +1635,9 @@ public abstract class CalDavDelegationContract {
         assertThat(result.get(0).summary().get()).isEqualTo("Updated Sprint planning #01");
     }
 
-    @Test
-    void shouldDeleteCalendarEventInOriginalCalendarWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void shouldDeleteCalendarEventInOriginalCalendarWhenCopiedCalendarHasWriteRight(DelegationRight right) throws JsonProcessingException {
 
         // GIVEN Bob has a calendar
         // AND Bob has an event in his calendar
@@ -1881,7 +1655,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // AND Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -1897,13 +1671,14 @@ public abstract class CalDavDelegationContract {
         assertThat(result).hasSize(0);
     }
 
-    @Test
-    void putCalendarEventShouldSendITIPRequestWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void putCalendarEventShouldSendITIPRequestWhenCopiedCalendarHasWriteRight(DelegationRight right) throws JsonProcessingException {
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
         // AND Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -1939,8 +1714,9 @@ public abstract class CalDavDelegationContract {
         });
     }
 
-    @Test
-    void deleteCalendarEventShouldSendITIPCancelWhenCopiedCalendarHasReadWriteRight() throws JsonProcessingException {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void deleteCalendarEventShouldSendITIPCancelWhenCopiedCalendarHasWriteRight(DelegationRight right) throws JsonProcessingException {
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
@@ -1960,7 +1736,7 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // AND Bob delegates that calendar to Alice
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -1985,25 +1761,12 @@ public abstract class CalDavDelegationContract {
         });
     }
 
-    @Test
-    void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
+    void updateCalendarAclShouldThrowErrorWhenDelegatedUserHasNoAdminRight(DelegationRight right) {
 
-        // GIVEN bob delegated his calendar to Alice in readonly mode
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
-
-        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
-
-        // WHEN Alice attempts to manage rights on her local copy
-        // THEN is gets rejected
-        assertThatThrownBy(() -> calDavClient.updateCalendarAcl(alice, calendarURL, "{DAV:}read"))
-            .hasMessageContaining("Unexpected status code: 403 when updating ACL for calendar");
-    }
-
-    @Test
-    public void updateCalendarAclShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
-
-        // GIVEN bob delegated his calendar to Alice in read-write mode
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        // GIVEN bob delegated his calendar to Alice without admin rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -2013,29 +1776,14 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403 when updating ACL for calendar");
     }
 
-    @Test
-    void grantDelegationShouldThrowErrorWhenDelegatedUserOnlyHasReadRight() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
+    void grantDelegationShouldThrowErrorWhenDelegatedUserHasNoAdminRight(DelegationRight right) {
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // GIVEN Bob has a calendar
-        // AND Bob delegates that calendar to Alice in read mode
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
-
-        CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
-
-        // WHEN Alice attempts to delegate her local copy to Cedric
-        // THEN is gets rejected
-        assertThatThrownBy(() -> calDavClient.grantDelegation(alice, calendarURL.calendarId(), cedric, DelegationRight.READ))
-            .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
-    }
-
-    @Test
-    void grantDelegationShouldThrowErrorWhenDelegatedUserOnlyHasReadWriteRight() {
-        OpenPaasUser cedric = dockerExtension().newTestUser();
-
-        // GIVEN Bob has a calendar
-        // AND Bob delegates that calendar to Alice in read-write mode
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        // AND Bob delegates that calendar to Alice without admin rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -3155,12 +2903,13 @@ public abstract class CalDavDelegationContract {
             .isEqualTo(200);
     }
 
-    @Test
-    protected void readOnlyDelegatedCalendarShouldOnlyAdvertiseReadPrivileges() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = "READ")
+    protected void readOnlyDelegatedCalendarShouldOnlyAdvertiseReadPrivileges(DelegationRight right) {
 
         // GIVEN Bob has a calendar
-        // AND Bob delegates that calendar to Alice with read-only rights
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        // AND Bob delegates that calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -3182,15 +2931,17 @@ public abstract class CalDavDelegationContract {
         AssertionsForClassTypes.assertThat(response.status()).isEqualTo(207);
         AssertionsForClassTypes.assertThat(response.body()).contains(calendarURL.asUri().toString());
         AssertionsForClassTypes.assertThat(response.body()).contains("<d:read/>");
-        AssertionsForClassTypes.assertThat(response.body()).doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+        AssertionsForClassTypes.assertThat(response.body())
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
     }
 
-    @Test
-    void readWriteDelegatedCalendarShouldAdvertiseWritePrivileges() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void writeDelegatedCalendarShouldAdvertiseWritePrivileges(DelegationRight right) {
 
         // GIVEN Bob has a calendar
-        // AND Bob delegates that calendar to Alice with read-write rights
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        // AND Bob delegates that calendar to Alice with write rights
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
@@ -3211,7 +2962,7 @@ public abstract class CalDavDelegationContract {
         // THEN Alice should see write privileges in the current-user-privilege-set property of the delegated calendar
         AssertionsForClassTypes.assertThat(response.status()).isEqualTo(207);
         AssertionsForClassTypes.assertThat(response.body()).contains(calendarURL.asUri().toString());
-        AssertionsForClassTypes.assertThat(response.body()).contains("<d:write/>", "<d:read/>");
+        AssertionsForClassTypes.assertThat(response.body()).contains("<d:read/>", "<d:write/>");
     }
 
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {

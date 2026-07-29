@@ -55,18 +55,24 @@ public class CalDavClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public enum DelegationRight {
-        READ("\"dav:read\": true"),
-        READ_WRITE("\"dav:read-write\":true"),
-        ADMIN("\"dav:administration\": true");
+        READ("\"dav:read\": true", 2),
+        READ_WRITE("\"dav:read-write\":true", 3),
+        ADMIN("\"dav:administration\": true", 5);
 
         private final String value;
+        private final int shareAccess;
 
-        DelegationRight(String value) {
+        DelegationRight(String value, int shareAccess) {
             this.value = value;
+            this.shareAccess = shareAccess;
         }
 
         public String getValue() {
             return value;
+        }
+
+        public int getShareAccess() {
+            return shareAccess;
         }
     }
 
