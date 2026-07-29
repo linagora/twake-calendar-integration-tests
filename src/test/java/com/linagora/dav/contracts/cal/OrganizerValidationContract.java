@@ -26,15 +26,13 @@ import static org.apache.http.HttpStatus.SC_NO_CONTENT;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
-import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
@@ -320,13 +318,14 @@ public abstract class OrganizerValidationContract {
         assertThat(response.status()).isEqualTo(SC_CREATED);
     }
 
-    @Test
-    void delegateCanWriteToOwnerCalendarWithOwnerAsOrganizer() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void delegateCanWriteToOwnerCalendarWithOwnerAsOrganizer(DelegationRight right) {
         OpenPaasUser owner = dockerExtension().newTestUser();
         OpenPaasUser delegate = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        calDavClient.grantDelegation(owner, owner.id(), delegate, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(owner, owner.id(), delegate, right);
 
         DavResponse response = putIcs(delegate, owner.id(), uid, """
             BEGIN:VCALENDAR\r
@@ -347,13 +346,14 @@ public abstract class OrganizerValidationContract {
         assertThat(response.status()).isIn(SC_CREATED, SC_NO_CONTENT);
     }
 
-    @Test
-    void delegateCanWriteToOwnerCalendarWithDelegateAsOrganizer() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void delegateCanWriteToOwnerCalendarWithDelegateAsOrganizer(DelegationRight right) {
         OpenPaasUser owner = dockerExtension().newTestUser();
         OpenPaasUser delegate = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        calDavClient.grantDelegation(owner, owner.id(), delegate, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(owner, owner.id(), delegate, right);
 
         DavResponse response = putIcs(delegate, owner.id(), uid, """
             BEGIN:VCALENDAR\r
@@ -374,14 +374,15 @@ public abstract class OrganizerValidationContract {
         assertThat(response.status()).isIn(SC_CREATED, SC_NO_CONTENT);
     }
 
-    @Test
-    void delegateCannotUseOwnerAsOrganizerInTheirOwnCalendar() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void delegateCannotUseOwnerAsOrganizerInTheirOwnCalendar(DelegationRight right) {
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
         // GIVEN Bob delegates his calendar to Alice with write rights
-        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // WHEN Alice creates an event in her own calendar with Bob as organizer
         DavResponse response = putIcs(alice, alice.id(), uid, """
@@ -405,14 +406,15 @@ public abstract class OrganizerValidationContract {
         assertThat(response.body()).contains("ORGANIZER");
     }
 
-    @Test
-    void delegateCannotWriteToOwnerCalendarWithThirdPartyAsOrganizer() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = DelegationRight.class, names = {"READ_WRITE", "ADMIN"})
+    void delegateCannotWriteToOwnerCalendarWithThirdPartyAsOrganizer(DelegationRight right) {
         OpenPaasUser owner = dockerExtension().newTestUser();
         OpenPaasUser delegate = dockerExtension().newTestUser();
         OpenPaasUser thirdParty = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        calDavClient.grantDelegation(owner, owner.id(), delegate, DelegationRight.READ_WRITE);
+        calDavClient.grantDelegation(owner, owner.id(), delegate, right);
 
         DavResponse response = putIcs(delegate, owner.id(), uid, """
             BEGIN:VCALENDAR\r
