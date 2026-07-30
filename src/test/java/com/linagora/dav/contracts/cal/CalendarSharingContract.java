@@ -271,6 +271,61 @@ public abstract class CalendarSharingContract {
         });
     }
 
+    @Test
+    public void cannotReadPrivateCalendarDataWithJsonEventPathsReport() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Accept", "application/json")
+                .add("Content-Type", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/calendars.json")
+            .send(body("""
+                {
+                  "eventPaths": [
+                    "/calendars/{bobId}/{bobId}/{eventUid}.ics"
+                  ]
+                }
+                """.replace("{bobId}", bob.id())
+                .replace("{eventUid}", eventUid))));
+
+        assertPrivateCalendarNotExposed(response, eventUid);
+    }
+
+    @Test
+    public void cannotSyncTokenReportPrivateCalendar() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = calDavClient.findEventsBySyncToken(alice,
+            CalendarURL.from(bob.id()),
+            "http://sabre.io/ns/sync/1");
+
+        assertPrivateCalendarNotExposed(response, eventUid);
+    }
+
+    @Test
+    public void cannotReadPrivateCalendarWithAllEventsJsonShortcut() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Accept", "application/json"))
+            .get()
+            .uri(CalendarURL.from(bob.id()).asUri() + ".json?allEvents=true"));
+
+        assertPrivateCalendarNotExposed(response, eventUid);
+    }
+
+    private void assertPrivateCalendarNotExposed(DavResponse response, String eventUid) {
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
     private String createEventInBobPrivateCalendar() {
         // Given: Bob sets his calendar as private
         calDavClient.updateCalendarAcl(bob, "");
