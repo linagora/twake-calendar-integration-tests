@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static com.linagora.dav.TestUtil.body;
+import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaaSResource;
@@ -171,6 +173,32 @@ public abstract class CalDavResourceMultitenancyContract {
             .uri("/calendars/" + resource.id() + ".json"));
 
         assertThat(status).isEqualTo(403);
+    }
+
+    @Test
+    void propfindCalendarRootShouldNotEnumerateCrossDomainResourceCalendarHomes() {
+        // Given a resource exists in a second domain
+
+        // When a default-domain user lists calendar homes from the calendar root
+        OpenPaasUser defaultDomainUser = dockerExtension().newTestUser();
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> defaultDomainUser.impersonatedBasicAuth(headers)
+                .add("Depth", "1")
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/calendars/")
+            .send(body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""")));
+
+        // Then the cross-domain resource calendar home must not be disclosed
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(response.body())
+            .as("Calendar root listing must not expose resource calendar homes from another domain")
+            .doesNotContain(secondDomainResource.id());
     }
 
     @Test
