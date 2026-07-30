@@ -271,6 +271,39 @@ public abstract class CalendarSharingContract {
         });
     }
 
+    @Test
+//    @Disabled("BUG: POST /query bypasses calendar ACL and leaks private calendar data")
+    public void cannotQueryPrivateCalendarThroughJsonQueryEndpoint() {
+        String eventUid = createEventInBobPrivateCalendar();
+
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Accept", "application/json")
+                .add("Content-Type", "application/json"))
+            .post()
+            .uri("/query")
+            .send(body("""
+                {
+                  "scope": {
+                    "calendars": [
+                      "/calendars/{bobId}/{bobId}.json"
+                    ]
+                  },
+                  "match": {
+                    "start": "20300110T000000",
+                    "end": "20300110T235959"
+                  }
+                }
+                """.replace("{bobId}", bob.id()))));
+
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
+            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+        });
+    }
+
     private String createEventInBobPrivateCalendar() {
         // Given: Bob sets his calendar as private
         calDavClient.updateCalendarAcl(bob, "");
