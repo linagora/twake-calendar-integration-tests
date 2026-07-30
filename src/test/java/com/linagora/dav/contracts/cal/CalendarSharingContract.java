@@ -717,6 +717,43 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    void shouldNotExposePrivateEventDetailsWhenQueryWithAllEventsParameter() {
+        // GIVEN: Bob sets his calendar as publicly readable
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+
+        // AND: Bob has a private event in his calendar
+        String eventUid = "event-" + UUID.randomUUID();
+        String privateSummary = "Sensitive private event " + UUID.randomUUID();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20250930T090000Z
+            DTEND:20250930T100000Z
+            SUMMARY:%s
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, privateSummary);
+
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        // WHEN: Alice reads Bob's publicly-readable calendar through the JSON allEvents shortcut
+        DavResponse response = execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/calendars/" + bob.id() + "/" + bob.id() + ".json?allEvents=true"));
+
+        // THEN: Alice must receive the event without raw private details
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body()).doesNotContain(privateSummary);
+    }
+
+    @Test
     void cannotReadPrivateEventWhenPubliclyWritable() {
         // GIVEN: Bob sets his calendar as read-only
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
