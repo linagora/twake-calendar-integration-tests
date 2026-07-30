@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
+import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.XMLUtil;
 
@@ -113,6 +114,74 @@ public abstract class PrincipalMultitenancyContract {
         assertThat(johnDisplayNameSearchHrefs)
             .as("Bob must not discover John's cross-domain principal by display name")
             .isEmpty();
+    }
+
+    @Test
+    void resourcePrincipalSearchShouldNotEnumerateCrossDomainResources() throws Exception {
+        // Given Bob is authenticated in the default domain and a resource exists in another domain
+        OpenPaaSResource secondDomainResource = dockerExtension().twakeCalendarProvisioningService()
+            .createResource("second-domain-room-" + UUID.randomUUID(), "Second domain room", john, SECOND_DOMAIN)
+            .block();
+
+        // When Bob searches resource principals by the exact cross-domain resource email address
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Depth", "0")
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri("/principals/resources")
+            .send(body("""
+                <d:principal-property-search xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
+                  <d:property-search>
+                    <d:prop>
+                      <s:email-address/>
+                    </d:prop>
+                    <d:match>%s</d:match>
+                  </d:property-search>
+                  <d:prop>
+                    <d:displayname/>
+                    <s:email-address/>
+                  </d:prop>
+                </d:principal-property-search>""".formatted(secondDomainResource.id() + "@" + SECOND_DOMAIN))));
+
+        // Then the cross-domain resource principal must not be disclosed
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(extractPrincipalHrefs(response))
+            .as("Bob must not discover a cross-domain resource principal by email")
+            .noneSatisfy(href -> assertThat(href).contains("/principals/resources/" + secondDomainResource.id()));
+        assertThat(response.body())
+            .doesNotContain(secondDomainResource.id())
+            .doesNotContain(SECOND_DOMAIN);
+    }
+
+    @Test
+    void propfindCrossDomainResourcePrincipalShouldNotExposeResource() throws Exception {
+        // Given Bob is authenticated in the default domain and a resource principal exists in another domain
+        String resourceName = "second-domain-room-" + UUID.randomUUID();
+        OpenPaaSResource secondDomainResource = dockerExtension().twakeCalendarProvisioningService()
+            .createResource(resourceName, "Second domain room", john, SECOND_DOMAIN)
+            .block();
+        String resourceEmail = secondDomainResource.id() + "@" + SECOND_DOMAIN;
+
+        // When Bob directly PROPFINDs the cross-domain resource principal URI
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers)
+                .add("Depth", "0")
+                .add("Content-Type", "application/xml"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/principals/resources/" + secondDomainResource.id())
+            .send(body("""
+                <d:propfind xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
+                  <d:prop>
+                    <d:displayname/>
+                    <s:email-address/>
+                  </d:prop>
+                </d:propfind>""")));
+
+        // Then cross-domain resource principal data is not disclosed
+        assertThat(response.body())
+            .doesNotContain(resourceName)
+            .doesNotContain(resourceEmail);
     }
 
     @Test
