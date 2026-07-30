@@ -3027,6 +3027,15 @@ public abstract class CalDavContract {
                 new AuthenticatedEndpoint("GET", "/calendars/" + userId + "/" + userId + "?export", Optional.empty(),
                     Map.of("Accept", "text/calendar")),
 
+                new AuthenticatedEndpoint("GET", "/calendars/" + userId + ".json", Optional.empty(),
+                    Map.of("Accept", "application/json")),
+
+                new AuthenticatedEndpoint("GET", "/calendars/" + userId + "/" + userId + ".json?allEvents=true", Optional.empty(),
+                    Map.of("Accept", "application/json")),
+
+                new AuthenticatedEndpoint("GET", "/calendars/" + userId + "/" + userId + "/fake-event-id.json", Optional.empty(),
+                    Map.of("Accept", "application/json")),
+
                 new AuthenticatedEndpoint("ITIP", "/calendars/" + userId, Optional.of("""
                     {"uid":"fake-itip-uid","sender":"sender@example.com","recipient":"recipient@example.com","method":"REQUEST","ical":"BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nEND:VCALENDAR"}
                     """),
@@ -3052,6 +3061,11 @@ public abstract class CalDavContract {
                 new AuthenticatedEndpoint("PROPPATCH", "/calendars/" + userId + "/" + userId + ".json", Optional.of("""
                     {"id":"%s","dav:name":"Hacked name"}
                     """.formatted(userId)),
+                    Map.of("Accept", "application/json", "Content-Type", "application/json")),
+
+                new AuthenticatedEndpoint("ACL", "/calendars/" + userId + "/" + userId + ".json", Optional.of("""
+                    {"public_right":"{DAV:}read"}
+                    """),
                     Map.of("Accept", "application/json", "Content-Type", "application/json")),
 
                 new AuthenticatedEndpoint("POST", "/calendars/" + userId + "/" + userId,
