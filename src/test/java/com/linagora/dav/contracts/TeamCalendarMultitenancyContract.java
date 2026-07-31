@@ -22,7 +22,6 @@ import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +40,6 @@ import io.restassured.response.Response;
 
 public abstract class TeamCalendarMultitenancyContract {
     private static final String SECOND_DOMAIN = "second-domain.org";
-    private static final Map<String, String> DAV_NAMESPACES = Map.of("d", "DAV:");
 
     private CalDavClient calDavClient;
 
@@ -90,6 +88,76 @@ public abstract class TeamCalendarMultitenancyContract {
     }
 
     @Test
+    void teamCalendarPrincipalSearchShouldNotEnumerateCrossDomainTeamCalendars() {
+        // Given Bob is in the default domain and a team calendar exists in a second domain
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar crossDomainTeamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("legal-" + UUID.randomUUID(), "Legal Team", SECOND_DOMAIN)
+            .block();
+
+        // When Bob searches team calendar principals by the exact cross-domain team calendar email address
+        Response response = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .header("Content-Type", "application/xml")
+            .body("""
+                <d:principal-property-search xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
+                  <d:property-search>
+                    <d:prop>
+                      <s:email-address/>
+                    </d:prop>
+                    <d:match>%s</d:match>
+                  </d:property-search>
+                  <d:prop>
+                    <d:displayname/>
+                    <s:email-address/>
+                  </d:prop>
+                </d:principal-property-search>""".formatted(crossDomainTeamCalendar.email()))
+        .when()
+            .request("REPORT", "/principals/team-calendars")
+        .then()
+            .extract()
+            .response();
+
+        // Then the cross-domain team calendar principal must not be disclosed
+        assertThat(response.body().asString())
+            .doesNotContain(crossDomainTeamCalendar.id())
+            .doesNotContain(crossDomainTeamCalendar.email())
+            .doesNotContain(crossDomainTeamCalendar.displayName());
+    }
+
+    @Test
+    void propfindCalendarRootShouldNotEnumerateCrossDomainTeamCalendarHomes() {
+        // Given Bob is in the default domain and a team calendar exists in a second domain
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar crossDomainTeamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("legal-" + UUID.randomUUID(), "Legal Team", SECOND_DOMAIN)
+            .block();
+
+        // When Bob lists calendar homes from the calendar root
+        Response response = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .header("Content-Type", "application/xml")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/calendars/")
+        .then()
+            .extract()
+            .response();
+
+        // Then the cross-domain team calendar home must not be disclosed
+        assertThat(response.body().asString())
+            .doesNotContain(crossDomainTeamCalendar.id())
+            .doesNotContain(crossDomainTeamCalendar.displayName());
+    }
+
+    @Test
     void technicalTokenShouldNotManageCrossDomainTeamCalendarSharing() {
         // Given Alice and a technical token are in the default domain, while the team calendar is not
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -121,6 +189,4 @@ public abstract class TeamCalendarMultitenancyContract {
             .hasMessageContaining("Unexpected status code: 403 when sharing calendar");
     }
 
-    private record PrincipalSearch(String property, String match) {
-    }
 }
