@@ -1673,6 +1673,63 @@ public abstract class EmailAMQPMessageContract {
                 .isEmpty());
     }
 
+    @Test
+    protected void shouldSendCancelNotificationEmailToBookerWhenOrganizerDeletesUnacceptedPubliclyCreatedEvent() {
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VTIMEZONE
+            TZID:Asia/Ho_Chi_Minh
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0700
+            TZOFFSETTO:+0700
+            TZNAME:ICT
+            DTSTART:19700101T000000
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Unaccepted public agenda booking
+            LOCATION:Twake Meeting Room
+            DESCRIPTION:This public agenda booking is not accepted by the organizer yet.
+            ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;CN=creator:mailto:creator@example.org
+            {xPubliclyCreated}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizer.email())
+            .replace("{xPubliclyCreated}", PUBLIC_AGENDA_METADATA_HEADERS);
+
+        // Given: a public agenda booking exists but the organizer attendee is still NEEDS-ACTION.
+        calDavClient.upsertCalendarEvent(organizer, eventUid, calendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: the organizer cancels the unaccepted booking.
+        calDavClient.deleteCalendarEvent(organizer, eventUid);
+
+        // Then: booker (creator) should receive cancellation emails for an unconfirmed booking.
+        calmlyAwait
+            .atMost(10, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> "creator@example.org".equals(message.path("recipientEmail").asText()))
+                .anySatisfy(message -> {
+                    assertThat(message.path("method").asText()).isEqualTo("CANCEL");
+                    assertThat(message.path("event").asText())
+                        .contains("METHOD:CANCEL");
+                }));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
     protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) {
