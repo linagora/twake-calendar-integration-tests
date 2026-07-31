@@ -1212,6 +1212,89 @@ public abstract class AlarmSchedulingContract {
     }
 
     @Test
+    void organizerAlarmUpdateWithUIDShouldKeepSameRecipientPersonalEmailVALARM() {
+        // Given Bob creates an organizer-managed email VALARM for Alice with a stable UID
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.5.7//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            SEQUENCE:1
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            SUMMARY:Organizer and same-recipient personal alarm with UID merge
+            LOCATION:Meeting Room A
+            DESCRIPTION:Check stable alarm UID preserves same-recipient personal alarm
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            BEGIN:VALARM
+            UID:organizer-reminder@example.org
+            ACTION:EMAIL
+            DESCRIPTION:Organizer reminder
+            SUMMARY:Alarm notification
+            ATTENDEE:mailto:{aliceEmail}
+            ATTENDEE:mailto:{bobEmail}
+            TRIGGER:{alarmTrigger5m}
+            END:VALARM
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{alarmTrigger5m}", ALARM_TRIGGER_5M_EXPLICIT);
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = CalendarURL.from(alice.id()).eventHref(aliceCalendarEventId);
+        URI bobCalendarEventUri = CalendarURL.from(bob.id()).eventHref(organizerEventUid);
+        awaitAtMost.untilAsserted(() -> assertThat(readEmailAlarms(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+            .containsExactly(new EmailAlarm(ALARM_TRIGGER_5M, Set.of(alice.email()))));
+
+        // And Alice creates a separate personal email VALARM for her primary attendee address
+        String aliceUpdatedCalendarEventIcs = calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)
+            .replace("END:VEVENT", """
+                BEGIN:VALARM
+                UID:alice-personal-reminder@example.org
+                ACTION:EMAIL
+                DESCRIPTION:Alice personal reminder
+                SUMMARY:Personal alarm notification
+                ATTENDEE:mailto:{aliceEmail}
+                TRIGGER:{alarmTrigger10m}
+                END:VALARM
+                END:VEVENT
+                """
+                .replace("{aliceEmail}", alice.email())
+                .replace("{alarmTrigger10m}", ALARM_TRIGGER_10M_EXPLICIT));
+        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+
+        awaitAtMost.untilAsserted(() -> assertThat(readEmailAlarms(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+            .containsExactlyInAnyOrder(
+                new EmailAlarm(ALARM_TRIGGER_5M, Set.of(alice.email())),
+                new EmailAlarm(ALARM_TRIGGER_10M, Set.of(alice.email()))));
+
+        // When Bob updates the organizer-managed alarm trigger while keeping the same VALARM UID
+        String updatedOrganizerEventIcs = organizerEventIcs
+            .replace("SEQUENCE:1", "SEQUENCE:2")
+            .replace("TRIGGER:" + ALARM_TRIGGER_5M_EXPLICIT, "TRIGGER:" + ALARM_TRIGGER_20M_EXPLICIT);
+        calDavClient.upsertCalendarEvent(bob, bobCalendarEventUri, updatedOrganizerEventIcs);
+
+        // Then Alice keeps her same-recipient personal alarm and receives the updated organizer-managed alarm
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(readEmailAlarms(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri)))
+                .containsExactlyInAnyOrder(
+                    new EmailAlarm(ALARM_TRIGGER_20M, Set.of(alice.email())),
+                    new EmailAlarm(ALARM_TRIGGER_10M, Set.of(alice.email())));
+            assertThat(readEmailAlarms(calDavClient.getCalendarEvent(bob, bobCalendarEventUri)))
+                .containsExactly(new EmailAlarm(ALARM_TRIGGER_20M, Set.of(alice.email(), bob.email())));
+        });
+    }
+
+    @Test
     void attendeeAddingVALARMShouldNotPropagateToOrganizerAndOtherAttendees() {
         // Given Bob creates an event with Alice and Cedric as attendees and no VALARM
         String organizerEventUid = "event-" + UUID.randomUUID();
