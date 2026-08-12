@@ -18,12 +18,15 @@
 
 package com.linagora.dav.contracts;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.URI;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -383,6 +386,110 @@ public abstract class TeamCalendarContract {
         assertThat(reportResponse.body().asString())
             .as("Team calendar should contain the event created by the write-enabled %s".formatted(role))
             .contains(eventUid);
+    }
+
+    @Test
+    void writeEnabledMemberShouldMovePersonalEventToTeamCalendar() {
+        // Given Bob is a write-enabled member of a team calendar and owns an event in his personal calendar
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ_WRITE);
+        String eventUid = "personal-event-" + UUID.randomUUID();
+        CalendarURL personalCalendar = CalendarURL.from(bob.id());
+        URI personalEventUri = personalCalendar.eventHref(eventUid);
+        URI teamEventUri = delegatedCalendar.eventHref(eventUid);
+        String eventIcs = calendarData(eventUid, "Bob moves personal event to team calendar", bob.email());
+        calDavClient.upsertCalendarEvent(bob, personalEventUri, eventIcs);
+
+        // When Bob moves the event to his delegated team calendar
+        Response moveResponse = moveEvent(bob, personalEventUri, teamEventUri);
+
+        // Then the event is removed from the personal calendar and stored in the team calendar
+        assertThat(moveResponse.statusCode())
+            .as("Write-enabled member should move a personal event to the team calendar")
+            .isIn(201, 204);
+        assertThat(getEventStatus(bob, personalEventUri)).isEqualTo(404);
+        String movedEventIcs = calDavClient.getCalendarEvent(bob, teamEventUri);
+        assertThatCalendar(movedEventIcs)
+            .ignoringProperties("X-OPENPAAS-TEAM-CALENDAR-ID")
+            .isEqualTo(eventIcs);
+        assertThat(movedEventIcs).contains("X-OPENPAAS-TEAM-CALENDAR-ID:" + teamCalendar.id());
+        assertThat(reportEventsByTime(bob, delegatedCalendar).body().asString()).contains(eventUid);
+    }
+
+    @Test
+    void nonMemberShouldNotMovePersonalEventToPrivateTeamCalendar() {
+        // Given Alice can inspect a private team calendar while Bob is not a member and owns a personal event
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.updateTeamCalendarAcl(teamCalendar, "");
+        String eventUid = "personal-event-" + UUID.randomUUID();
+        URI personalEventUri = CalendarURL.from(bob.id()).eventHref(eventUid);
+        URI teamEventUri = teamCalendarCanonicalUrl.eventHref(eventUid);
+        calDavClient.upsertCalendarEvent(bob, personalEventUri,
+            calendarData(eventUid, "Bob cannot move personal event to private team calendar", bob.email()));
+
+        // When Bob moves his event directly to the private team calendar
+        Response moveResponse = moveEvent(bob, personalEventUri, teamEventUri);
+
+        // Then the move is rejected and neither source nor destination is changed
+        assertThat(moveResponse.statusCode()).isIn(403, 404);
+        assertThat(getEventStatus(bob, personalEventUri)).isEqualTo(200);
+        assertThat(reportEventsByTime(alice, aliceDelegatedCalendar).body().asString()).doesNotContain(eventUid);
+    }
+
+    @Test
+    void readOnlyMemberShouldNotMovePersonalEventToTeamCalendar() {
+        // Given Bob has read-only delegation on a team calendar and owns a personal event
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL delegatedCalendar = delegateTeamCalendarTo(teamCalendar, bob, DelegationRight.READ);
+        String eventUid = "personal-event-" + UUID.randomUUID();
+        URI personalEventUri = CalendarURL.from(bob.id()).eventHref(eventUid);
+        URI teamEventUri = delegatedCalendar.eventHref(eventUid);
+        calDavClient.upsertCalendarEvent(bob, personalEventUri,
+            calendarData(eventUid, "Bob cannot move personal event as read-only member", bob.email()));
+
+        // When Bob moves the event to his read-only delegated team calendar
+        Response moveResponse = moveEvent(bob, personalEventUri, teamEventUri);
+
+        // Then the move is rejected and neither source nor destination is changed
+        assertThat(moveResponse.statusCode()).isEqualTo(403);
+        assertThat(getEventStatus(bob, personalEventUri)).isEqualTo(200);
+        assertThat(getEventStatus(bob, teamEventUri)).isEqualTo(404);
+        assertThat(reportEventsByTime(bob, delegatedCalendar).body().asString()).doesNotContain(eventUid);
+    }
+
+    @Test
+    void nonMemberAttendeeShouldNotMoveInvitedEventToPrivateTeamCalendar() {
+        // Given Alice owns an event inviting Bob, while only Alice can write to the private team calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar teamCalendar = newTeamCalendar("operations", "Operations Team");
+        CalendarURL aliceDelegatedCalendar = delegateTeamCalendarTo(teamCalendar, alice, DelegationRight.READ_WRITE);
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.updateTeamCalendarAcl(teamCalendar, "");
+        String eventUid = "invited-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarDataWithAttendee(eventUid,
+            "Alice invites Bob", alice.email(), bob.email()));
+
+        // And Bob receives the attendee copy in his personal calendar
+        URI bobEventUri = TestUtil.awaitAtMost.until(
+                () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(bob, CalendarURL.from(bob.id()), eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected attendee copy for UID " + eventUid));
+        URI teamEventUri = teamCalendarCanonicalUrl.eventHref(eventUid);
+
+        // When Bob moves his attendee copy directly to the private team calendar
+        Response moveResponse = moveEvent(bob, bobEventUri, teamEventUri);
+
+        // Then the move is rejected and the attendee copy remains in Bob's personal calendar
+        assertThat(moveResponse.statusCode()).isIn(403, 404);
+        assertThat(getEventStatus(bob, bobEventUri)).isEqualTo(200);
+        assertThat(reportEventsByTime(alice, aliceDelegatedCalendar).body().asString()).doesNotContain(eventUid);
     }
 
     @Test
@@ -1012,6 +1119,28 @@ public abstract class TeamCalendarContract {
             """.formatted(eventUid, organizerEmail, summary);
     }
 
+    private String calendarDataWithAttendee(String eventUid, String summary, String organizerEmail, String attendeeEmail) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20300101T080000Z
+            DTSTART:20300110T090000Z
+            DTEND:20300110T100000Z
+            ORGANIZER:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{attendeeEmail}
+            SUMMARY:{summary}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail)
+            .replace("{summary}", summary);
+    }
+
     private OpenPaaSTeamCalendar newTeamCalendar(String namePrefix, String displayName) {
         return dockerExtension().twakeCalendarProvisioningService()
             .createTeamCalendar(namePrefix + "-" + UUID.randomUUID(), displayName)
@@ -1079,6 +1208,27 @@ public abstract class TeamCalendarContract {
         .then()
             .extract()
             .response();
+    }
+
+    private Response moveEvent(OpenPaasUser user, URI sourceEventUri, URI destinationEventUri) {
+        return given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(user.email()))
+            .header("Destination", destinationEventUri.toASCIIString())
+        .when()
+            .request("MOVE", sourceEventUri.toASCIIString())
+        .then()
+            .extract()
+            .response();
+    }
+
+    private int getEventStatus(OpenPaasUser user, URI eventUri) {
+        return given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(user.email()))
+        .when()
+            .get(eventUri.toASCIIString())
+        .then()
+            .extract()
+            .statusCode();
     }
 
     private DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
