@@ -594,7 +594,7 @@ public abstract class CalDavDelegationContract {
 
     @ParameterizedTest(name = "{0} with {1}")
     @CsvSource({
-        "PRIVATE, READ",
+        "private, READ",
         "PRIVATE, READ_WRITE",
         "PRIVATE, ADMIN",
         "CONFIDENTIAL, READ",
@@ -612,12 +612,18 @@ public abstract class CalDavDelegationContract {
             BEGIN:VEVENT
             UID:%s
             DTSTAMP:20250929T080000Z
-            DTSTART:20250930T090000Z
+            DTSTART;X-SECRET=secret-start-parameter:20250930T090000Z
             DTEND:20250930T100000Z
             SUMMARY:Alice's secret meeting
             DESCRIPTION:Confidential information that Bob should not see
             LOCATION:Secret Room
+            X-PRIVATE-NOTE:Private custom property
             CLASS:%s
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Secret alarm text
+            END:VALARM
             END:VEVENT
             END:VCALENDAR
             """.formatted(eventUid, eventClass);
@@ -668,6 +674,12 @@ public abstract class CalDavDelegationContract {
         assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
+        assertThat(response.body())
+            .contains("DTSTAMP:20250929T080000Z")
+            .doesNotContain("BEGIN:VALARM")
+            .doesNotContain("Secret alarm text")
+            .doesNotContain("secret-start-parameter")
+            .doesNotContain("Private custom property");
     }
 
     @ParameterizedTest(name = "{0} with {1}")
