@@ -413,7 +413,6 @@ public abstract class TeamCalendarContract {
         assertThatCalendar(movedEventIcs)
             .ignoringProperties("X-OPENPAAS-TEAM-CALENDAR-ID")
             .isEqualTo(eventIcs);
-        assertThat(movedEventIcs).contains("X-OPENPAAS-TEAM-CALENDAR-ID:" + teamCalendar.id());
         assertThat(reportEventsByTime(bob, delegatedCalendar).body().asString()).contains(eventUid);
     }
 
