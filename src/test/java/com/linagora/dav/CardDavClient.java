@@ -19,6 +19,7 @@
 package com.linagora.dav;
 
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
+import static com.linagora.dav.TestUtil.body;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -141,6 +142,25 @@ public class CardDavClient {
                         "Unexpected status code: %d when fetching contacts in address book %s for user %s\n%s"
                             .formatted(response.status().code(), addressBookId, openPaasUser.id(), errorBody))));
             }).block();
+    }
+
+    public DavResponse findContactsBySyncToken(OpenPaasUser user, AddressBookURL addressBookURL, String syncToken) {
+        String json = """
+            {
+                "sync-token": "{syncToken}"
+            }
+            """.replace("{syncToken}", syncToken);
+
+        return client.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json")
+                .add(HttpHeaderNames.ACCEPT, "application/json")
+                .add("Depth", 0))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(addressBookURL.asUri() + ".json")
+            .send(body(json))
+            .responseSingle((response, content) -> content.asString()
+                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
+            .block();
     }
 
     public String getContactsXML(OpenPaasUser openPaasUser, String baseId, String addressBookId) {
