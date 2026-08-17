@@ -492,6 +492,147 @@ public abstract class TeamCalendarSchedulingContract {
             .isEqualTo(partStat));
     }
 
+    @Test
+    void attendeePartStatUpdateShouldPropagateAfterPersonalEventIsMovedToTeamCalendar() {
+        // Given bobMember creates a personal event with aliceMember and nonMember as attendees
+        String eventUid = "personal-event-" + UUID.randomUUID();
+        CalendarURL bobPersonalCalendar = CalendarURL.from(bobMember.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobPersonalCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email(), nonMember.email()), "Personal calendar invitation"));
+        URI bobPersonalEventUri = awaitCalendarObjectUriByEventUid(bobMember, bobPersonalCalendar, eventUid);
+        URI aliceMemberEventUri = awaitCalendarObjectUriByEventUid(aliceMember, CalendarURL.from(aliceMember.id()), eventUid);
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+        URI teamCalendarEventUri = bobMemberDelegatedCalendar.eventHref(eventUid);
+        URI canonicalTeamCalendarEventUri = CalendarURL.from(teamCalendar.id()).eventHref(eventUid);
+
+        // When bobMember moves the organizer event to the Team Calendar
+        assertThat(moveEvent(bobMember, bobPersonalEventUri, teamCalendarEventUri))
+            .as("Bob should be able to move the event to the Team Calendar")
+            .isIn(201, 204);
+
+        // Then the source is removed and all copies carry the server-owned Team Calendar ID
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+        .when()
+            .get(bobPersonalEventUri.toString())
+        .then()
+            .statusCode(404);
+        awaitAtMost.untilAsserted(() -> {
+            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(bobMember, teamCalendarEventUri));
+            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri));
+            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(nonMember, nonMemberEventUri));
+        });
+
+        // When aliceMember accepts from her attendee copy
+        calDavClient.upsertCalendarEvent(aliceMember, aliceMemberEventUri,
+            CalendarUtil.withAttendeePartStat(calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri),
+                aliceMember.email(), PartStat.ACCEPTED));
+
+        // Then the organizer event and the other attendee copy reflect aliceMember acceptance
+        awaitAtMost.untilAsserted(() -> {
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bobMember, canonicalTeamCalendarEventUri), aliceMember.email()))
+                .isEqualTo(PartStat.ACCEPTED);
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(bobMember,
+                bobMemberDelegatedCalendar.eventHref(eventUid)), aliceMember.email()))
+                .isEqualTo(PartStat.ACCEPTED);
+            assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(nonMember, nonMemberEventUri), aliceMember.email()))
+                .isEqualTo(PartStat.ACCEPTED);
+        });
+    }
+
+    @Test
+    void writeMemberShouldNotMoveAttendeeCopyWithNonMemberOrganizerToTeamCalendar() {
+        // Given nonMember creates a personal event that invites bobMember, a write-enabled Team Calendar member
+        String eventUid = "personal-event-" + UUID.randomUUID();
+        CalendarURL nonMemberPersonalCalendar = CalendarURL.from(nonMember.id());
+        calDavClient.upsertCalendarEvent(nonMember, nonMemberPersonalCalendar, eventUid,
+            calendarData(eventUid, nonMember.email(), List.of(bobMember.email()), "External organizer invitation"));
+        URI bobAttendeeEventUri = awaitCalendarObjectUriByEventUid(bobMember, CalendarURL.from(bobMember.id()), eventUid);
+        URI teamCalendarEventUri = bobMemberDelegatedCalendar.eventHref(eventUid);
+
+        // When bobMember moves the attendee copy into the Team Calendar
+        assertThat(moveEvent(bobMember, bobAttendeeEventUri, teamCalendarEventUri))
+            .as("A non-member organizer must not be moved into the Team Calendar")
+            .isEqualTo(403);
+
+        // Then Sabre rejects the MOVE before deleting the attendee copy or creating the destination object
+        assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bobMember, bobAttendeeEventUri))
+            .extractPropertyValue(Property.ORGANIZER))
+            .isEqualTo("mailto:" + nonMember.email());
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+        .when()
+            .get(teamCalendarEventUri.toString())
+        .then()
+            .statusCode(404);
+    }
+
+    @Test
+    void attendeePartStatUpdateOnRecurringOverrideShouldPropagateAfterPersonalEventIsMovedToTeamCalendar() {
+        String eventUid = "personal-recurring-event-" + UUID.randomUUID();
+        String overrideRecurrenceId = "20300111T090000Z";
+        String summary = "Personal recurring calendar invitation";
+        List<String> attendeeEmails = List.of(aliceMember.email(), nonMember.email());
+        CalendarURL bobPersonalCalendar = CalendarURL.from(bobMember.id());
+        String recurringEvent = calendarData(eventUid, bobMember.email(), attendeeEmails, summary, "RRULE:FREQ=DAILY;COUNT=2\n")
+            .replace("END:VEVENT", """
+                END:VEVENT
+                BEGIN:VEVENT
+                UID:{eventUid}
+                RECURRENCE-ID:{overrideRecurrenceId}
+                DTSTAMP:20300101T080000Z
+                DTSTART:20300111T130000Z
+                DTEND:20300111T140000Z
+                SUMMARY:{summary} override
+                ORGANIZER;CN=Organizer:mailto:{organizerEmail}
+                ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL;CN=Organizer:mailto:{organizerEmail}
+                {attendeeProperties}END:VEVENT"""
+                .replace("{eventUid}", eventUid)
+                .replace("{overrideRecurrenceId}", overrideRecurrenceId)
+                .replace("{summary}", summary)
+                .replace("{organizerEmail}", bobMember.email())
+                .replace("{attendeeProperties}", attendeeProperties(attendeeEmails)));
+        calDavClient.upsertCalendarEvent(bobMember, bobPersonalCalendar, eventUid, recurringEvent);
+        URI bobPersonalEventUri = awaitCalendarObjectUriByEventUid(bobMember, bobPersonalCalendar, eventUid);
+        URI aliceMemberEventUri = awaitCalendarObjectUriByEventUid(aliceMember, CalendarURL.from(aliceMember.id()), eventUid);
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+        URI teamCalendarEventUri = bobMemberDelegatedCalendar.eventHref(eventUid);
+        URI canonicalTeamCalendarEventUri = CalendarURL.from(teamCalendar.id()).eventHref(eventUid);
+
+        // When bobMember moves the recurring organizer event to the Team Calendar
+        assertThat(moveEvent(bobMember, bobPersonalEventUri, teamCalendarEventUri))
+            .as("Bob should be able to move the recurring event to the Team Calendar")
+            .isIn(201, 204);
+
+        // Then the source is removed and every VEVENT in the destination and attendee copies carries the Team Calendar ID
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+        .when()
+            .get(bobPersonalEventUri.toString())
+        .then()
+            .statusCode(404);
+        awaitAtMost.untilAsserted(() -> {
+            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(bobMember, teamCalendarEventUri));
+            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri));
+            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(nonMember, nonMemberEventUri));
+        });
+
+        // When aliceMember accepts only the overridden instance in her attendee copy
+        String aliceMemberEvent = calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri);
+        int overrideStart = aliceMemberEvent.indexOf("RECURRENCE-ID:" + overrideRecurrenceId);
+        String acceptedOverride = aliceMemberEvent.substring(0, overrideStart)
+            + aliceMemberEvent.substring(overrideStart).replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+        calDavClient.upsertCalendarEvent(aliceMember, aliceMemberEventUri, acceptedOverride);
+
+        // Then only the overridden instance is synchronized to the organizer event and other attendee copy
+        awaitAtMost.untilAsserted(() -> {
+            assertRecurringAttendeePartStats(calDavClient.getCalendarEvent(bobMember, canonicalTeamCalendarEventUri), overrideRecurrenceId);
+            assertRecurringAttendeePartStats(calDavClient.getCalendarEvent(bobMember,
+                bobMemberDelegatedCalendar.eventHref(eventUid)), overrideRecurrenceId);
+            assertRecurringAttendeePartStats(calDavClient.getCalendarEvent(nonMember, nonMemberEventUri), overrideRecurrenceId);
+        });
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "DECLINED"})
     void teamCalendarMemberPartStatUpdateShouldPropagateToNonMemberAttendeeCopy(String partStatValue) {
@@ -855,10 +996,7 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     private String calendarData(String eventUid, String organizerEmail, List<String> attendeeEmails, String summary, String extraEventProperties) {
-        String attendeeProperties = attendeeEmails.stream()
-            .map(attendeeEmail -> "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL;CN="
-                + attendeeEmail + ":mailto:" + attendeeEmail)
-            .reduce("", (accumulator, attendee) -> accumulator + attendee + "\n");
+        String attendeeProperties = attendeeProperties(attendeeEmails);
 
         return """
             BEGIN:VCALENDAR
@@ -881,6 +1019,13 @@ public abstract class TeamCalendarSchedulingContract {
             .replace("{attendeeProperties}", attendeeProperties)
             .replace("{summary}", summary)
             .replace("{extraEventProperties}", extraEventProperties);
+    }
+
+    private String attendeeProperties(List<String> attendeeEmails) {
+        return attendeeEmails.stream()
+            .map(attendeeEmail -> "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL;CN="
+                + attendeeEmail + ":mailto:" + attendeeEmail)
+            .reduce("", (accumulator, attendee) -> accumulator + attendee + "\n");
     }
 
     private String calendarDataWithAlarm(String eventUid, String organizerEmail, List<String> attendeeEmails, String summary, String alarmTrigger) {
@@ -912,6 +1057,29 @@ public abstract class TeamCalendarSchedulingContract {
                 .replace("{eventUid}", eventUid)
                 .replace("{occurrenceOrganizerEmail}", occurrenceOrganizerEmail)
                 .replace("{summary}", summary));
+    }
+
+    private void assertTeamCalendarIdOnEveryEvent(String icsContent) {
+        CalendarUtil.parseIcs(icsContent).getComponents(Component.VEVENT).forEach(vevent ->
+            assertThat(vevent.getProperty("X-OPENPAAS-TEAM-CALENDAR-ID"))
+                .hasValueSatisfying(property -> assertThat(property.getValue()).isEqualTo(teamCalendar.id())));
+    }
+
+    private void assertRecurringAttendeePartStats(String icsContent, String overrideRecurrenceId) {
+        assertThat(CalendarUtil.getRecurringAttendeePartStats(icsContent, aliceMember.email()))
+            .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.NEEDS_ACTION)
+            .containsEntry(overrideRecurrenceId, PartStat.ACCEPTED);
+    }
+
+    private int moveEvent(OpenPaasUser user, URI sourceEventUri, URI destinationEventUri) {
+        return given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(user.email()))
+            .header("Destination", destinationEventUri.toASCIIString())
+        .when()
+            .request("MOVE", sourceEventUri.toASCIIString())
+        .then()
+            .extract()
+            .statusCode();
     }
 
     private String readFirstAlarmTrigger(String icsContent) {
