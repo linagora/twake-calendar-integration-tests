@@ -438,6 +438,32 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     @Test
+    void teamCalendarEventUpdateThroughCanonicalUrlShouldUpdateEvent() {
+        // Given bobMember created a Team Calendar event through the delegated mirror
+        String eventUid = "team-event-" + UUID.randomUUID();
+        String updatedSummary = "Updated through canonical URL";
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email(), aliceMember.email()), "Initial Team Calendar meeting"));
+
+        // When bobMember updates the event through the canonical Team Calendar URL
+        calDavClient.upsertCalendarEvent(bobMember, teamCalendarCanonicalUrl, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email(), aliceMember.email()), updatedSummary));
+
+        // Then both URLs expose the update
+        awaitAtMost.untilAsserted(() -> {
+            CalendarUtil.CalendarExtractor delegatedMirrorEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, bobMemberDelegatedCalendar.eventHref(eventUid)));
+            CalendarUtil.CalendarExtractor canonicalTeamCalendarEvent = CalendarUtil.toExtractor(
+                calDavClient.getCalendarEvent(bobMember, teamCalendarCanonicalUrl.eventHref(eventUid)));
+            assertSoftly(softly -> {
+                softly.assertThat(delegatedMirrorEvent.extractPropertyValue(Property.SUMMARY)).isEqualTo(updatedSummary);
+                softly.assertThat(canonicalTeamCalendarEvent.extractPropertyValue(Property.SUMMARY)).isEqualTo(updatedSummary);
+            });
+        });
+    }
+
+    @Test
     void teamCalendarEventDeletionShouldMarkAttendeeEventCancelled() {
         // Given bobMember created a Team Calendar event with nonMember and aliceMember as attendees
         String eventUid = "team-event-" + UUID.randomUUID();
