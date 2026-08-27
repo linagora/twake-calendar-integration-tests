@@ -486,6 +486,9 @@ public abstract class OrganizerValidationContract {
         // GIVEN the user owns an event in his default calendar
         assertThat(putIcs(user, user.id(), uid, eventWithOrganizer(uid, user.email())).status())
             .isEqualTo(SC_CREATED);
+        // AND the other user granted him read-write access on his own calendar, so that the
+        // request is rejected by the transfer guard rather than by the ACL plugin
+        calDavClient.grantDelegation(otherUser, otherUser.id(), user, DelegationRight.READ_WRITE);
         String destinationUri = CalendarURL.from(otherUser.id()).eventHref(uid).toASCIIString();
 
         // WHEN the user copies the event to the calendar of another user
@@ -506,6 +509,9 @@ public abstract class OrganizerValidationContract {
         // GIVEN the user owns an event in his default calendar
         assertThat(putIcs(user, user.id(), uid, eventWithOrganizer(uid, user.email())).status())
             .isEqualTo(SC_CREATED);
+        // AND the other user granted him read-write access on his own calendar, so that the
+        // request is rejected by the transfer guard rather than by the ACL plugin
+        calDavClient.grantDelegation(otherUser, otherUser.id(), user, DelegationRight.READ_WRITE);
         String destinationUri = CalendarURL.from(otherUser.id()).eventHref(uid).toASCIIString();
 
         // WHEN the user moves the event to the calendar of another user
