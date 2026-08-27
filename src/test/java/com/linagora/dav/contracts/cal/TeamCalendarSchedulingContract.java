@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
@@ -78,6 +79,11 @@ public abstract class TeamCalendarSchedulingContract {
     private OpenPaasUser nonMember;
     private OpenPaaSTeamCalendar teamCalendar;
     private CalendarURL bobMemberDelegatedCalendar;
+
+    private enum TeamCalendarUrl {
+        DELEGATED_MIRROR,
+        CANONICAL
+    }
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
@@ -566,19 +572,20 @@ public abstract class TeamCalendarSchedulingContract {
         });
     }
 
-    @Test
-    void writeMemberShouldNotMoveAttendeeCopyWithNonMemberOrganizerToTeamCalendar() {
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(TeamCalendarUrl.class)
+    void writeMemberShouldNotMoveAttendeeCopyWithNonMemberOrganizerToTeamCalendar(TeamCalendarUrl destinationUrl) {
         // Given nonMember creates a personal event that invites bobMember, a write-enabled Team Calendar member
         String eventUid = "personal-event-" + UUID.randomUUID();
         CalendarURL nonMemberPersonalCalendar = CalendarURL.from(nonMember.id());
         calDavClient.upsertCalendarEvent(nonMember, nonMemberPersonalCalendar, eventUid,
             calendarData(eventUid, nonMember.email(), List.of(bobMember.email()), "External organizer invitation"));
         URI bobAttendeeEventUri = awaitCalendarObjectUriByEventUid(bobMember, CalendarURL.from(bobMember.id()), eventUid);
-        URI teamCalendarEventUri = bobMemberDelegatedCalendar.eventHref(eventUid);
+        URI teamCalendarEventUri = teamCalendarEventUri(destinationUrl, eventUid);
 
         // When bobMember moves the attendee copy into the Team Calendar
         assertThat(moveEvent(bobMember, bobAttendeeEventUri, teamCalendarEventUri))
-            .as("A non-member organizer must not be moved into the Team Calendar")
+            .as("A non-member organizer must not be moved into the Team Calendar via %s".formatted(destinationUrl))
             .isEqualTo(403);
 
         // Then Sabre rejects the MOVE before deleting the attendee copy or creating the destination object
@@ -1106,6 +1113,13 @@ public abstract class TeamCalendarSchedulingContract {
         .then()
             .extract()
             .statusCode();
+    }
+
+    private URI teamCalendarEventUri(TeamCalendarUrl destinationUrl, String eventUid) {
+        return switch (destinationUrl) {
+            case DELEGATED_MIRROR -> bobMemberDelegatedCalendar.eventHref(eventUid);
+            case CANONICAL -> CalendarURL.from(teamCalendar.id()).eventHref(eventUid);
+        };
     }
 
     private String readFirstAlarmTrigger(String icsContent) {

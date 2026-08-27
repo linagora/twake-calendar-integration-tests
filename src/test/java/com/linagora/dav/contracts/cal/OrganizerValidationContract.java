@@ -22,7 +22,9 @@ import static com.linagora.dav.TestUtil.awaitAtMost;
 import static com.linagora.dav.TestUtil.body;
 import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_NO_CONTENT;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
@@ -30,17 +32,20 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.parameter.PartStat;
 
 public abstract class OrganizerValidationContract {
@@ -473,12 +478,191 @@ public abstract class OrganizerValidationContract {
         assertThat(response.status()).isEqualTo(SC_NO_CONTENT);
     }
 
+    @Test
+    void delegateCannotCopyToOwnerCalendarWithThirdPartyAsOrganizer() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        OpenPaasUser thirdParty = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        // GIVEN the user imported an event organized by a third party, which import does not validate
+        assertThat(importIcs(user, user.id(), uid, eventWithOrganizer(uid, thirdParty.email())).status())
+            .isEqualTo(SC_CREATED);
+        // AND the other user granted him read-write access on his own calendar, so that the
+        // request is rejected by the ORGANIZER validation rather than by the ACL plugin
+        calDavClient.grantDelegation(otherUser, otherUser.id(), user, DelegationRight.READ_WRITE);
+        String destinationUri = CalendarURL.from(otherUser.id()).eventHref(uid).toASCIIString();
+
+        // WHEN the user copies the event to the calendar of another user
+        DavResponse response = transferIcs("COPY", user, eventUri(user, uid), destinationUri);
+
+        // THEN the copy is forbidden, as the organizer is neither the owner of the destination
+        // calendar nor the connected user, exactly as a PUT of the same event would be
+        assertThat(response.status()).isEqualTo(SC_FORBIDDEN);
+        // AND nothing landed in the calendar of the other user
+        assertThat(eventStatus(otherUser, destinationUri)).isEqualTo(SC_NOT_FOUND);
+    }
+
+    @Test
+    void delegateCannotMoveToOwnerCalendarWithThirdPartyAsOrganizer() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        OpenPaasUser thirdParty = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        // GIVEN the user imported an event organized by a third party, which import does not validate
+        assertThat(importIcs(user, user.id(), uid, eventWithOrganizer(uid, thirdParty.email())).status())
+            .isEqualTo(SC_CREATED);
+        // AND the other user granted him read-write access on his own calendar, so that the
+        // request is rejected by the ORGANIZER validation rather than by the ACL plugin
+        calDavClient.grantDelegation(otherUser, otherUser.id(), user, DelegationRight.READ_WRITE);
+        String destinationUri = CalendarURL.from(otherUser.id()).eventHref(uid).toASCIIString();
+
+        // WHEN the user moves the event to the calendar of another user
+        DavResponse response = transferIcs("MOVE", user, eventUri(user, uid), destinationUri);
+
+        // THEN the move is forbidden, as the organizer is neither the owner of the destination
+        // calendar nor the connected user, exactly as a PUT of the same event would be
+        assertThat(response.status()).isEqualTo(SC_FORBIDDEN);
+        // AND nothing landed in the calendar of the other user, while the source is untouched
+        assertThat(eventStatus(otherUser, destinationUri)).isEqualTo(SC_NOT_FOUND);
+        assertThat(eventStatus(user, eventUri(user, uid))).isEqualTo(SC_OK);
+    }
+
+    @Test
+    void delegateCannotCopyExternalInvitationToSharedCalendar() {
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+
+        // GIVEN Bob shares his calendar with Alice using read-write delegation
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        CalendarURL aliceMirrorOfBobCalendar = calDavClient.findDelegatedCalendar(alice, bob.id());
+        assertThat(aliceMirrorOfBobCalendar.base()).isEqualTo(alice.id());
+        // AND Charlie sends Alice an invitation that he organizes
+        String externalInvitation = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20250101T000000Z
+            DTSTART:20250101T090000Z
+            DTEND:20250101T100000Z
+            SUMMARY:External organizer invitation
+            ORGANIZER:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{delegateEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", charlie.email())
+            .replace("{delegateEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(charlie, eventUid, externalInvitation);
+        URI aliceInvitationUri = awaitAtMost.until(
+                () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), eventUid),
+                Optional::isPresent)
+            .orElseThrow(() -> new AssertionError("Expected invitation to be propagated to Alice's calendar"));
+
+        // AND PUT correctly rejects Charlie as organizer for Bob's shared calendar
+        URI putDestinationUri = aliceMirrorOfBobCalendar.eventHref("put-" + UUID.randomUUID());
+        DavResponse putResponse = putIcs(alice, putDestinationUri, externalInvitation);
+        assertThat(putResponse.status()).isEqualTo(SC_FORBIDDEN);
+        assertThat(putResponse.body()).contains("ORGANIZER");
+
+        // WHEN Alice copies the invitation to Bob's calendar through her mirror URL
+        URI copyDestinationUri = aliceMirrorOfBobCalendar.eventHref("copy-" + UUID.randomUUID());
+        DavResponse copyResponse = transferIcs("COPY", alice, aliceInvitationUri.toASCIIString(), copyDestinationUri.toASCIIString());
+
+        // THEN COPY must apply the same validation and leave both calendars unchanged
+        assertThat(copyResponse.status()).isEqualTo(SC_FORBIDDEN);
+        assertThat(eventStatus(alice, aliceInvitationUri.toASCIIString())).isEqualTo(SC_OK);
+        assertThat(eventStatus(alice, copyDestinationUri.toASCIIString())).isEqualTo(SC_NOT_FOUND);
+    }
+
+    @Disabled("https://github.com/linagora/esn-sabre/issues/470")
+    @Test
+    void copyEventWithSpecialCharacterShouldNotBypassDestinationBaseIdValidation() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+        String resourceName = "event";
+        String resourceNameHasSpecialCharacter = "event!";
+        URI sourceEventUri = CalendarURL.from(user.id()).eventHref(resourceName);
+        URI destinationEventUri = CalendarURL.from(otherUser.id()).eventHref(resourceNameHasSpecialCharacter);
+
+        // GIVEN the user owns an event whose valid WebDAV resource name includes a special character
+        assertThat(putIcs(user, sourceEventUri, eventWithOrganizer(uid, user.email())).status())
+            .isEqualTo(SC_CREATED);
+        // AND the other user granted the user read-write access to their calendar
+        calDavClient.grantDelegation(otherUser, otherUser.id(), user, DelegationRight.READ_WRITE);
+
+        // WHEN the user copies the event to the other user's calendar
+        DavResponse response = transferIcs("COPY", user, sourceEventUri.toASCIIString(), destinationEventUri.toASCIIString());
+
+        // THEN the resource name must not bypass destination baseId and ORGANIZER validation
+        assertThat(response.status())
+            .as("COPY of event!.ics must be forbidden; accepting it means the resource name bypasses destination baseId validation")
+            .isEqualTo(SC_FORBIDDEN);
+        assertThat(eventStatus(otherUser, destinationEventUri.toASCIIString())).isEqualTo(SC_NOT_FOUND);
+    }
+
+    private String eventWithOrganizer(String uid, String organizerEmail) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250101T000000Z
+            DTSTART:20250101T090000Z
+            DTEND:20250101T100000Z
+            SUMMARY:Meeting
+            ORGANIZER:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(uid, organizerEmail);
+    }
+
+    private String eventUri(OpenPaasUser user, String uid) {
+        return "/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics";
+    }
+
+    private DavResponse transferIcs(String method, OpenPaasUser requester, String sourceUri, String destinationUri) {
+        return dockerExtension().davHttpClient()
+            .headers(headers -> requester.impersonatedBasicAuth(headers)
+                .add("Destination", destinationUri))
+            .request(HttpMethod.valueOf(method))
+            .uri(sourceUri)
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
+            .block();
+    }
+
+    private int eventStatus(OpenPaasUser requester, String uri) {
+        return dockerExtension().davHttpClient()
+            .headers(requester::impersonatedBasicAuth)
+            .get()
+            .uri(uri)
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .map(stringContent -> response.status().code()))
+            .block();
+    }
+
     private DavResponse putIcs(OpenPaasUser requester, String calendarOwnerId, String uid, String icsContent) {
+        return putIcs(requester, CalendarURL.from(calendarOwnerId).eventHref(uid), icsContent);
+    }
+
+    private DavResponse putIcs(OpenPaasUser requester, URI eventUri, String icsContent) {
         return dockerExtension().davHttpClient()
             .headers(headers -> requester.impersonatedBasicAuth(headers)
                 .add("Content-Type", "text/calendar ; charset=utf-8"))
             .put()
-            .uri("/calendars/" + calendarOwnerId + "/" + calendarOwnerId + "/" + uid + ".ics")
+            .uri(eventUri.toASCIIString())
             .send(body(icsContent))
             .responseSingle((response, content) -> content.asString()
                 .defaultIfEmpty("")
