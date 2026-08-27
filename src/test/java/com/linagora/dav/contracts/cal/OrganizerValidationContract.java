@@ -22,7 +22,9 @@ import static com.linagora.dav.TestUtil.awaitAtMost;
 import static com.linagora.dav.TestUtil.body;
 import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_NO_CONTENT;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
@@ -36,11 +38,13 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
+import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.parameter.PartStat;
 
 public abstract class OrganizerValidationContract {
@@ -471,6 +475,91 @@ public abstract class OrganizerValidationContract {
 
         // THEN the update is accepted
         assertThat(response.status()).isEqualTo(SC_NO_CONTENT);
+    }
+
+    @Test
+    void copyEventToCalendarOfOtherUserShouldBeForbidden() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        // GIVEN the user owns an event in his default calendar
+        assertThat(putIcs(user, user.id(), uid, eventWithOrganizer(uid, user.email())).status())
+            .isEqualTo(SC_CREATED);
+        String destinationUri = CalendarURL.from(otherUser.id()).eventHref(uid).toASCIIString();
+
+        // WHEN the user copies the event to the calendar of another user
+        DavResponse response = transferIcs("COPY", user, eventUri(user, uid), destinationUri);
+
+        // THEN the copy is forbidden because the target calendar is not owned by the user
+        assertThat(response.status()).isEqualTo(SC_FORBIDDEN);
+        // AND nothing landed in the calendar of the other user
+        assertThat(eventStatus(otherUser, destinationUri)).isEqualTo(SC_NOT_FOUND);
+    }
+
+    @Test
+    void moveEventToCalendarOfOtherUserShouldBeForbidden() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        OpenPaasUser otherUser = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+
+        // GIVEN the user owns an event in his default calendar
+        assertThat(putIcs(user, user.id(), uid, eventWithOrganizer(uid, user.email())).status())
+            .isEqualTo(SC_CREATED);
+        String destinationUri = CalendarURL.from(otherUser.id()).eventHref(uid).toASCIIString();
+
+        // WHEN the user moves the event to the calendar of another user
+        DavResponse response = transferIcs("MOVE", user, eventUri(user, uid), destinationUri);
+
+        // THEN the move is forbidden because the target calendar is not owned by the user
+        assertThat(response.status()).isEqualTo(SC_FORBIDDEN);
+        // AND nothing landed in the calendar of the other user, while the source is untouched
+        assertThat(eventStatus(otherUser, destinationUri)).isEqualTo(SC_NOT_FOUND);
+        assertThat(eventStatus(user, eventUri(user, uid))).isEqualTo(SC_OK);
+    }
+
+    private String eventWithOrganizer(String uid, String organizerEmail) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Test//Test//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250101T000000Z
+            DTSTART:20250101T090000Z
+            DTEND:20250101T100000Z
+            SUMMARY:Meeting
+            ORGANIZER:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(uid, organizerEmail);
+    }
+
+    private String eventUri(OpenPaasUser user, String uid) {
+        return "/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics";
+    }
+
+    private DavResponse transferIcs(String method, OpenPaasUser requester, String sourceUri, String destinationUri) {
+        return dockerExtension().davHttpClient()
+            .headers(headers -> requester.impersonatedBasicAuth(headers)
+                .add("Destination", destinationUri))
+            .request(HttpMethod.valueOf(method))
+            .uri(sourceUri)
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
+            .block();
+    }
+
+    private int eventStatus(OpenPaasUser requester, String uri) {
+        return dockerExtension().davHttpClient()
+            .headers(requester::impersonatedBasicAuth)
+            .get()
+            .uri(uri)
+            .responseSingle((response, content) -> content.asString()
+                .defaultIfEmpty("")
+                .map(stringContent -> response.status().code()))
+            .block();
     }
 
     private DavResponse putIcs(OpenPaasUser requester, String calendarOwnerId, String uid, String icsContent) {
