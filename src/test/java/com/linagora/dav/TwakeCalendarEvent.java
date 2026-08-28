@@ -125,11 +125,25 @@ public record TwakeCalendarEvent(Calendar calendar) {
         }
 
         public Builder attendee(String email) {
-            Attendee attendee = new Attendee(URI.create("mailto:" + email));
-            attendee.add(new Cn(email));
-            attendee.add(new PartStat("NEEDS-ACTION"));
+            return attendee(email, "NEEDS-ACTION");
+        }
+
+        public Builder attendee(String email, String partStat) {
+            Attendee attendee = newAttendee(email);
+            attendee.add(new PartStat(partStat));
             this.attendees.add(attendee);
             return this;
+        }
+
+        public Builder attendeeWithoutPartStat(String email) {
+            this.attendees.add(newAttendee(email));
+            return this;
+        }
+
+        private Attendee newAttendee(String email) {
+            Attendee attendee = new Attendee(URI.create("mailto:" + email));
+            attendee.add(new Cn(email));
+            return attendee;
         }
 
         public Builder exDate(String exdate) {

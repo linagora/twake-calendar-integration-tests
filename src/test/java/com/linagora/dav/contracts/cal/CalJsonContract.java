@@ -41,11 +41,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Streams;
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
+import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
+import com.linagora.dav.TwakeCalendarProvisioningService.TeamCalendarRole;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -1993,6 +1996,253 @@ public abstract class CalJsonContract {
                     {"uid":"%s","start":"20300412T030000Z","end":"20300412T040000Z"},
                     {"uid":"%s","start":"20300414T080000Z","end":"20300414T090000Z"}]}]}]}
                 """, alice.id(), alice.id(), eventUid, eventUid));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    // An event booked in a calendar occupies it: only an explicit DECLINED of the
+    // queried principal frees the slot back.
+    @Test
+    void freeBusyShouldNotReportBusyPeriodWhenPrincipalDeclined() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .attendee(alice.email(), "DECLINED")
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = postFreeBusy(alice, alice.id());
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(String.format("""
+                {"start":"20300411T000000","end":"20300412T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[]}]}]}
+                """, alice.id(), alice.id()));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    @Test
+    void freeBusyShouldReportBusyPeriodWhenPrincipalDidNotAnswerYet() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .attendee(alice.email(), "NEEDS-ACTION")
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = postFreeBusy(alice, alice.id());
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    @Test
+    void freeBusyShouldReportBusyPeriodWhenPrincipalAccepted() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .attendee(alice.email(), "ACCEPTED")
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = postFreeBusy(alice, alice.id());
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    @Test
+    void freeBusyShouldReportBusyPeriodWhenPrincipalHasNoPartStat() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .attendeeWithoutPartStat(alice.email())
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = postFreeBusy(alice, alice.id());
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    // Alice organizes the meeting without listing herself as an attendee: her
+    // participation is unknown, which is not a refusal, so her calendar is busy.
+    @Test
+    void freeBusyShouldReportBusyPeriodWhenPrincipalIsNotAnAttendee() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(alice.email())
+            .attendee(bob.email(), "ACCEPTED")
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = postFreeBusy(alice, alice.id());
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    // A team calendar is never an attendee of the events it hosts: a slot booked
+    // there has to be reported as busy, or it keeps being offered to the members.
+    @Test
+    void freeBusyShouldReportBusyPeriodOfTeamCalendar() {
+        OpenPaasUser member = dockerExtension().newTestUser();
+        OpenPaasUser guest = dockerExtension().newTestUser();
+
+        OpenPaaSTeamCalendar teamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("operations-" + UUID.randomUUID(), "Operations Team")
+            .block();
+        dockerExtension().twakeCalendarProvisioningService()
+            .addTeamCalendarMember(teamCalendar, member, TeamCalendarRole.MEMBER)
+            .block();
+        CalendarURL teamCalendarURL = calDavClient.findDelegatedCalendar(member, teamCalendar.id());
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(member.email())
+            .attendee(guest.email(), "ACCEPTED")
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(member, teamCalendarURL, eventUid, calendarData);
+
+        String body = postFreeBusy(member, teamCalendar.id());
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(String.format("""
+                {"start":"20300411T000000","end":"20300412T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
+                    {"uid":"%s","start":"20300411T030000Z","end":"20300411T040000Z"}]}]}]}
+                """, teamCalendar.id(), teamCalendar.id(), eventUid));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/466
+    // A refusal is carried by the occurrence that carries it: the 2030-04-12
+    // override is declined, the other occurrences still occupy the calendar.
+    @Test
+    void freeBusyShouldOnlyFreeTheDeclinedOccurrenceOfARecurringEvent() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20300101T080000Z
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20300411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20300411T110000
+            RRULE:FREQ=DAILY
+            SUMMARY:Sprint planning #01
+            ORGANIZER;CN={organizer}:mailto:{organizer}
+            ATTENDEE;CN={attendee};PARTSTAT=ACCEPTED:mailto:{attendee}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20300101T080000Z
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:20300412T100000
+            DTSTART;TZID=Asia/Ho_Chi_Minh:20300412T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:20300412T110000
+            SUMMARY:Sprint planning #01
+            ORGANIZER;CN={organizer}:mailto:{organizer}
+            ATTENDEE;CN={attendee};PARTSTAT=DECLINED:mailto:{attendee}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizer}", bob.email())
+            .replace("{attendee}", alice.email());
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .body("{\"start\":\"20300411T000000\",\"end\":\"20300414T000000\",\"users\":[\"" + alice.id() + "\"]}")
+        .when()
+            .post("/calendars/freebusy")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(String.format("""
+                {"start":"20300411T000000","end":"20300414T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
+                    {"uid":"%s","start":"20300411T030000Z","end":"20300411T040000Z"},
+                    {"uid":"%s","start":"20300413T030000Z","end":"20300413T040000Z"}]}]}]}
+                """, alice.id(), alice.id(), eventUid, eventUid));
+    }
+
+    private String postFreeBusy(OpenPaasUser requester, String userId) {
+        return given()
+            .headers("Authorization", requester.impersonatedBasicAuth())
+            .body("{\"start\":\"20300411T000000\",\"end\":\"20300412T000000\",\"users\":[\"" + userId + "\"]}")
+        .when()
+            .post("/calendars/freebusy")
+        .then()
+            .extract()
+            .body()
+            .asString();
+    }
+
+    private String expectedSingleBusyPeriod(OpenPaasUser user, String eventUid) {
+        return String.format("""
+            {"start":"20300411T000000","end":"20300412T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
+                {"uid":"%s","start":"20300411T030000Z","end":"20300411T040000Z"}]}]}]}
+            """, user.id(), user.id(), eventUid);
     }
 
     @Test
