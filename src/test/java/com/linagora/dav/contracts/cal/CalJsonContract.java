@@ -1952,6 +1952,49 @@ public abstract class CalJsonContract {
                 """, alice.id(), alice.id()));
     }
 
+    // https://github.com/linagora/esn-sabre/issues/466
+    @Test
+    void freeBusyShouldExpandRecurringEvents() {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        String eventUid = UUID.randomUUID().toString();
+        // A daily event, whose 2030-04-13 occurrence is cancelled and whose
+        // 2030-04-14 one is moved to another time of the day.
+        String calendarData = TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(alice.email())
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .rrule("FREQ=DAILY")
+            .exDate("20300413T100000")
+            .recurrenceOverride("20300414T100000", "20300414T150000", "20300414T160000")
+            .build()
+            .toString();
+        calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+
+        String body = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .body("{\"start\":\"20300412T000000\",\"end\":\"20300415T000000\",\"users\":[\"" + alice.id() + "\"]}")
+        .when()
+            .post("/calendars/freebusy")
+        .then()
+            .extract()
+            .body()
+            .asString();
+
+        // One busy period per occurrence of the window, all carrying the uid of
+        // the master event: 2030-04-12 as scheduled, 2030-04-13 skipped by the
+        // EXDATE and 2030-04-14 at the time of its override.
+        assertThatJson(body)
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .isEqualTo(String.format("""
+                {"start":"20300412T000000","end":"20300415T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
+                    {"uid":"%s","start":"20300412T030000Z","end":"20300412T040000Z"},
+                    {"uid":"%s","start":"20300414T080000Z","end":"20300414T090000Z"}]}]}]}
+                """, alice.id(), alice.id(), eventUid, eventUid));
+    }
+
     @Test
     void reportFreeBusyShouldShowBusyPeriod() throws JsonProcessingException {
         OpenPaasUser testUser = dockerExtension().newTestUser();
