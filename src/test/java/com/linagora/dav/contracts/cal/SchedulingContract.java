@@ -23,6 +23,7 @@ import static com.linagora.dav.TestUtil.executeNoContent;
 import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.net.URI;
 import java.time.Duration;
@@ -47,7 +48,9 @@ import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.CalendarUtil.CalendarExtractor;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.TwakeCalendarProvisioningService.TeamCalendarRole;
 
 import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
@@ -4182,6 +4185,67 @@ public abstract class SchedulingContract {
             assertThat(calendarObjectUrisByEventUid(alice, aliceDefaultCalendarURL, eventUid))
                 .as("Organizer update should not recreate the moved event in Alice default calendar")
                 .hasSize(0);
+        });
+    }
+
+    @Test
+    void organizerUpdateShouldUpdateInvitationMovedToTeamCalendar() {
+        // Given Bob (non-member) creates a meeting and invites Alice, who is a write-enabled Team Calendar member
+        OpenPaaSTeamCalendar teamCalendar = extension().twakeCalendarProvisioningService()
+            .createTeamCalendar("product-team-" + UUID.randomUUID(), "Product Team")
+            .block();
+        extension().twakeCalendarProvisioningService()
+            .addTeamCalendarMember(teamCalendar, alice, TeamCalendarRole.MEMBER)
+            .block();
+        CalendarURL aliceDelegatedTeamCalendar = calDavClient.findDelegatedCalendar(alice, teamCalendar.id());
+
+        String eventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Customer sizing meeting
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, organizerEventIcs);
+
+        CalendarURL aliceDefaultCalendar = CalendarURL.from(alice.id());
+        URI aliceDefaultEventUri = awaitCalendarObjectUriByEventUid(alice, aliceDefaultCalendar, eventUid);
+        URI aliceTeamEventUri = aliceDelegatedTeamCalendar.eventHref(eventUid);
+
+        // And Alice moves her attendee copy from her personal calendar to the Team Calendar
+        assertThat(moveEvent(alice, aliceDefaultEventUri, aliceTeamEventUri))
+            .as("Alice should be able to move the customer invitation to the Team Calendar")
+            .isIn(201, 204);
+
+        // When Bob updates the organizer event
+        URI bobOrganizerEventUri = CalendarURL.from(bob.id()).eventHref(eventUid);
+        String bobUpdatedEventIcs = calDavClient.getCalendarEvent(bob, bobOrganizerEventUri)
+            .replace("SUMMARY:Customer sizing meeting", "SUMMARY:Customer sizing meeting updated");
+        calDavClient.upsertCalendarEvent(bob, bobOrganizerEventUri, bobUpdatedEventIcs);
+
+        // Then the moved Team Calendar event is updated and Alice's personal calendar stays empty
+        awaitAtMost.untilAsserted(() -> {
+            assertSoftly(softly -> {
+                softly.assertThat(readEventSummary(calDavClient.getCalendarEvent(alice, aliceTeamEventUri)))
+                    .as("Organizer update should be applied to the attendee event moved to the Team Calendar")
+                    .isEqualTo("Customer sizing meeting updated");
+                softly.assertThat(calendarObjectUrisByEventUid(alice, aliceDefaultCalendar, eventUid))
+                    .as("Organizer update should not recreate the attendee event in Alice's personal calendar")
+                    .hasSize(0);
+            });
         });
     }
 
