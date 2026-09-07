@@ -43,6 +43,7 @@ import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.CalendarUtil.CalendarExtractor;
@@ -184,6 +185,112 @@ public abstract class SchedulingContract {
         // And scheduling is bypassed: Bob never receives a copy
         calmlyAwait.during(5, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(calDavClient.findFirstEventId(bob)).isEmpty());
+    }
+
+    @Test
+    void eventWithThirdPartyOrganizerShouldNotPropagateEventToAttendeeCalendar() {
+        // Given an event Bob stores in his own calendar, but organized by Alice
+        String organizerEventUid = "event-" + UUID.randomUUID();
+
+        // When Bob upserts it
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid,
+            eventWithOrganizerAndAttendee(organizerEventUid, alice.email(), cedric.email()));
+
+        // Then the event is stored: Bob is free to keep whatever he likes in his own calendar
+        assertThat(awaitFirstEventId(bob)).isEqualTo(organizerEventUid);
+
+        // But scheduling never runs under an organizer Bob is not entitled to act as,
+        // so neither the attendee nor the claimed organizer hears about it
+        calmlyAwait.during(3, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.findFirstEventId(cedric)).isEmpty();
+                assertThat(calDavClient.findFirstEventId(alice)).isEmpty();
+            });
+    }
+
+    @Test
+    void eventWithUnknownOrganizerShouldNotPropagateEventToAttendeeCalendar() {
+        // Given an event organized by an address that resolves to no principal at all
+        String organizerEventUid = "event-" + UUID.randomUUID();
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid,
+            eventWithOrganizerAndAttendee(organizerEventUid, "unknown-nobody@example-nonexistent.invalid", cedric.email()));
+
+        // Then the event is stored but nothing is scheduled
+        assertThat(awaitFirstEventId(bob)).isEqualTo(organizerEventUid);
+        calmlyAwait.during(3, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(calDavClient.findFirstEventId(cedric)).isEmpty());
+    }
+
+    @Test
+    void eventWithAttendeeButNoOrganizerShouldNotPropagateEventToAttendeeCalendar() {
+        // Given an event listing an attendee but naming no organizer
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Meeting without organizer
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{cedricEmail}", cedric.email());
+
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        // Then the event is stored but there is no organizer to schedule under
+        assertThat(awaitFirstEventId(bob)).isEqualTo(organizerEventUid);
+        calmlyAwait.during(3, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(calDavClient.findFirstEventId(cedric)).isEmpty());
+    }
+
+    @Test
+    void delegateUsingOwnAddressAsOrganizerShouldNotPropagateEventToAttendeeCalendar() {
+        // Given Alice is a write-enabled delegate of Bob's calendar
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        CalendarURL aliceMirrorOfBobCalendar = calDavClient.findDelegatedCalendar(alice, bob.id());
+        String organizerEventUid = "event-" + UUID.randomUUID();
+
+        // When Alice writes into Bob's calendar but names herself as organizer
+        calDavClient.upsertCalendarEvent(alice, aliceMirrorOfBobCalendar, organizerEventUid,
+            eventWithOrganizerAndAttendee(organizerEventUid, alice.email(), cedric.email()));
+
+        // Then the event is stored in Bob's calendar
+        assertThat(awaitFirstEventId(bob)).isEqualTo(organizerEventUid);
+
+        // But scheduling runs as the calendar owner, so an organizer who is not the owner
+        // sends nothing: Alice cannot invite in Bob's calendar under her own name
+        calmlyAwait.during(3, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(calDavClient.findFirstEventId(cedric)).isEmpty());
+    }
+
+    private String eventWithOrganizerAndAttendee(String eventUid, String organizerEmail, String attendeeEmail) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Meeting
+            ORGANIZER:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{attendeeEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{organizerEmail}", organizerEmail)
+            .replace("{attendeeEmail}", attendeeEmail);
     }
 
     @Test
