@@ -53,6 +53,7 @@ import com.linagora.dav.OpenPaasUser;
 import io.netty.handler.codec.http.HttpMethod;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Parameter;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.fortuna.ical4j.model.property.Clazz;
@@ -3564,6 +3565,170 @@ public abstract class SchedulingContract {
             assertThat(cedricPartStats.get(CalendarUtil.MASTER_RECURRENCE_KEY)).isEqualTo(PartStat.NEEDS_ACTION);
             assertThat(cedricPartStats.get("20351006T090000Z")).isEqualTo(PartStat.DECLINED);
         });
+    }
+
+    @Test
+    void updatingRecurringMasterParticipationShouldPreservePastOverrideParticipation() {
+        String eventUid = "event-" + UUID.randomUUID();
+        String firstPastOverrideRecurrenceId = "20250102T090000Z";
+        String secondPastOverrideRecurrenceId = "20250103T090000Z";
+        String futureOverrideRecurrenceId = "30250104T090000Z";
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTART:20250101T090000Z
+            DTEND:20250101T100000Z
+            RDATE:20250102T090000Z,20250103T090000Z,30250104T090000Z
+            SUMMARY:Recurring participation
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=DECLINED;ROLE=CHAIR:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID:{firstPastOverrideRecurrenceId}
+            DTSTART:20250102T110000Z
+            DTEND:20250102T120000Z
+            SUMMARY:First past override
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=DECLINED;ROLE=CHAIR:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID:{secondPastOverrideRecurrenceId}
+            DTSTART:20250103T083000Z
+            DTEND:20250103T093000Z
+            SUMMARY:Second past override
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=DECLINED;ROLE=CHAIR:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID:{futureOverrideRecurrenceId}
+            DTSTART:30250104T110000Z
+            DTEND:30250104T120000Z
+            SUMMARY:Future override
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=DECLINED;ROLE=CHAIR:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{firstPastOverrideRecurrenceId}", firstPastOverrideRecurrenceId)
+            .replace("{secondPastOverrideRecurrenceId}", secondPastOverrideRecurrenceId)
+            .replace("{futureOverrideRecurrenceId}", futureOverrideRecurrenceId)
+            .replace("{bobEmail}", bob.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, initialIcs);
+
+        // When Bob accepts the series but keeps the past override responses declined
+        String updatedIcs = initialIcs.replaceFirst("PARTSTAT=DECLINED", "PARTSTAT=ACCEPTED");
+        calDavClient.upsertCalendarEvent(bob, eventUid, updatedIcs);
+
+        // Then the master response changes without overwriting the past overrides
+        Map<String, PartStat> partStats = CalendarUtil.getRecurringAttendeePartStats(
+            calDavClient.getCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics")),
+            bob.email());
+        assertThat(partStats)
+            .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.ACCEPTED)
+            .containsEntry(firstPastOverrideRecurrenceId, PartStat.DECLINED)
+            .containsEntry(secondPastOverrideRecurrenceId, PartStat.DECLINED)
+            .containsEntry(futureOverrideRecurrenceId, PartStat.ACCEPTED);
+    }
+
+    @Test
+    void updatingRecurringMasterParticipationShouldPreserveOtherAttendeeOverrideResponses() {
+        // Given David invites three attendees, with a future override so the past-override guard cannot hide a regression.
+        String eventUid = "event-" + UUID.randomUUID();
+        String secondOccurrenceRecurrenceId = "30250102T090000Z";
+        String initialIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTART:30250101T090000Z
+            DTEND:30250101T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Recurring attendance diff
+            ORGANIZER:mailto:{davidEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{eventUid}
+            RECURRENCE-ID:{secondOccurrenceRecurrenceId}
+            DTSTART:30250102T090000Z
+            DTEND:30250102T100000Z
+            SUMMARY:Recurring attendance diff
+            ORGANIZER:mailto:{davidEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{cedricEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{bobEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{eventUid}", eventUid)
+            .replace("{secondOccurrenceRecurrenceId}", secondOccurrenceRecurrenceId)
+            .replace("{davidEmail}", david.email())
+            .replace("{cedricEmail}", cedric.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{bobEmail}", bob.email());
+        calDavClient.upsertCalendarEvent(david, eventUid, initialIcs);
+        Map<OpenPaasUser, URI> eventUris = Map.of(
+            david, URI.create("/calendars/" + david.id() + "/" + david.id() + "/" + eventUid + ".ics"),
+            alice, URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + awaitFirstEventId(alice) + ".ics"),
+            bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + awaitFirstEventId(bob) + ".ics"),
+            cedric, URI.create("/calendars/" + cedric.id() + "/" + cedric.id() + "/" + awaitFirstEventId(cedric) + ".ics"));
+
+        // Alice declines only occurrence 2 on her own copy; wait for scheduling to deliver her response to everyone.
+        updateRecurringResponse(alice, eventUris.get(alice), secondOccurrenceRecurrenceId, PartStat.DECLINED);
+        awaitAtMost.untilAsserted(() -> eventUris.forEach((user, uri) ->
+            assertThat(CalendarUtil.getRecurringAttendeePartStats(calDavClient.getCalendarEvent(user, uri), alice.email()))
+                .containsEntry(secondOccurrenceRecurrenceId, PartStat.DECLINED)));
+
+        // Bob accepts only occurrence 2 on his own copy, leaving his master response unchanged.
+        updateRecurringResponse(bob, eventUris.get(bob), secondOccurrenceRecurrenceId, PartStat.ACCEPTED);
+        awaitAtMost.untilAsserted(() -> eventUris.forEach((user, uri) ->
+            assertThat(CalendarUtil.getRecurringAttendeePartStats(calDavClient.getCalendarEvent(user, uri), bob.email()))
+                .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.NEEDS_ACTION)
+                .containsEntry(secondOccurrenceRecurrenceId, PartStat.ACCEPTED)));
+
+        // Cedric changes only his master PARTSTAT; Sabre should update future overrides before scheduling.
+        updateRecurringResponse(cedric, eventUris.get(cedric), CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.ACCEPTED);
+        assertThat(CalendarUtil.getRecurringAttendeePartStats(
+            calDavClient.getCalendarEvent(cedric, eventUris.get(cedric)), cedric.email()))
+            .as("Cedric's own copy must reflect ParticipationPlugin's update before checking organizer delivery")
+            .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.ACCEPTED)
+            .containsEntry(secondOccurrenceRecurrenceId, PartStat.ACCEPTED);
+
+        // Then David's organizer copy and all attendee copies agree: only Bob and Cedric accepted occurrence 2.
+        awaitAtMost.untilAsserted(() -> eventUris.forEach((user, uri) -> {
+            String storedIcs = calDavClient.getCalendarEvent(user, uri);
+            assertThat(CalendarUtil.getRecurringAttendeePartStats(storedIcs, alice.email()))
+                .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.NEEDS_ACTION)
+                .containsEntry(secondOccurrenceRecurrenceId, PartStat.DECLINED);
+            assertThat(CalendarUtil.getRecurringAttendeePartStats(storedIcs, bob.email()))
+                .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.NEEDS_ACTION)
+                .containsEntry(secondOccurrenceRecurrenceId, PartStat.ACCEPTED);
+            assertThat(CalendarUtil.getRecurringAttendeePartStats(storedIcs, cedric.email()))
+                .containsEntry(CalendarUtil.MASTER_RECURRENCE_KEY, PartStat.ACCEPTED)
+                .containsEntry(secondOccurrenceRecurrenceId, PartStat.ACCEPTED);
+        }));
+    }
+
+    private void updateRecurringResponse(OpenPaasUser user, URI eventUri, String recurrenceId, PartStat partStat) {
+        Calendar calendar = CalendarUtil.parseIcs(calDavClient.getCalendarEvent(user, eventUri));
+        Component occurrence = calendar.getComponents(Component.VEVENT).stream()
+            .filter(event -> event.getProperty(Property.RECURRENCE_ID).map(Property::getValue)
+                .orElse(CalendarUtil.MASTER_RECURRENCE_KEY).equals(recurrenceId))
+            .findFirst().orElseThrow();
+        Property attendee = occurrence.getProperties(Property.ATTENDEE).stream()
+            .filter(property -> property.getValue().equalsIgnoreCase("mailto:" + user.email()))
+            .findFirst().orElseThrow();
+        attendee.getParameter(Parameter.PARTSTAT).ifPresent(attendee::remove);
+        attendee.add(partStat);
+        calDavClient.upsertCalendarEvent(user, eventUri, calendar.toString());
     }
 
     @Test
