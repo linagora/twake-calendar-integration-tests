@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,7 +48,9 @@ import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.CalendarUtil.CalendarExtractor;
+import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
 
 import io.netty.handler.codec.http.HttpMethod;
@@ -2657,6 +2660,76 @@ public abstract class SchedulingContract {
             assertThatCalendar(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
                 .ignoringProperties(IGNORED_CALENDAR_PROPERTIES)
                 .isEqualTo(expectedAliceEventIcs));
+    }
+
+    @Test
+    void recurringOccurrencesInvitedWithoutMasterShouldBeReturnedByTimeRangeReport() throws JsonProcessingException {
+        // Given Bob owns a recurring series whose master does not invite Alice
+        // And Alice is invited only on two detached occurrences, an earlier one and a later one
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351001T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            SUMMARY:Recurring master
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351001T080000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:First invited occurrence
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            RECURRENCE-ID:20351008T090000Z
+            DTSTAMP:20351001T080000Z
+            DTSTART:20351008T090000Z
+            DTEND:20351008T100000Z
+            SUMMARY:Second invited occurrence
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        // And scheduling creates Alice's attendee copy with both detached occurrences but no recurring master
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+            .doesNotContain("RRULE")
+            .contains("RECURRENCE-ID:20351006T090000Z")
+            .contains("RECURRENCE-ID:20351008T090000Z"));
+
+        // When Alice's REPORT requests a range containing only the later detached occurrence
+        // (the earlier occurrence is deliberately outside the requested range)
+        DavResponse response = calDavClient.findEventsByTime(alice, "20351008T000000", "20351009T000000");
+        List<JsonCalendarEventData> events = JsonCalendarEventData.from(response.body());
+
+        // Then the later occurrence must still be returned even though Alice's copy has no recurring master
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(events).anySatisfy(event -> {
+            assertThat(event.uid()).isEqualTo(organizerEventUid);
+            assertThat(event.summary()).contains("Second invited occurrence");
+            assertThat(event.recurrenceId()).contains("2035-10-08T09:00:00Z");
+        });
     }
 
     @Test
