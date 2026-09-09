@@ -25,7 +25,7 @@ import com.linagora.dav.contracts.cal.TeamCalendarAMQPMessageContract;
 
 public class SabreV4TeamCalendarAMQPMessageTest extends TeamCalendarAMQPMessageContract {
     @RegisterExtension
-    static DockerTwakeCalendarExtensionV4_7 dockerExtension = DockerTwakeCalendarExtensionV4_7.withOrganizerValidation();
+    static DockerTwakeCalendarExtensionV4_7 dockerExtension = new DockerTwakeCalendarExtensionV4_7();
 
     @Override
     public DockerTwakeCalendarExtensionV4_7 dockerExtension() {
