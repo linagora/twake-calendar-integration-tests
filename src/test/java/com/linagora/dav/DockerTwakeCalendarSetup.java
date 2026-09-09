@@ -67,20 +67,12 @@ public class DockerTwakeCalendarSetup {
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
 
     public DockerTwakeCalendarSetup(String sabreVersion) {
-        this(sabreVersion, false, false);
+        this(sabreVersion, false);
     }
 
     public DockerTwakeCalendarSetup(String sabreVersion, boolean principalPrivacy) {
-        this(sabreVersion, principalPrivacy, false);
-    }
-
-    public DockerTwakeCalendarSetup(String sabreVersion, boolean principalPrivacy, boolean organizerValidation) {
-        this(sabreVersion, Boolean.toString(principalPrivacy), Boolean.toString(organizerValidation));
-    }
-
-    private DockerTwakeCalendarSetup(String sabreVersion, String principalPrivacy, String organizerValidation) {
-        LOGGER.info("Test config: PRINCIPAL_PRIVACY={}", principalPrivacy);
-        LOGGER.info("Test config: CALDAV_ORGANIZER_VALIDATION={}", organizerValidation);
+        String principalPrivacyValue = Boolean.toString(principalPrivacy);
+        LOGGER.info("Test config: PRINCIPAL_PRIVACY={}", principalPrivacyValue);
         try {
             environment = new ComposeContainer(
                 new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
@@ -96,8 +88,7 @@ public class DockerTwakeCalendarSetup {
                 .waitingFor(DockerService.CALENDAR_SIDE.serviceName(), Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
-                .withEnv("PRINCIPAL_PRIVACY", principalPrivacy)
-                .withEnv("CALDAV_ORGANIZER_VALIDATION", organizerValidation)
+                .withEnv("PRINCIPAL_PRIVACY", principalPrivacyValue)
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("[esn-sabre] " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("[twake-calendar-side-service] " + log.getUtf8String()));
         } catch (URISyntaxException e) {
