@@ -633,6 +633,34 @@ public abstract class TeamCalendarSchedulingContract {
         });
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void attendeeCopyMoveShouldBeRejectedWhenTeamCalendarAlreadyContainsUid(boolean canonicalDestination) {
+        // Given the Team Calendar contains the organizer copy and Alice has a personal attendee copy
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(aliceMember.email()), "Existing Team Calendar meeting"));
+        URI personalEventUri = awaitCalendarObjectUriByEventUid(aliceMember, CalendarURL.from(aliceMember.id()), eventUid);
+        CalendarURL aliceTeamCalendar = calDavClient.findDelegatedCalendar(aliceMember, teamCalendar.id());
+        CalendarURL canonicalTeamCalendar = CalendarURL.from(teamCalendar.id());
+        CalendarURL destinationCalendar = canonicalDestination ? canonicalTeamCalendar : aliceTeamCalendar;
+        String personalBefore = calDavClient.getCalendarEvent(aliceMember, personalEventUri);
+        String teamBefore = calDavClient.getCalendarEvent(bobMember, canonicalTeamCalendar.eventHref(eventUid));
+
+        // When Alice moves to another filename or attempts to overwrite the existing organizer object
+        for (String destinationName : List.of("moved-" + eventUid, "moved+" + eventUid, eventUid)) {
+            assertThat(moveEvent(aliceMember, personalEventUri, destinationCalendar.eventHref(destinationName)))
+                .as("MOVE must reject an existing UID, regardless of destination filename or DAV mirror")
+                .isEqualTo(403);
+
+            // Then both copies are unchanged and no extra object is created in the Team Calendar
+            assertThat(calDavClient.getCalendarEvent(aliceMember, personalEventUri)).isEqualTo(personalBefore);
+            assertThat(calDavClient.getCalendarEvent(bobMember, canonicalTeamCalendar.eventHref(eventUid))).isEqualTo(teamBefore);
+            assertThat(calDavClient.getCalendarEvent(aliceMember, aliceTeamCalendar.eventHref(eventUid))).isEqualTo(teamBefore);
+            assertThat(calendarObjectUrisByEventUid(aliceMember, aliceTeamCalendar, eventUid)).hasSize(1);
+        }
+    }
+
     @Test
     void writeMemberShouldNotMoveAttendeeCopyWithNonMemberOrganizerToTeamCalendar() {
         // Given nonMember creates a personal event that invites bobMember, a write-enabled Team Calendar member
