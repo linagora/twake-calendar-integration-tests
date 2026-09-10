@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
@@ -763,8 +764,8 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"ACCEPTED", "DECLINED"})
-    void teamCalendarMemberPartStatUpdateShouldPropagateToNonMemberAttendeeCopy(String partStatValue) {
+    @CsvSource({"ACCEPTED, true", "DECLINED, true", "ACCEPTED, false", "DECLINED, false"})
+    void teamCalendarMemberPartStatUpdateShouldPropagateToNonMemberAttendeeCopy(String partStatValue, boolean keepTeamCalendarProperty) {
         // Given bobMember creates a Team Calendar event with aliceMember and nonMember as attendees
         String eventUid = "team-event-" + UUID.randomUUID();
         calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
@@ -775,6 +776,11 @@ public abstract class TeamCalendarSchedulingContract {
 
         // When aliceMember updates her participation status from her attendee copy
         String aliceMemberEventIcs = calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri);
+        // Removing the routing marker must not prevent REPLY delivery to the organizer copy.
+        if (!keepTeamCalendarProperty) {
+            aliceMemberEventIcs = CalendarUtil.parseIcsAndSanitize(aliceMemberEventIcs, "X-OPENPAAS-TEAM-CALENDAR-ID").toString();
+            assertThat(aliceMemberEventIcs).doesNotContain("X-OPENPAAS-TEAM-CALENDAR-ID");
+        }
         given()
             .header("Authorization", OpenPaasUser.impersonatedBasicAuth(aliceMember.email()))
             .header("Content-Type", "text/calendar ; charset=utf-8")
