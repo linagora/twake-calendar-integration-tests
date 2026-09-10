@@ -595,6 +595,10 @@ public abstract class TeamCalendarSchedulingContract {
                 softly.assertThat(readEventSummary(calDavClient.getCalendarEvent(aliceMember, aliceTeamEventUri)))
                     .as("Organizer update should be applied to the attendee event moved to the Team Calendar")
                     .isEqualTo("Customer sizing meeting updated");
+                softly.assertThat(readEventSummary(calDavClient.getCalendarEvent(aliceMember,
+                        CalendarURL.from(teamCalendar.id()).eventHref(eventUid))))
+                    .as("Canonical URL should expose the same updated attendee copy")
+                    .isEqualTo("Customer sizing meeting updated");
                 softly.assertThat(calendarObjectUrisByEventUid(aliceMember, aliceDefaultCalendar, eventUid))
                     .as("Organizer update should not recreate the attendee event in Alice's personal calendar")
                     .hasSize(0);
@@ -626,6 +630,10 @@ public abstract class TeamCalendarSchedulingContract {
             assertSoftly(softly -> {
                 softly.assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(aliceMember, aliceTeamEventUri))
                         .extractPropertyValue(Property.STATUS))
+                    .isEqualTo("CANCELLED");
+                softly.assertThat(CalendarUtil.toExtractor(calDavClient.getCalendarEvent(aliceMember,
+                        CalendarURL.from(teamCalendar.id()).eventHref(eventUid))).extractPropertyValue(Property.STATUS))
+                    .as("Canonical URL should expose the same cancelled attendee copy")
                     .isEqualTo("CANCELLED");
                 softly.assertThat(calendarObjectUrisByEventUid(aliceMember, aliceDefaultCalendar, eventUid))
                     .hasSize(0);
