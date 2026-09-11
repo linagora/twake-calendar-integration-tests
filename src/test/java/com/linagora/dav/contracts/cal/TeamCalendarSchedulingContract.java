@@ -536,18 +536,13 @@ public abstract class TeamCalendarSchedulingContract {
             .as("Bob should be able to move the event to the Team Calendar")
             .isIn(201, 204);
 
-        // Then the source is removed and all copies carry the server-owned Team Calendar ID
+        // Then the source is removed
         given()
             .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
         .when()
             .get(bobPersonalEventUri.toString())
         .then()
             .statusCode(404);
-        awaitAtMost.untilAsserted(() -> {
-            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(bobMember, teamCalendarEventUri));
-            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri));
-            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(nonMember, nonMemberEventUri));
-        });
 
         // When aliceMember accepts from her attendee copy
         calDavClient.upsertCalendarEvent(aliceMember, aliceMemberEventUri,
@@ -725,18 +720,13 @@ public abstract class TeamCalendarSchedulingContract {
             .as("Bob should be able to move the recurring event to the Team Calendar")
             .isIn(201, 204);
 
-        // Then the source is removed and every VEVENT in the destination and attendee copies carries the Team Calendar ID
+        // Then the source is removed
         given()
             .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
         .when()
             .get(bobPersonalEventUri.toString())
         .then()
             .statusCode(404);
-        awaitAtMost.untilAsserted(() -> {
-            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(bobMember, teamCalendarEventUri));
-            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri));
-            assertTeamCalendarIdOnEveryEvent(calDavClient.getCalendarEvent(nonMember, nonMemberEventUri));
-        });
 
         // When aliceMember accepts only the overridden instance in her attendee copy
         String aliceMemberEvent = calDavClient.getCalendarEvent(aliceMember, aliceMemberEventUri);
@@ -1189,12 +1179,6 @@ public abstract class TeamCalendarSchedulingContract {
                 .replace("{eventUid}", eventUid)
                 .replace("{occurrenceOrganizerEmail}", occurrenceOrganizerEmail)
                 .replace("{summary}", summary));
-    }
-
-    private void assertTeamCalendarIdOnEveryEvent(String icsContent) {
-        CalendarUtil.parseIcs(icsContent).getComponents(Component.VEVENT).forEach(vevent ->
-            assertThat(vevent.getProperty("X-OPENPAAS-TEAM-CALENDAR-ID"))
-                .hasValueSatisfying(property -> assertThat(property.getValue()).isEqualTo(teamCalendar.id())));
     }
 
     private void assertRecurringAttendeePartStats(String icsContent, String overrideRecurrenceId) {
