@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.card;
 
 import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
+import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -557,6 +558,56 @@ public abstract class CardDavSharingContract {
 
         String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
 
+        assertThat(response).contains("John Doe");
+    }
+
+    @Test
+    public void createNewJsonContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+        String addressBook = "collected";
+        String copiedAddressBook = "new book";
+
+        // Given Bob has a address book with read/write public rights
+        // and Alice has subscribed to it
+        cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // When Alice creates a new contact (json format) in the copied address book
+        String payload = """
+            [
+                "vcard",
+                [
+                    [
+                        "version",
+                        {},
+                        "text",
+                        "4.0"
+                    ],
+                    [
+                        "fn",
+                        {},
+                        "text",
+                        "John Doe"
+                    ]
+                ],
+                []
+            ]""";
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .headers("Content-Type", "application/vcard+json")
+        .when()
+            .body(payload)
+            .put("addressbooks/" + alice.id() + "/" + addressBookURL.addressBookId() + "/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf")
+        .then()
+            .statusCode(201);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        // Then the contact should be present in Bob's original address book
         assertThat(response).contains("John Doe");
     }
 
