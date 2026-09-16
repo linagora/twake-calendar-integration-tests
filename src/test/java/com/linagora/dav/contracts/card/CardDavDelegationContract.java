@@ -419,6 +419,52 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    public void createNewJsonContactInCopiedAddressBookShouldResultInNewContactInOriginalAddressBook() {
+        String addressBook = "collected";
+
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.READ_WRITE);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // When Alice creates a new contact (json format) in the copied address book
+        String payload = """
+            [
+                "vcard",
+                [
+                    [
+                        "version",
+                        {},
+                        "text",
+                        "4.0"
+                    ],
+                    [
+                        "fn",
+                        {},
+                        "text",
+                        "John Doe"
+                    ]
+                ],
+                []
+            ]""";
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .headers("Content-Type", "application/vcard+json")
+            .when()
+            .body(payload)
+            .put("addressbooks/" + alice.id() + "/" + addressBookURL.addressBookId() + "/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf")
+            .then()
+            .statusCode(201);
+
+        String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
+
+        // Then the contact should be present in Bob's original address book
+        assertThat(response).contains("John Doe");
+    }
+
+    @Test
     public void updateContactInCopiedAddressBookShouldResultInUpdatedContactInOriginalAddressBook() {
         String addressBook = "collected";
         String vcardUid = "test-contact-uid";
