@@ -1040,6 +1040,266 @@ public abstract class CardDavDelegationContract {
                 .replace("{cedricId}", cedric.id()));
     }
 
+    @Test
+    void grantDelegationInCopiedAddressBookShouldSucceedWhenDelegatedUserHasAdminRight() {
+        // GIVEN Bob owns an address book
+        // AND Alice has admin right on Bob's address book (delegation)
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Alice delegates the copied address book (clone) to Cedric
+        cardDavClient.grantDelegation(alice, alice.id(), addressBookURL.addressBookId(), cedric, DelegationRight.ADMIN);
+
+        // THEN the sharing right is shown on Bob's source address book
+        assertThatJson(cardDavClient.getAddressBooks(bob))
+            .inPath("_embedded.dav:addressbook[0].acl")
+            .isEqualTo(String.format("""
+                [
+                    {
+                        "privilege": "{DAV:}all",
+                        "principal": "principals/users/{bobId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}share",
+                        "principal": "principals/users/{aliceId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}write-content",
+                        "principal": "principals/users/{aliceId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}bind",
+                        "principal": "principals/users/{aliceId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}unbind",
+                        "principal": "principals/users/{aliceId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}read",
+                        "principal": "principals/users/{aliceId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}share",
+                        "principal": "principals/users/{cedricId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}write-content",
+                        "principal": "principals/users/{cedricId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}bind",
+                        "principal": "principals/users/{cedricId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}unbind",
+                        "principal": "principals/users/{cedricId}",
+                        "protected": true
+                    },
+                    {
+                        "privilege": "{DAV:}read",
+                        "principal": "principals/users/{cedricId}",
+                        "protected": true
+                    }
+                ]
+                """.replace("{aliceId}", alice.id()))
+                .replace("{bobId}", bob.id())
+                .replace("{cedricId}", cedric.id()));
+
+        // AND a copy of Bob's address book is visible in Cedric's address book list
+        assertThatJson(cardDavClient.getAddressBooks(cedric))
+            .inPath("_embedded.dav:addressbook[2]")
+            .isEqualTo("""
+                {
+                    "_links": {
+                        "self": {
+                            "href": "${json-unit.ignore}"
+                        }
+                    },
+                    "dav:name": "",
+                    "carddav:description": "",
+                    "dav:acl": [
+                        "dav:read",
+                        "dav:write"
+                    ],
+                    "dav:share-access": 5,
+                    "openpaas:subscription-type": "delegation",
+                    "type": "",
+                    "state": "",
+                    "numberOfContacts": null,
+                    "acl": [
+                        {
+                            "privilege": "{DAV:}share",
+                            "principal": "principals/users/{cedricId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-content",
+                            "principal": "principals/users/{cedricId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}bind",
+                            "principal": "principals/users/{cedricId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}unbind",
+                            "principal": "principals/users/{cedricId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}read",
+                            "principal": "principals/users/{cedricId}",
+                            "protected": true
+                        },
+                        {
+                            "privilege": "{DAV:}write-properties",
+                            "principal": "principals/users/{cedricId}",
+                            "protected": true
+                        }
+                    ],
+                    "dav:group": null,
+                    "openpaas:source": "/addressbooks/{bobId}/collected.json"
+                }
+                """.replace("{cedricId}", cedric.id())
+                .replace("{bobId}", bob.id()));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
+    void grantDelegationInCopiedAddressBookShouldThrowErrorWhenDelegatedUserDoesNotHaveAdminRight(DelegationRight delegationRight) {
+        // GIVEN Bob owns an address book
+        // AND Alice has admin right on Bob's address book (delegation)
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, delegationRight);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Alice delegates the copied address book (clone) to Cedric
+        // THEN an error is thrown
+        assertThatThrownBy(() -> cardDavClient.grantDelegation(alice, alice.id(), addressBookURL.addressBookId(), cedric, DelegationRight.READ))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void setPublicRightInCopiedAddressBookShouldSucceedWhenDelegatedUserHasAdminRight() {
+        // GIVEN Bob owns an address book
+        // AND Alice has admin right on Bob's address book (delegation)
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Alice publishes the copied address book (clone)
+        cardDavClient.setPublicRight(alice, alice.id(), addressBookURL.addressBookId(), PublicRight.READ);
+
+        // THEN Bob's original address book is published
+        assertThat(cardDavClient.getAddressBooks(bob))
+            .contains("{\"privilege\":\"{DAV:}read\",\"principal\":\"{DAV:}authenticated\"}");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DelegationRight.class, names = {"READ", "READ_WRITE"})
+    void setPublicRightInCopiedAddressBookShouldThrowErrorWhenDelegatedUserDoesNotHaveAdminRight(DelegationRight right) {
+        // GIVEN Bob owns an address book
+        // AND Alice has no admin right on Bob's address book (delegation)
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, right);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Alice publishes the copied address book (clone) THEN she is rejected
+        assertThatThrownBy(() -> cardDavClient.setPublicRight(alice, alice.id(), addressBookURL.addressBookId(), PublicRight.READ))
+            .hasMessageContaining("Unexpected status code: 403");
+    }
+
+    @Test
+    void propfindOnCopiedAddressBookShouldReturnAllSharees() {
+        // GIVEN Bob owns an address book
+        // AND Bob delegates his address book to Alice and Cedric
+        String addressBook = "collected";
+        cardDavClient.grantDelegation(bob, addressBook, alice, DelegationRight.ADMIN);
+        cardDavClient.grantDelegation(bob, addressBook, cedric, DelegationRight.READ);
+
+        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(cedric)
+            .collectList().block().stream()
+            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
+            .findAny().get();
+
+        // WHEN Cedric reads the sharees of the copied address book (clone)
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> cedric.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("PROPFIND"))
+            .uri("/addressbooks/" + cedric.id() + "/" + addressBookURL.addressBookId())
+            .send(body("""
+                {
+                    "properties": ["{DAV:}invite"]
+                }""")));
+
+        // THEN he sees every sharee of Bob's original address book, Bob included
+        assertThatJson(response.body())
+            .isEqualTo("""
+                {
+                    "{DAV:}invite": [
+                        {
+                            "href": "mailto:{aliceEmail}",
+                            "principal": "principals/users/{aliceId}",
+                            "properties": [],
+                            "access": 5,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "mailto:{cedricEmail}",
+                            "principal": "principals/users/{cedricId}",
+                            "properties": [],
+                            "access": 2,
+                            "comment": null,
+                            "inviteStatus": 2
+                        },
+                        {
+                            "href": "principals/users/{bobId}",
+                            "principal": "principals/users/{bobId}",
+                            "properties": [],
+                            "access": 1,
+                            "comment": null,
+                            "inviteStatus": 2
+                        }
+                    ]
+                }
+                """.replace("{aliceEmail}", alice.email())
+                .replace("{aliceId}", alice.id())
+                .replace("{cedricEmail}", cedric.email())
+                .replace("{cedricId}", cedric.id())
+                .replace("{bobId}", bob.id()));
+    }
+
     private String getAddressBooksJson(OpenPaasUser user) {
         return given()
             .headers("Authorization", user.impersonatedBasicAuth())
