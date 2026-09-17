@@ -196,6 +196,26 @@ public class CardDavClient {
             }).block();
     }
 
+    public String getAddressBooks(OpenPaasUser openPaaSUser) {
+        String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
+            + "?personal=true&contactsCount=true&inviteStatus=2&shared=true&subscribed=true";
+        return client.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
+            .request(HttpMethod.GET)
+            .uri(uri)
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == HttpStatus.SC_OK) {
+                    return responseContent.asString(StandardCharsets.UTF_8);
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when getting address books of user '%s'
+                        %s
+                        """.formatted(response.status().code(), openPaaSUser.id(), errorBody))));
+            }).block();
+    }
+
     public Flux<AddressBookURL> findUserAddressBooks(OpenPaasUser openPaaSUser) {
         String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
             + "?personal=true&contactsCount=true&inviteStatus=2&shared=true&&subscribed=true";
