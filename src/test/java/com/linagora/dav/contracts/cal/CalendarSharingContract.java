@@ -2018,7 +2018,7 @@ public abstract class CalendarSharingContract {
         String response = given()
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("sharedPublicSubscription", true)
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
@@ -2052,7 +2052,7 @@ public abstract class CalendarSharingContract {
         String response = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
-            .queryParam("sharedPublicSubscription", 2)
+            .queryParam("sharedPublicSubscription", true)
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
@@ -2062,9 +2062,14 @@ public abstract class CalendarSharingContract {
             .body()
             .asString();
 
-        Assertions.assertThat(response)
-            .doesNotContain("\"dav:name\":\"new name\"")
-            .doesNotContain("\"apple:color\":\"#009688\"");
+        assertThatJson(response)
+            .inPath("_embedded.dav:calendar[1].dav:name")
+            .asString()
+            .isEqualTo("Bob readonly shared");
+        assertThatJson(response)
+            .inPath("_embedded.dav:calendar[1].apple:color")
+            .asString()
+            .isEqualTo("#00FF00");
     }
 
     @Test
