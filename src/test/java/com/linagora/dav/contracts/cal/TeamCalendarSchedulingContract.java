@@ -36,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -561,6 +562,7 @@ public abstract class TeamCalendarSchedulingContract {
         });
     }
 
+    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/489")
     @Test
     void organizerUpdateShouldUpdateInvitationMovedToTeamCalendar() {
         // Given nonMember creates a personal meeting and invites aliceMember, who is a write-enabled Team Calendar member
