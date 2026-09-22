@@ -57,6 +57,7 @@ public abstract class CardDavContract {
         "EMAIL:john.doe@example.com\n" +
         "UID:123456789\n" +
         "END:VCARD\n";
+    public static final String BASE64_IMAGE = "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB";
     public static final DifferenceEvaluator IGNORE_GETLASTMODIFIED = (comparison, outcome) -> {
         if (outcome.equals(ComparisonResult.DIFFERENT) &&
             comparison.getControlDetails().getXPath() != null &&
@@ -416,6 +417,156 @@ public abstract class CardDavContract {
             .send(body(STRING)));
 
         assertThat(status).isEqualTo(201);
+    }
+
+    @Test
+    void putShouldStripInlinePhoto() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "PHOTO;ENCODING=b;TYPE=JPEG:" + BASE64_IMAGE + "\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        assertThat(status).isEqualTo(201);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body())
+            .doesNotContain("PHOTO")
+            .contains("FN:John Doe");
+    }
+
+    @Test
+    void putShouldStripInlinePhotoSpanningSeveralLines() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "PHOTO;ENCODING=b;TYPE=JPEG:/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQ\n" +
+                " EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ\n" +
+                " EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        assertThat(status).isEqualTo(201);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response).isEqualTo(new DavResponse(200, "BEGIN:VCARD\r\n" +
+            "VERSION:3.0\r\n" +
+            "FN:John Doe\r\n" +
+            "EMAIL:john.doe@example.com\r\n" +
+            "UID:123456789\r\n" +
+            "END:VCARD\r\n"));
+    }
+
+    @Test
+    void putShouldStripDataUriPhoto() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:4.0\n" +
+                "FN:John Doe\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "PHOTO:data:image/jpeg;base64," + BASE64_IMAGE + "\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        assertThat(status).isEqualTo(201);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body())
+            .doesNotContain("PHOTO")
+            .contains("FN:John Doe");
+    }
+
+    @Test
+    void putShouldKeepPhotoReferencedByUri() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String vcard = "BEGIN:VCARD\n" +
+            "VERSION:3.0\n" +
+            "FN:John Doe\n" +
+            "EMAIL:john.doe@example.com\n" +
+            "PHOTO;VALUE=URI:https://example.com/avatar.jpg\n" +
+            "UID:123456789\n" +
+            "END:VCARD\n";
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(vcard)));
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response).isEqualTo(new DavResponse(200, vcard));
+    }
+
+    @Test
+    void putShouldStripInlinePhotoWhenUpdatingAContact() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body(STRING)));
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe-Riga\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "PHOTO;ENCODING=b;TYPE=JPEG:" + BASE64_IMAGE + "\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        assertThat(status).isEqualTo(204);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response.body())
+            .doesNotContain("PHOTO")
+            .contains("FN:John Doe");
     }
 
     @Test

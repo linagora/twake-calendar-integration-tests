@@ -604,6 +604,63 @@ public abstract class CardJsonContract {
     }
 
     @Test
+    void putShouldStripInlinePhotoFromJCard() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        String payload = """
+            [
+                "vcard",
+                [
+                    [
+                        "version",
+                        {},
+                        "text",
+                        "4.0"
+                    ],
+                    [
+                        "uid",
+                        {},
+                        "text",
+                        "d1ed30c8-15e7-4e81-a7dd-f5c60beab420"
+                    ],
+                    [
+                        "fn",
+                        {},
+                        "text",
+                        "First name Last name"
+                    ],
+                    [
+                        "photo",
+                        {},
+                        "uri",
+                        "data:image/jpeg;base64,%s"
+                    ]
+                ],
+                []
+            ]""".formatted(CardDavContract.BASE64_IMAGE);
+
+        with()
+            .headers("Authorization", testUser.impersonatedBasicAuth())
+            .headers("Content-Type", "application/vcard+json")
+            .body(payload)
+            .put("addressbooks/" + testUser.id() + "/contacts/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf");
+
+        String storedCard = given()
+            .headers("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf")
+        .then()
+            .statusCode(200)
+            .extract()
+            .body()
+            .asString();
+
+        assertThat(storedCard)
+            .doesNotContain("PHOTO")
+            .contains("FN:First name Last name");
+    }
+
+    @Test
     void putShouldUpdateContacts() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
