@@ -482,6 +482,40 @@ public abstract class CardDavContract {
     }
 
     @Test
+    void putShouldStripEveryInlinePhotoAndKeepTheOneReferencedByUri() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .put()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+            .send(body("BEGIN:VCARD\n" +
+                "VERSION:3.0\n" +
+                "FN:John Doe\n" +
+                "EMAIL:john.doe@example.com\n" +
+                "PHOTO;ENCODING=b;TYPE=JPEG:" + BASE64_IMAGE + "\n" +
+                "PHOTO;VALUE=URI:https://example.com/avatar.jpg\n" +
+                "PHOTO;VALUE=URI:data:image/jpeg;base64," + BASE64_IMAGE + "\n" +
+                "UID:123456789\n" +
+                "END:VCARD\n")));
+
+        assertThat(status).isEqualTo(201);
+
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(testUser::impersonatedBasicAuth)
+            .get()
+            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+
+        assertThat(response).isEqualTo(new DavResponse(200, "BEGIN:VCARD\r\n" +
+            "VERSION:3.0\r\n" +
+            "FN:John Doe\r\n" +
+            "EMAIL:john.doe@example.com\r\n" +
+            "PHOTO;VALUE=URI:https://example.com/avatar.jpg\r\n" +
+            "UID:123456789\r\n" +
+            "END:VCARD\r\n"));
+    }
+
+    @Test
     void putShouldStripDataUriPhoto() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
