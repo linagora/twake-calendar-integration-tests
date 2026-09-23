@@ -18,7 +18,9 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
@@ -282,5 +284,44 @@ public abstract class ReportContract {
             softly.assertThat(result.syncToken()).isEqualTo("http://sabre.io/ns/sync/3");
             softly.assertThat(result.items()).isEmpty();
         });
+    }
+
+    @Test
+    void timeRangeReportShouldFindEventWithCustomTimezoneAtItsUtcTime() {
+        String uid = UUID.randomUUID().toString();
+
+        // Given a 09:00 event in a custom timezone whose UTC offset is -04:00.
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Linagora//Twake Calendar//EN
+            BEGIN:VTIMEZONE
+            TZID:Custom Eastern
+            X-LIC-LOCATION:America/New_York
+            BEGIN:STANDARD
+            DTSTART:19700101T000000
+            TZOFFSETFROM:-0400
+            TZOFFSETTO:-0400
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20260301T000000Z
+            DTSTART;TZID=Custom Eastern:20260322T090000
+            DTEND;TZID=Custom Eastern:20260322T100000
+            SUMMARY:Custom timezone event
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid);
+        calDavClient.upsertCalendarEvent(alice, uid, ics);
+        URI eventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + uid + ".ics");
+        assertThat(calDavClient.getCalendarEvent(alice, eventUri)).contains(uid);
+
+        // When querying the UTC interval containing the actual 13:00-14:00 event.
+        DavResponse response = calDavClient.findEventsByTime(alice, "20260322T130000", "20260322T150000");
+
+        // Then the report finds the stored event at the time given by its VTIMEZONE.
+        assertThat(response.status()).as(response.body()).isEqualTo(200);
+        assertThat(response.body()).contains(uid);
     }
 }
