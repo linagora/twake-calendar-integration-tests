@@ -66,6 +66,7 @@ import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.ITIPJsonBodyRequest;
+import com.linagora.dav.JsonCalendarData;
 import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
@@ -257,11 +258,242 @@ public abstract class CalDavDelegationContract {
         assertThatCalendar(actual).isEqualTo(calendarData);
     }
 
-    @ParameterizedTest
-    @EnumSource(DelegationRight.class)
-    void bobCannotReadAliceSourceCalendarDirectlyWhenDelegated(DelegationRight right) {
+    // Sharees read the events of a shared calendar through the owner's path
+    // (calendarserver:delegatedsource), e.g. REPORT /calendars/{ownerId}/{calendarId}.json.
+    // Sharees with read, read-write or administration access are granted {DAV:}read on the
+    // owner's calendar node and its events. Writing there stays forbidden, and private calendars
+    // stay unreadable for anyone else.
 
-        // GIVEN Alice has an event in her calendar
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void shareeCanJsonReportOwnerSourceCalendarByTimeRange(DelegationRight right) throws Exception {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob reads Alice's calendar through its delegated source, like the frontend does
+        DavResponse response = calDavClient.findEventsByTime(bob, CalendarURL.from(alice.id()),
+            "20300310T000000", "20300510T000000");
+
+        // THEN Bob gets the event
+        assertThat(response.status()).isEqualTo(200);
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary()).contains("Sprint planning #01");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void shareeCanReadOwnerSourceCalendarWithXmlReport(DelegationRight right) throws Exception {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob queries Alice's SOURCE calendar (not his copy) with a CalDAV REPORT
+        DavResponse response = xmlCalendarQueryByUid(bob, CalendarURL.from(alice.id()).asUri().toString(), eventUid);
+
+        // THEN Bob gets the event
+        assertThat(response.status()).isEqualTo(207);
+        String calendarData = XMLUtil.extractByXPath(response.body(), "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+        assertThat(calendarData)
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Sprint planning #01");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void shareeCanGetEventOfOwnerSourceCalendar(DelegationRight right) {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob gets the event from Alice's SOURCE calendar
+        DavResponse response = getEvent(bob, alice, eventUid);
+
+        // THEN Bob gets the event
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body())
+            .contains("UID:" + eventUid)
+            .contains("SUMMARY:Sprint planning #01");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void shareeCanSyncTokenReportOwnerSourceCalendar(DelegationRight right) throws Exception {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob synchronizes Alice's SOURCE calendar
+        DavResponse response = calDavClient.findEventsBySyncToken(bob, CalendarURL.from(alice.id()), INITIAL_SYNC_TOKEN);
+
+        // THEN Bob gets the event
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(JsonCalendarData.from(response.body()).items())
+            .extracting(JsonCalendarData.DavItem::href)
+            .contains(aliceSourceEventPath(eventUid));
+    }
+
+    @ParameterizedTest(name = "{0} with {1}")
+    @CsvSource({
+        "PRIVATE, READ",
+        "PRIVATE, READ_WRITE",
+        "PRIVATE, ADMIN",
+        "CONFIDENTIAL, READ",
+        "CONFIDENTIAL, READ_WRITE",
+        "CONFIDENTIAL, ADMIN"
+    })
+    void privateOrConfidentialEventShouldBeAnonymizedWhenShareeJsonReportsOwnerSourceCalendar(String eventClass, DelegationRight right) throws Exception {
+        // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent(eventClass);
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob reads Alice's SOURCE calendar with a JSON REPORT
+        DavResponse response = calDavClient.findEventsByTime(bob, CalendarURL.from(alice.id()),
+            "20300310T000000", "20300510T000000");
+
+        // THEN Bob sees an anonymized version of the event
+        assertThat(response.status()).isEqualTo(200);
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).uid()).isEqualTo(eventUid);
+        assertThat(result.get(0).summary()).contains("Busy");
+        assertThatDoesNotLeakPrivateEventDetails(response.body());
+    }
+
+    @ParameterizedTest(name = "{0} with {1}")
+    @CsvSource({
+        "PRIVATE, READ",
+        "PRIVATE, READ_WRITE",
+        "PRIVATE, ADMIN",
+        "CONFIDENTIAL, READ",
+        "CONFIDENTIAL, READ_WRITE",
+        "CONFIDENTIAL, ADMIN"
+    })
+    void privateOrConfidentialEventShouldBeAnonymizedWhenShareeXmlReportsOwnerSourceCalendar(String eventClass, DelegationRight right) throws Exception {
+        // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent(eventClass);
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob queries Alice's SOURCE calendar with a CalDAV REPORT
+        DavResponse response = xmlCalendarQueryByUid(bob, CalendarURL.from(alice.id()).asUri().toString(), eventUid);
+
+        // THEN Bob sees an anonymized version of the event
+        assertThat(response.status()).isEqualTo(207);
+        String calendarData = XMLUtil.extractByXPath(response.body(), "//cal:calendar-data",
+            Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(calendarData);
+        assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
+        assertThatDoesNotLeakPrivateEventDetails(response.body());
+    }
+
+    @ParameterizedTest(name = "{0} with {1}")
+    @CsvSource({
+        "PRIVATE, READ",
+        "PRIVATE, READ_WRITE",
+        "PRIVATE, ADMIN",
+        "CONFIDENTIAL, READ",
+        "CONFIDENTIAL, READ_WRITE",
+        "CONFIDENTIAL, ADMIN"
+    })
+    void privateOrConfidentialEventShouldBeAnonymizedWhenShareeGetsEventOfOwnerSourceCalendar(String eventClass, DelegationRight right) {
+        // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent(eventClass);
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob gets the event from Alice's SOURCE calendar
+        DavResponse response = getEvent(bob, alice, eventUid);
+
+        // THEN Bob sees an anonymized version of the event
+        assertThat(response.status()).isEqualTo(200);
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(response.body());
+        assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
+        assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
+        assertThatDoesNotLeakPrivateEventDetails(response.body());
+    }
+
+    @ParameterizedTest(name = "{0} with {1}")
+    @CsvSource({
+        "PRIVATE, READ",
+        "PRIVATE, READ_WRITE",
+        "PRIVATE, ADMIN",
+        "CONFIDENTIAL, READ",
+        "CONFIDENTIAL, READ_WRITE",
+        "CONFIDENTIAL, ADMIN"
+    })
+    void privateOrConfidentialEventShouldBeAnonymizedWhenShareeSyncTokenReportsOwnerSourceCalendar(String eventClass, DelegationRight right) throws Exception {
+        // GIVEN Alice has a PRIVATE or CONFIDENTIAL event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent(eventClass);
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Bob synchronizes Alice's SOURCE calendar
+        DavResponse response = calDavClient.findEventsBySyncToken(bob, CalendarURL.from(alice.id()), INITIAL_SYNC_TOKEN);
+
+        // THEN Bob does not see the details of the event
+        assertThat(response.status()).isEqualTo(207);
+        assertThat(JsonCalendarData.from(response.body()).items())
+            .filteredOn(item -> item.href().equals(aliceSourceEventPath(eventUid)))
+            .flatExtracting(JsonCalendarData.DavItem::events)
+            .allSatisfy(event -> assertThat(event.summary()).contains("Busy"));
+        assertThatDoesNotLeakPrivateEventDetails(response.body());
+    }
+
+    @Test
+    void userWithoutShareCannotReadOwnerPrivateSourceCalendar() {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar with Bob only
+        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ_WRITE);
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+
+        // THEN Charlie can read Alice's calendar neither with JSON REPORT, XML REPORT nor GET
+        assertThatCannotReadAliceSourceCalendar(charlie, eventUid);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void formerShareeCannotReadOwnerPrivateSourceCalendarAfterRevocation(DelegationRight right) {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar with Bob
+        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+
+        // WHEN Alice revokes the share
+        calDavClient.revokeDelegation(alice, alice.id(), bob);
+
+        // THEN Bob can no longer read Alice's calendar
+        assertThatCannotReadAliceSourceCalendar(bob, eventUid);
+    }
+
+    @Test
+    void freeBusyShareeCannotReadOwnerPrivateSourceCalendar() {
+        // GIVEN Alice has an event in her private calendar
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC");
+        // AND Alice shares her calendar free-busy only with Bob
+        calDavClient.delegateCalendar(alice, alice.id(), bob, "dav:freebusy");
+
+        // THEN Bob cannot read the events of Alice's calendar
+        assertThatCannotReadAliceSourceCalendar(bob, eventUid);
+    }
+
+    private static final String INITIAL_SYNC_TOKEN = "http://sabre.io/ns/sync/1";
+
+    private String givenAlicePrivateSourceCalendarWithEvent(String eventClass) {
+        calDavClient.updateCalendarAcl(alice, "");
+
         String eventUid = "event-" + UUID.randomUUID();
         String calendarData = """
             BEGIN:VCALENDAR
@@ -269,29 +501,69 @@ public abstract class CalDavDelegationContract {
             PRODID:-//Example Corp.//CalDAV Client//EN
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20250929T080000Z
-            DTSTART:20250930T090000Z
-            DTEND:20250930T100000Z
-            SUMMARY:Alice's event
-            DESCRIPTION:Event in Alice source calendar
+            DTSTAMP:20300401T080000Z
+            DTSTART;X-SECRET=secret-start-parameter:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Sprint planning #01
+            DESCRIPTION:Confidential information that Bob should not see
+            LOCATION:Secret Room
+            X-PRIVATE-NOTE:Private custom property
+            CLASS:%s
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Secret alarm text
+            END:VALARM
             END:VEVENT
             END:VCALENDAR
-            """.formatted(eventUid);
+            """.formatted(eventUid, eventClass);
         calDavClient.upsertCalendarEvent(alice, eventUid, calendarData);
+        return eventUid;
+    }
 
-        // WHEN Alice delegates her calendar to Bob
-        calDavClient.grantDelegation(alice, alice.id(), bob, right);
+    private String aliceSourceEventPath(String eventUid) {
+        return CalendarURL.from(alice.id()).asUri() + "/" + eventUid + ".ics";
+    }
 
-        // THEN Bob cannot read Alice's SOURCE calendar directly via CalDAV REPORT (not his copy).
-        // Depending on the REPORT pipeline, Sabre can reject the request or return
-        // a multistatus response containing a forbidden item.
-        String aliceSourceCalendarUri = "/calendars/" + alice.id() + "/" + alice.id();
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
+    private void assertThatDoesNotLeakPrivateEventDetails(String body) {
+        assertThat(body)
+            .doesNotContain("Sprint planning #01")
+            .doesNotContain("Confidential information that Bob should not see")
+            .doesNotContain("Secret Room")
+            .doesNotContain("Secret alarm text")
+            .doesNotContain("secret-start-parameter")
+            .doesNotContain("Private custom property");
+    }
+
+    private void assertThatCannotReadAliceSourceCalendar(OpenPaasUser user, String eventUid) {
+        assertSoftly(softly -> {
+            softly.assertThat(calDavClient.findEventsByTime(user, CalendarURL.from(alice.id()),
+                    "20300310T000000", "20300510T000000").status())
+                .as("JSON REPORT")
+                .isEqualTo(SC_FORBIDDEN);
+            softly.assertThat(xmlCalendarQueryByUid(user, CalendarURL.from(alice.id()).asUri().toString(), eventUid).status())
+                .as("XML REPORT")
+                .isEqualTo(SC_FORBIDDEN);
+            softly.assertThat(getEvent(user, alice, eventUid).status())
+                .as("GET")
+                .isEqualTo(SC_FORBIDDEN);
+        });
+    }
+
+    private DavResponse getEvent(OpenPaasUser user, OpenPaasUser owner, String eventUid) {
+        return execute(dockerExtension().davHttpClient()
+            .headers(user::impersonatedBasicAuth)
+            .get()
+            .uri(CalendarURL.from(owner.id()).asUri() + "/" + eventUid + ".ics"));
+    }
+
+    private DavResponse xmlCalendarQueryByUid(OpenPaasUser user, String calendarUri, String eventUid) {
+        return execute(dockerExtension().davHttpClient()
+            .headers(headers -> user.impersonatedBasicAuth(headers)
                 .add("Content-Type", "application/xml")
                 .add("Depth", "1"))
             .request(HttpMethod.valueOf("REPORT"))
-            .uri(aliceSourceCalendarUri)
+            .uri(calendarUri)
             .send(body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
@@ -309,11 +581,6 @@ public abstract class CalDavDelegationContract {
                     </c:filter>
                 </c:calendar-query>
                 """.formatted(eventUid))));
-
-        assertThat(response.status()).isIn(207, 403);
-        if (response.status() == 207) {
-            assertThat(response.body()).contains("<d:status>HTTP/1.1 403 Forbidden</d:status>");
-        }
     }
 
     @ParameterizedTest
