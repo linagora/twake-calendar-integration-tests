@@ -117,6 +117,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                           {
                             "name": "datetime",
                             "value": {
+                              "autoDetect": true,
                               "timeZone": "Europe/Paris",
                               "use24hourFormat": true
                             }
@@ -307,6 +308,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                   {
                     "name": "datetime",
                     "value": {
+                      "autoDetect": true,
                       "timeZone": "Europe/Paris",
                       "use24hourFormat": true
                     }
