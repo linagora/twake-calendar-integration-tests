@@ -1105,6 +1105,39 @@ public abstract class CalDavDelegationContract {
     }
 
     @Test
+    protected void amqpShouldPublishDelegationUpdatedForSourceCalendarWhenDelegatedAdminGrantsViaCopiedCalendar() throws Exception {
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+
+        // GIVEN Bob delegates his calendar to Alice in admin mode
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.ADMIN);
+        CalendarURL delegatedCalendarURL = awaitAtMost
+            .ignoreException(IllegalStateException.class)
+            .until(() -> calDavClient.findDelegatedCalendar(alice, bob.id()), calendarURL -> calendarURL != null);
+
+        String queueName = "delegation-source-grant-via-copy-" + bob.id();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "calendar:calendar:updated", "");
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        // WHEN Alice delegates her copy of Bob's calendar to Cedric
+        calDavClient.grantDelegation(alice, delegatedCalendarURL.calendarId(), cedric, DelegationRight.READ);
+
+        // THEN a delegation_updated message is published for Bob's source calendar
+        String sourcePath = CalendarURL.from(bob.id()).asUri().toString();
+        awaitAtMost.untilAsserted(() ->
+            assertThat(messages).anySatisfy(json -> assertThatJson(json.toString())
+                .when(Option.IGNORING_EXTRA_FIELDS)
+                .isEqualTo("""
+                    {
+                      "calendarPath": "%s",
+                      "calendarProps": {
+                        "delegation_updated": true
+                      }
+                    }
+                    """.formatted(sourcePath))));
+    }
+
+    @Test
     protected void amqpDelegationUpdatedShouldCarryConnectedUserOfGranter() throws Exception {
         String queueName = "delegation-connected-user-grant-" + bob.id();
         dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
