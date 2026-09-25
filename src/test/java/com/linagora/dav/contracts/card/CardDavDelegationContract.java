@@ -53,6 +53,7 @@ import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
+import net.javacrumbs.jsonunit.core.Option;
 import io.restassured.http.ContentType;
 
 public abstract class CardDavDelegationContract {
@@ -1057,6 +1058,7 @@ public abstract class CardDavDelegationContract {
 
         // THEN the sharing right is shown on Bob's source address book
         assertThatJson(cardDavClient.getAddressBooks(bob))
+            .when(Option.IGNORING_ARRAY_ORDER)
             .inPath("_embedded.dav:addressbook[0].acl")
             .isEqualTo(String.format("""
                 [
