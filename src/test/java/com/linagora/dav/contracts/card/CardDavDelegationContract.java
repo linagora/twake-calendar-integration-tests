@@ -978,6 +978,7 @@ public abstract class CardDavDelegationContract {
             .asString();
 
         assertThatJson(response)
+            .when(Option.IGNORING_ARRAY_ORDER)
             .inPath("_embedded.dav:addressbook[0]")
             .isEqualTo(String.format("""
                 {
