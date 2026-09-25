@@ -19,11 +19,11 @@
 package com.linagora.dav.contracts.cal;
 
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.io.IOException;
 import java.net.URI;
@@ -36,7 +36,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -562,7 +561,6 @@ public abstract class TeamCalendarSchedulingContract {
         });
     }
 
-    @Disabled("Wait to https://github.com/linagora/esn-sabre/pull/489")
     @Test
     void organizerUpdateShouldUpdateInvitationMovedToTeamCalendar() {
         // Given nonMember creates a personal meeting and invites aliceMember, who is a write-enabled Team Calendar member
