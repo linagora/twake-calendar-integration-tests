@@ -2418,6 +2418,7 @@ public abstract class CalDavDelegationContract {
 
         // THEN the right is updated in Bob original calendar
         assertThatJson(response)
+            .when(Option.IGNORING_ARRAY_ORDER)
             .inPath("_embedded.dav:calendar[0]")
             .isEqualTo(String.format("""
                 {
@@ -2575,7 +2576,9 @@ public abstract class CalDavDelegationContract {
             .isArray()
             .filteredOn(calendar -> delegatedSource.equals(((Map<?, ?>) calendar).get("calendarserver:delegatedsource")))
             .singleElement()
-            .satisfies(calendar -> assertThatJson(calendar).isEqualTo(String.format("""
+            .satisfies(calendar -> assertThatJson(calendar)
+                .when(Option.IGNORING_ARRAY_ORDER)
+                .isEqualTo(String.format("""
                 {
                     "_links": {
                         "self": {
