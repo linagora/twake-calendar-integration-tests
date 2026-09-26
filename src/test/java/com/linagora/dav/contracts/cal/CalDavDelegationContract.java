@@ -647,6 +647,148 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403");
     }
 
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegateCannotModifyOwnerPrivateEventViaDelegatedCalendar(DelegationRight right) {
+        // GIVEN Bob has a private event in his calendar
+        String eventUid = givenBobPrivateEvent();
+        // AND Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+        URI delegatedEventUri = calDavClient.findDelegatedCalendar(alice, bob.id()).eventHref(eventUid);
+
+        // WHEN Alice modifies the private event via her delegated calendar
+        int status = putIcsEvent(alice, delegatedEventUri, tamperedPrivateIcsEvent(eventUid));
+
+        // THEN the modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegateCannotModifyOwnerPrivateEventViaDelegatedCalendarWithJson(DelegationRight right) {
+        // GIVEN Bob has a private event in his calendar
+        String eventUid = givenBobPrivateEvent();
+        // AND Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+        URI delegatedEventUri = calDavClient.findDelegatedCalendar(alice, bob.id()).eventHref(eventUid);
+
+        // WHEN Alice modifies the private event via her delegated calendar using the JSON API
+        int status = putJsonEvent(alice, delegatedEventUri, tamperedPrivateJsonEvent(eventUid));
+
+        // THEN the modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegateCannotModifyOwnerPrivateEventInOwnerSourceCalendar(DelegationRight right) {
+        // GIVEN Bob has a private event in his calendar
+        String eventUid = givenBobPrivateEvent();
+        // AND Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+
+        // WHEN Alice modifies the private event directly in Bob's SOURCE calendar
+        int status = putIcsEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateIcsEvent(eventUid));
+
+        // THEN the modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(DelegationRight.class)
+    void delegateCannotModifyOwnerPrivateEventInOwnerSourceCalendarWithJson(DelegationRight right) {
+        // GIVEN Bob has a private event in his calendar
+        String eventUid = givenBobPrivateEvent();
+        // AND Bob delegates his calendar to Alice
+        calDavClient.grantDelegation(bob, bob.id(), alice, right);
+
+        // WHEN Alice modifies the private event directly in Bob's SOURCE calendar using the JSON API
+        int status = putJsonEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateJsonEvent(eventUid));
+
+        // THEN the modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    private String givenBobPrivateEvent() {
+        String eventUid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bob, eventUid, """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300401T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Bob private meeting
+            DESCRIPTION:Bob private description
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid));
+        return eventUid;
+    }
+
+    private static String tamperedPrivateIcsEvent(String eventUid) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20300401T090000Z
+            DTSTART:20300412T100000Z
+            DTEND:20300412T110000Z
+            SUMMARY:Tampered by delegate
+            DESCRIPTION:Tampered description
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+    }
+
+    private static String tamperedPrivateJsonEvent(String eventUid) {
+        return """
+            ["vcalendar",[],[["vevent",[
+                ["uid",{},"text","%s"],
+                ["dtstamp",{},"date-time","2030-04-01T09:00:00Z"],
+                ["dtstart",{},"date-time","2030-04-12T10:00:00Z"],
+                ["dtend",{},"date-time","2030-04-12T11:00:00Z"],
+                ["summary",{},"text","Tampered by delegate"],
+                ["description",{},"text","Tampered description"],
+                ["class",{},"text","PRIVATE"]
+            ],[]]]]
+            """.formatted(eventUid);
+    }
+
+    private int putIcsEvent(OpenPaasUser user, URI eventUri, String calendarData) {
+        return putEvent(user, eventUri, "text/calendar ; charset=utf-8", calendarData);
+    }
+
+    private int putJsonEvent(OpenPaasUser user, URI eventUri, String calendarData) {
+        return putEvent(user, eventUri, "application/calendar+json", calendarData);
+    }
+
+    private int putEvent(OpenPaasUser user, URI eventUri, String contentType, String calendarData) {
+        return executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> user.impersonatedBasicAuth(headers)
+                .add("Content-Type", contentType))
+            .put()
+            .uri(eventUri.toString())
+            .send(body(calendarData)));
+    }
+
+    private void assertThatBobPrivateEventIsUnchanged(String eventUid) {
+        assertThat(calDavClient.getCalendarEvent(bob, CalendarURL.from(bob.id()).eventHref(eventUid)))
+            .contains("SUMMARY:Bob private meeting")
+            .contains("DESCRIPTION:Bob private description")
+            .doesNotContain("Tampered");
+    }
+
     @Test
     void listCalendarsShouldNotShowDelegatedCalendarWhenDelegationHasBeenRevoked() {
 

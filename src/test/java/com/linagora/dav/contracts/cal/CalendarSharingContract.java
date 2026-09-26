@@ -1407,6 +1407,152 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    void subscriberCannotModifyPrivateEventViaWritableSubscription() {
+        // GIVEN: Bob has a private event in his publicly writable calendar
+        String eventUid = givenBobPrivateEventInPubliclyWritableCalendar();
+        // AND: Alice subscribes to Bob's writable calendar
+        URI subscribedEventUri = subscribeAliceToBobWritableCalendar().eventHref(eventUid);
+
+        // WHEN: Alice modifies the private event via her subscription
+        int status = putIcsEvent(alice, subscribedEventUri, tamperedPrivateIcsEvent(eventUid));
+
+        // THEN: The modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(403);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    @Test
+    void subscriberCannotModifyPrivateEventViaWritableSubscriptionWithJson() {
+        // GIVEN: Bob has a private event in his publicly writable calendar
+        String eventUid = givenBobPrivateEventInPubliclyWritableCalendar();
+        // AND: Alice subscribes to Bob's writable calendar
+        URI subscribedEventUri = subscribeAliceToBobWritableCalendar().eventHref(eventUid);
+
+        // WHEN: Alice modifies the private event via her subscription using the JSON API
+        int status = putJsonEvent(alice, subscribedEventUri, tamperedPrivateJsonEvent(eventUid));
+
+        // THEN: The modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(403);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    @Test
+    void cannotModifyPrivateEventInPubliclyWritableSourceCalendar() {
+        // GIVEN: Bob has a private event in his publicly writable calendar
+        String eventUid = givenBobPrivateEventInPubliclyWritableCalendar();
+
+        // WHEN: Alice modifies the private event directly in Bob's calendar
+        int status = putIcsEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateIcsEvent(eventUid));
+
+        // THEN: The modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(403);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    @Test
+    void cannotModifyPrivateEventInPubliclyWritableSourceCalendarWithJson() {
+        // GIVEN: Bob has a private event in his publicly writable calendar
+        String eventUid = givenBobPrivateEventInPubliclyWritableCalendar();
+
+        // WHEN: Alice modifies the private event directly in Bob's calendar using the JSON API
+        int status = putJsonEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateJsonEvent(eventUid));
+
+        // THEN: The modification is rejected and Bob's event is left untouched
+        assertThat(status).isEqualTo(403);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
+    private String givenBobPrivateEventInPubliclyWritableCalendar() {
+        calDavClient.updateCalendarAcl(bob, "{DAV:}write");
+
+        String eventUid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bob, eventUid, """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T080000Z
+            DTSTART:20251010T090000Z
+            DTEND:20251010T100000Z
+            SUMMARY:Bob private meeting
+            DESCRIPTION:Bob private description
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid));
+        return eventUid;
+    }
+
+    private CalendarURL subscribeAliceToBobWritableCalendar() {
+        String subscribedCalendarId = UUID.randomUUID().toString();
+        calDavClient.subscribeToSharedCalendar(alice, SubscribedCalendarRequest.builder()
+            .id(subscribedCalendarId)
+            .sourceUserId(bob.id())
+            .name("Bob writable shared")
+            .color("#0000FF")
+            .readOnly(false)
+            .build());
+        return new CalendarURL(alice.id(), subscribedCalendarId);
+    }
+
+    private static String tamperedPrivateIcsEvent(String eventUid) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:20250929T090000Z
+            DTSTART:20251011T090000Z
+            DTEND:20251011T100000Z
+            SUMMARY:Tampered by subscriber
+            DESCRIPTION:Tampered description
+            CLASS:PRIVATE
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid);
+    }
+
+    private static String tamperedPrivateJsonEvent(String eventUid) {
+        return """
+            ["vcalendar",[],[["vevent",[
+                ["uid",{},"text","%s"],
+                ["dtstamp",{},"date-time","2025-09-29T09:00:00Z"],
+                ["dtstart",{},"date-time","2025-10-11T09:00:00Z"],
+                ["dtend",{},"date-time","2025-10-11T10:00:00Z"],
+                ["summary",{},"text","Tampered by subscriber"],
+                ["description",{},"text","Tampered description"],
+                ["class",{},"text","PRIVATE"]
+            ],[]]]]
+            """.formatted(eventUid);
+    }
+
+    private int putIcsEvent(OpenPaasUser user, URI eventUri, String calendarData) {
+        return putEvent(user, eventUri, "text/calendar ; charset=utf-8", calendarData);
+    }
+
+    private int putJsonEvent(OpenPaasUser user, URI eventUri, String calendarData) {
+        return putEvent(user, eventUri, "application/calendar+json", calendarData);
+    }
+
+    private int putEvent(OpenPaasUser user, URI eventUri, String contentType, String calendarData) {
+        return executeNoContent(extension().davHttpClient()
+            .headers(headers -> user.impersonatedBasicAuth(headers)
+                .add("Content-Type", contentType))
+            .put()
+            .uri(eventUri.toString())
+            .send(body(calendarData)));
+    }
+
+    private void assertThatBobPrivateEventIsUnchanged(String eventUid) {
+        assertThat(calDavClient.getCalendarEvent(bob, CalendarURL.from(bob.id()).eventHref(eventUid)))
+            .contains("SUMMARY:Bob private meeting")
+            .contains("DESCRIPTION:Bob private description")
+            .doesNotContain("Tampered");
+    }
+
+    @Test
     void propagateEventUpdatesFromSubscribedCopyToSource() {
         // GIVEN: Bob sets his calendar as read-write
         calDavClient.updateCalendarAcl(bob, "{DAV:}write");
