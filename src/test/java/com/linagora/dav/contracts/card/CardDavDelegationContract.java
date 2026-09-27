@@ -1265,8 +1265,9 @@ public abstract class CardDavDelegationContract {
                     "properties": ["{DAV:}invite"]
                 }""")));
 
-        // THEN he sees every sharee of Bob's original address book, Bob included
+        // THEN he sees every sharee of Bob's original address book, Bob included, in no particular order
         assertThatJson(response.body())
+            .when(Option.IGNORING_ARRAY_ORDER)
             .isEqualTo("""
                 {
                     "{DAV:}invite": [
