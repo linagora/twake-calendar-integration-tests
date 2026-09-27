@@ -357,7 +357,7 @@ public abstract class TeamCalendarRawCalDavContract {
         assertThat(response.statusCode())
             .as("Non-member should not %s a private team calendar", read)
             .isIn(403, 404);
-        assertThat(response.body().asString())
+        assertThat(unfolded(response))
             .as("Non-member should not see any event detail with %s on a private team calendar", read)
             .doesNotContain(event.sensitiveDetails());
     }
@@ -373,7 +373,7 @@ public abstract class TeamCalendarRawCalDavContract {
 
         // Then Charlie only sees busy time
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body().asString())
+        assertThat(unfolded(response))
             .contains("FREEBUSY:20300110T090000Z/20300110T100000Z")
             .doesNotContain(event.uid())
             .doesNotContain(event.sensitiveDetails());
@@ -442,7 +442,7 @@ public abstract class TeamCalendarRawCalDavContract {
         assertThat(response.statusCode())
             .as("%s should succeed for a team member", read)
             .isEqualTo(read.expectedStatus);
-        assertThat(response.body().asString())
+        assertThat(unfolded(response))
             .as("Team member should see all the details of a %s event with %s", event.eventClass(), read)
             .contains(event.uid())
             .contains(event.sensitiveDetails());
@@ -452,10 +452,15 @@ public abstract class TeamCalendarRawCalDavContract {
         assertThat(response.statusCode())
             .as("%s should succeed for a public reader", read)
             .isEqualTo(read.expectedStatus);
-        assertThat(response.body().asString())
+        assertThat(unfolded(response))
             .as("Public reader should only see a reduced version of a %s event with %s", event.eventClass(), read)
             .contains(event.uid())
             .doesNotContain(event.sensitiveDetails());
+    }
+
+    // iCalendar folds content lines longer than 75 octets (RFC 5545 section 3.1), possibly in the middle of a value
+    private static String unfolded(Response response) {
+        return response.body().asString().replaceAll("\\r?\\n[ \\t]", "");
     }
 
     private TeamEvent createTeamEvent(String eventClass) {
