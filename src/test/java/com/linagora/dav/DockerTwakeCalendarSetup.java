@@ -113,6 +113,10 @@ public class DockerTwakeCalendarSetup {
             File configFile = Files.createTempFile(composeDirectory, "sabre-config-", ".json").toFile();
             configFile.deleteOnExit();
             mapper.writeValue(configFile, config);
+            // Sabre copies this file as root, while PHP reads the copy as www-data.
+            if (!configFile.setReadable(true, false)) {
+                throw new IOException("Failed to make Sabre test config readable by PHP.");
+            }
             return configFile;
         } catch (IOException | URISyntaxException e) {
             throw new RuntimeException("Failed to create Sabre test config.", e);

@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,7 @@ class DockerTwakeCalendarSetupTest {
         assertThat(privateConfig).isNotEqualTo(publicConfig);
         assertThat(privateConfig.toPath().getParent())
             .isEqualTo(Path.of(getClass().getResource("/docker-twake-calendar-setup.yml").toURI()).getParent());
+        assertThat(Files.getPosixFilePermissions(privateConfig.toPath())).contains(PosixFilePermission.OTHERS_READ);
         assertThatJson(Files.readString(privateConfig.toPath())).inPath("$.environment.PRINCIPAL_PRIVACY").isEqualTo(true);
         assertThatJson(Files.readString(privateConfig.toPath())).inPath("$.environment.SABRE_ENFORCE_RFC_6638").isEqualTo(false);
         assertThatJson(Files.readString(publicConfig.toPath())).inPath("$.environment.PRINCIPAL_PRIVACY").isEqualTo(false);
