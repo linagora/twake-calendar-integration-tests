@@ -3,3 +3,8 @@ ARG SABRE_4_7_IMAGE="linagora/esn-sabre:2.4.6.4"
 FROM ${SABRE_4_7_IMAGE}
 
 COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /var/www/config/esn.key.pub
+
+# The current published image predates SABRE_CONFIG_FILE support in esn-sabre/start.sh.
+RUN grep -q 'SABRE_CONFIG_FILE' /var/www/scripts/start.sh || \
+    sed -i 's@^sh /var/www/scripts/generate_config.sh > /var/www/config.json$@if [ -n "${SABRE_CONFIG_FILE:-}" ]; then cp "$SABRE_CONFIG_FILE" /var/www/config.json || exit 1; else sh /var/www/scripts/generate_config.sh > /var/www/config.json; fi@' /var/www/scripts/start.sh
+RUN grep -q 'SABRE_CONFIG_FILE' /var/www/scripts/start.sh
