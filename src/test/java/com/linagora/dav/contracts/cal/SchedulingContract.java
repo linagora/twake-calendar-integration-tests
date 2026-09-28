@@ -1045,6 +1045,148 @@ public abstract class SchedulingContract {
     }
 
     @Test
+    void privateEventCreationShouldPropagateEventToAllAttendeeCalendars() {
+        // Given Bob creates a PRIVATE event with Alice and Cedric as attendees
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Private meeting
+            DESCRIPTION:Private meeting details
+            CLASS:{classPrivate}
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{cedricEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{classPrivate}", CLASS_PRIVATE)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{cedricEmail}", cedric.email());
+
+        // When Bob upserts the event
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+
+        // Then Bob keeps his private event
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
+            .contains("SUMMARY:Private meeting");
+
+        // And Alice and Cedric both receive an equivalent, non sanitized, private event copy
+        for (OpenPaasUser attendee : List.of(alice, cedric)) {
+            String attendeeCalendarEventId = awaitFirstEventId(attendee);
+            URI attendeeCalendarEventUri = URI.create("/calendars/" + attendee.id() + "/" + attendee.id() + "/" + attendeeCalendarEventId + ".ics");
+            assertThat(calDavClient.getCalendarEvent(attendee, attendeeCalendarEventUri))
+                .contains("SUMMARY:Private meeting");
+        }
+    }
+
+    @Test
+    void privateEventCreatedWithJCalShouldPropagateEventToAttendeeCalendar() {
+        // Given Bob creates a PRIVATE event with Alice as attendee through the JSON (jCal) API used by the frontend
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventJCal = """
+            [
+              "vcalendar",
+              [],
+              [
+                [
+                  "vevent",
+                  [
+                    ["uid", {}, "text", "{organizerEventUid}"],
+                    ["transp", {}, "text", "OPAQUE"],
+                    ["dtstart", {}, "date-time", "2035-10-05T09:00:00Z"],
+                    ["dtend", {}, "date-time", "2035-10-05T10:00:00Z"],
+                    ["class", {}, "text", "{classPrivate}"],
+                    ["summary", {}, "text", "Private jCal meeting"],
+                    ["description", {}, "text", "Private jCal meeting details"],
+                    ["organizer", {"cn": "Bob"}, "cal-address", "mailto:{bobEmail}"],
+                    ["attendee", {"partstat": "ACCEPTED", "rsvp": "FALSE", "role": "CHAIR", "cutype": "INDIVIDUAL"}, "cal-address", "mailto:{bobEmail}"],
+                    ["attendee", {"partstat": "NEEDS-ACTION", "rsvp": "TRUE", "role": "REQ-PARTICIPANT", "cutype": "INDIVIDUAL"}, "cal-address", "mailto:{aliceEmail}"]
+                  ],
+                  []
+                ]
+              ]
+            ]
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{classPrivate}", CLASS_PRIVATE)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        // When Bob upserts the event
+        calDavClient.upsertJsonCalendarEvent(bob, organizerEventUid, organizerEventJCal);
+
+        // Then Bob keeps his private event
+        URI bobCalendarEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + organizerEventUid + ".ics");
+        CalendarExtractor bobCalendarEvent = CalendarUtil.toExtractor(calDavClient.getCalendarEvent(bob, bobCalendarEventUri));
+        assertThat(bobCalendarEvent.extractPropertyValue(Property.CLASS)).isEqualTo(CLASS_PRIVATE);
+        assertThat(bobCalendarEvent.extractPropertyValue(Property.SUMMARY)).isEqualTo("Private jCal meeting");
+
+        // And Alice receives the private event copy with its full details
+        String aliceCalendarEventId = awaitFirstEventId(alice);
+        URI aliceCalendarEventUri = URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceCalendarEventId + ".ics");
+        CalendarExtractor aliceCalendarEvent = CalendarUtil.toExtractor(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri));
+        assertThat(aliceCalendarEvent.extractPropertyValue(Property.UID)).isEqualTo(organizerEventUid);
+        assertThat(aliceCalendarEvent.extractPropertyValue(Property.CLASS)).isEqualTo(CLASS_PRIVATE);
+        assertThat(aliceCalendarEvent.extractPropertyValue(Property.SUMMARY)).isEqualTo("Private jCal meeting");
+        assertThat(aliceCalendarEvent.extractPropertyValue(Property.DESCRIPTION)).isEqualTo("Private jCal meeting details");
+    }
+
+    @Test
+    void privateEventShouldBeListedWithFullDetailsInOrganizerAndAttendeeCalendarReport() throws JsonProcessingException {
+        // Given Bob creates a PRIVATE event with Alice as attendee
+        String organizerEventUid = "event-" + UUID.randomUUID();
+        String organizerEventIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{organizerEventUid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SUMMARY:Private meeting
+            DESCRIPTION:Private meeting details
+            CLASS:{classPrivate}
+            ORGANIZER:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{aliceEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """
+            .replace("{organizerEventUid}", organizerEventUid)
+            .replace("{classPrivate}", CLASS_PRIVATE)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email());
+
+        // When Bob upserts the event
+        calDavClient.upsertCalendarEvent(bob, organizerEventUid, organizerEventIcs);
+        awaitFirstEventId(alice);
+
+        // Then both Bob and Alice see the private event, not sanitized, when listing their own calendar
+        for (OpenPaasUser user : List.of(bob, alice)) {
+            DavResponse response = calDavClient.findEventsByTime(user, "20351005T000000", "20351006T000000");
+            assertThat(response.status()).isEqualTo(200);
+            assertThat(JsonCalendarEventData.from(response.body()))
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.uid()).isEqualTo(organizerEventUid);
+                    assertThat(event.summary()).contains("Private meeting");
+                });
+        }
+    }
+
+    @Test
     void attendeePartStatUpdateShouldNotResetOtherAttendeeLocalTRANSP() {
         // Given Bob creates an event with Alice and Cedric as attendees and TRANSP set to OPAQUE
         String organizerEventUid = "event-" + UUID.randomUUID();
