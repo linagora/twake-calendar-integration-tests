@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 
@@ -107,12 +108,13 @@ public class DockerTwakeCalendarSetup {
             ObjectNode runtimeSettings = (ObjectNode) config.get("environment");
             runtimeSettings.setAll((ObjectNode) mapper.valueToTree(settings));
 
-            // Each ComposeContainer gets an immutable host file, even across Maven forks.
-            File configFile = Files.createTempFile("sabre-config-", ".json").toFile();
+            // The Docker daemon on CI can bind files from the workspace, but not from the JVM's temp directory.
+            Path composeDirectory = Path.of(Resources.getResource("docker-twake-calendar-setup.yml").toURI()).getParent();
+            File configFile = Files.createTempFile(composeDirectory, "sabre-config-", ".json").toFile();
             configFile.deleteOnExit();
             mapper.writeValue(configFile, config);
             return configFile;
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             throw new RuntimeException("Failed to create Sabre test config.", e);
         }
     }

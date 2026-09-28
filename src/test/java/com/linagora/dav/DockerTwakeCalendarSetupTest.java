@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,8 @@ class DockerTwakeCalendarSetupTest {
 
         // Then each container can keep its own config for its whole lifetime
         assertThat(privateConfig).isNotEqualTo(publicConfig);
+        assertThat(privateConfig.toPath().getParent())
+            .isEqualTo(Path.of(getClass().getResource("/docker-twake-calendar-setup.yml").toURI()).getParent());
         assertThatJson(Files.readString(privateConfig.toPath())).inPath("$.environment.PRINCIPAL_PRIVACY").isEqualTo(true);
         assertThatJson(Files.readString(privateConfig.toPath())).inPath("$.environment.SABRE_ENFORCE_RFC_6638").isEqualTo(false);
         assertThatJson(Files.readString(publicConfig.toPath())).inPath("$.environment.PRINCIPAL_PRIVACY").isEqualTo(false);
