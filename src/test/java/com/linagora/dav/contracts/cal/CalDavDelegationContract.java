@@ -1019,6 +1019,26 @@ public abstract class CalDavDelegationContract {
         AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
     }
 
+    @Test
+    void delegateExportShouldHideOwnerPrivateEventDetails() {
+        // GIVEN Bob shares a calendar containing a private event with Alice
+        String eventUid = givenBobPrivateEvent();
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        CalendarURL delegatedCalendar = calDavClient.findDelegatedCalendar(alice, bob.id());
+
+        // WHEN Alice exports Bob's calendar through her delegated copy
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .get()
+            .uri(delegatedCalendar.asUri() + "?export"));
+
+        // THEN the export contains only the sanitized event details
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body())
+            .contains("UID:" + eventUid, "SUMMARY:Busy")
+            .doesNotContain("Bob private meeting", "Bob private description");
+    }
+
     @ParameterizedTest(name = "{0} with {1}")
     @CsvSource({
         "private, READ",
