@@ -681,6 +681,24 @@ public abstract class CalDavDelegationContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
+    @Test
+    void delegateCannotDeleteOwnerPrivateEventViaDelegatedCalendar() {
+        // GIVEN Bob has a private event in a calendar delegated to Alice with write access
+        String eventUid = givenBobPrivateEvent();
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ_WRITE);
+        URI delegatedEventUri = calDavClient.findDelegatedCalendar(alice, bob.id()).eventHref(eventUid);
+
+        // WHEN Alice deletes the private event via her delegated calendar
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(alice::impersonatedBasicAuth)
+            .delete()
+            .uri(delegatedEventUri.toString()));
+
+        // THEN the deletion is rejected and Bob's event still exists
+        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        assertThatBobPrivateEventIsUnchanged(eventUid);
+    }
+
     @ParameterizedTest(name = "{0}")
     @EnumSource(DelegationRight.class)
     void delegateCannotModifyOwnerPrivateEventInOwnerSourceCalendar(DelegationRight right) {
