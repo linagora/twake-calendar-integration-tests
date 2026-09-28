@@ -48,7 +48,6 @@ import java.util.function.Supplier;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -648,7 +647,6 @@ public abstract class CalDavDelegationContract {
             .hasMessageContaining("Unexpected status code: 403");
     }
 
-    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @ParameterizedTest(name = "{0}")
     @EnumSource(DelegationRight.class)
     void delegateCannotModifyOwnerPrivateEventViaDelegatedCalendar(DelegationRight right) {
@@ -666,7 +664,6 @@ public abstract class CalDavDelegationContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
-    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @ParameterizedTest(name = "{0}")
     @EnumSource(DelegationRight.class)
     void delegateCannotModifyOwnerPrivateEventViaDelegatedCalendarWithJson(DelegationRight right) {
@@ -684,7 +681,6 @@ public abstract class CalDavDelegationContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
-    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @Test
     void delegateCannotDeleteOwnerPrivateEventViaDelegatedCalendar() {
         // GIVEN Bob has a private event in a calendar delegated to Alice with write access
@@ -703,7 +699,6 @@ public abstract class CalDavDelegationContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
-    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @ParameterizedTest(name = "{0}")
     @EnumSource(DelegationRight.class)
     void delegateCannotModifyOwnerPrivateEventInOwnerSourceCalendar(DelegationRight right) {
@@ -720,7 +715,6 @@ public abstract class CalDavDelegationContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
-    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @ParameterizedTest(name = "{0}")
     @EnumSource(DelegationRight.class)
     void delegateCannotModifyOwnerPrivateEventInOwnerSourceCalendarWithJson(DelegationRight right) {
