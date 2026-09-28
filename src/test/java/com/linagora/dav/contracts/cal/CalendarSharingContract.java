@@ -1406,6 +1406,7 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("User did not have the required privileges");
     }
 
+    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @Test
     void subscriberCannotModifyPrivateEventViaWritableSubscription() {
         // GIVEN: Bob has a private event in his publicly writable calendar
@@ -1421,6 +1422,7 @@ public abstract class CalendarSharingContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
+    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @Test
     void subscriberCannotModifyPrivateEventViaWritableSubscriptionWithJson() {
         // GIVEN: Bob has a private event in his publicly writable calendar
@@ -1436,6 +1438,7 @@ public abstract class CalendarSharingContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
+    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @Test
     void cannotModifyPrivateEventInPubliclyWritableSourceCalendar() {
         // GIVEN: Bob has a private event in his publicly writable calendar
@@ -1449,6 +1452,7 @@ public abstract class CalendarSharingContract {
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
+    @Disabled("Wait for https://github.com/linagora/esn-sabre/pull/504")
     @Test
     void cannotModifyPrivateEventInPubliclyWritableSourceCalendarWithJson() {
         // GIVEN: Bob has a private event in his publicly writable calendar
