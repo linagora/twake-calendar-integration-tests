@@ -49,6 +49,15 @@ public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtensi
         return new DockerTwakeCalendarExtensionV4_7(PRINCIPAL_PRIVACY_ENABLED);
     }
 
+    public static DockerTwakeCalendarExtensionV4_7 withSabreSettings(Map<String, ?> settings) {
+        return new DockerTwakeCalendarExtensionV4_7(new DockerTwakeCalendarSetup(SABRE_V4_7, settings));
+    }
+
+    private DockerTwakeCalendarExtensionV4_7(DockerTwakeCalendarSetup setup) {
+        dockerTwakeCalendarSetup = setup;
+        dockerTwakeCalendarSetup.start();
+    }
+
     @Override
     DockerTwakeCalendarSetup setup() {
         return dockerTwakeCalendarSetup;
