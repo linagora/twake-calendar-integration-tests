@@ -12,6 +12,8 @@ services:
         condition: service_healthy
       mongo:
         condition: service_started
+      redis:
+        condition: service_started
       rabbitmq:
         condition: service_started
       ldap:
@@ -32,6 +34,11 @@ services:
       interval: 3s
       timeout: 10s
       retries: 10
+    networks:
+      - emaily
+
+  redis:
+    image: redis:latest
     networks:
       - emaily
 
@@ -70,6 +77,8 @@ services:
       - MONGO_TIMEOUT=100000
       - ESN_HOST=twake-calendar-side-service
       - ESN_PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - AMQP_HOST=rabbitmq
       - AMQP_PORT=5672
       - AMQP_LOGIN=guest
