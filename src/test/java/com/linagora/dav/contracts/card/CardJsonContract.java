@@ -28,6 +28,10 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -198,6 +202,59 @@ public abstract class CardJsonContract {
                     "dav:item": []
                 }
             }""", testUser.id()));
+    }
+
+    @Test
+    void shouldReturnEachContactOnceAcrossSortedPages() {
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String addressBook = "/addressbooks/" + user.id() + "/contacts";
+        int contactCount = 60;
+        int pageSize = 10;
+        Set<String> expectedHrefs = new HashSet<>();
+
+        // Given contacts with the same stored fn initial across page boundaries.
+        for (int i = 0; i < contactCount; i++) {
+            String cardUri = "page-" + i + ".vcf";
+            expectedHrefs.add(addressBook + "/" + cardUri);
+            String vcard = """
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alice {index}
+                UID:page-{index}
+                END:VCARD
+                """.replace("{index}", String.valueOf(i));
+            executeNoContent(dockerExtension().davHttpClient()
+                .headers(user::impersonatedBasicAuth)
+                .put()
+                .uri(addressBook + "/" + cardUri)
+                .send(body(vcard)));
+        }
+
+        // When listing every page by fn, with _id as a control.
+        for (String sort : List.of("_id", "fn")) {
+            List<String> hrefs = new ArrayList<>();
+            for (int offset = 0; offset < contactCount; offset += pageSize) {
+                List<String> page = given()
+                    .headers("Authorization", user.impersonatedBasicAuth())
+                    .queryParam("limit", pageSize)
+                    .queryParam("offset", offset)
+                    .queryParam("sort", sort)
+                .when()
+                    .get(addressBook + ".json")
+                .then()
+                    .statusCode(200)
+                    .extract()
+                    .jsonPath()
+                    .getList("_embedded.'dav:item'._links.self.href", String.class);
+                assertThat(page).as("sort=%s, offset=%s", sort, offset).hasSize(pageSize);
+                hrefs.addAll(page);
+            }
+
+            // Then no contact is missed or repeated across page boundaries.
+            assertThat(hrefs)
+                .as("sort=%s", sort)
+                .containsExactlyInAnyOrderElementsOf(expectedHrefs);
+        }
     }
 
     @Test
