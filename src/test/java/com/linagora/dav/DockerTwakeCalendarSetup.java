@@ -41,6 +41,7 @@ public class DockerTwakeCalendarSetup {
         SABRE_DAV("sabre_dav", 80),
         MONGO("mongo", 27017),
         OPENSEARCH("opensearch", 9200),
+        REDIS("redis", 6379),
         LDAP("ldap", 389);
 
         private final String serviceName;
@@ -82,6 +83,7 @@ public class DockerTwakeCalendarSetup {
                 .withExposedService(DockerService.SABRE_DAV.serviceName(), DockerService.SABRE_DAV.port())
                 .withExposedService(DockerService.MONGO.serviceName(), DockerService.MONGO.port())
                 .withExposedService(DockerService.OPENSEARCH.serviceName(), DockerService.OPENSEARCH.port())
+                .withExposedService(DockerService.REDIS.serviceName(), DockerService.REDIS.port())
                 .withExposedService(DockerService.LDAP.serviceName(), DockerService.LDAP.port())
                 .waitingFor(DockerService.CALENDAR_SIDE.serviceName(), Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
