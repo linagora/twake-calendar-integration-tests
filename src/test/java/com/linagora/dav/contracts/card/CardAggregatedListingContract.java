@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
+import org.assertj.core.api.SoftAssertions;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -141,11 +142,14 @@ public abstract class CardAggregatedListingContract {
         }
 
         // THEN every contact is returned exactly once, in full name order (ties broken consistently)
-        assertThat(seen).hasSize(8).doesNotHaveDuplicates();
-        assertThat(seen.subList(0, 2)).containsExactly("adam", "mia");
-        assertThat(seen.subList(2, 5)).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
-        assertThat(seen.subList(5, 8)).containsExactly("tom", "zoe", "zyk");
-        assertThat(pages).isEqualTo(4);
+        int finalPages = pages;
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(seen).hasSize(8).doesNotHaveDuplicates();
+            softly.assertThat(seen.subList(0, 2)).containsExactly("adam", "mia");
+            softly.assertThat(seen.subList(2, 5)).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
+            softly.assertThat(seen.subList(5, 8)).containsExactly("tom", "zoe", "zyk");
+            softly.assertThat(finalPages).isEqualTo(4);
+        });
     }
 
     @Test
@@ -276,6 +280,145 @@ public abstract class CardAggregatedListingContract {
     }
 
     @Test
+    void domainMemberShouldNotIncludeDomainMembersAddressBookOfAnotherDomain() {
+        // GIVEN another domain has a domain members address book with a contact
+        TestDomain otherDomain = newDomain();
+        cardDavClient.createDomainMembersAddressBook(otherDomain.id(), otherDomain.technicalToken());
+        String memberUid = "member-" + UUID.randomUUID();
+        cardDavClient.upsertDomainMemberContact(otherDomain.id(), memberUid,
+            VCardContact.builder().firstName("Other").lastName("Member").build().toVCardPayload(memberUid), otherDomain.technicalToken());
+        // AND Alice belongs to a domain without domain members address book
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        // AND Alice has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts with domainMember=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainMember", true));
+
+        // THEN the domain members address book of the other domain is not aggregated
+        assertThat(uids(response)).containsExactly("anna");
+    }
+
+    @Test
+    void domainAddressBookShouldBeExcludedByDefaultAndIncludedWhenDomainContactsIsTrue() {
+        // GIVEN a dedicated domain whose domain address book, readable by its members, has a contact
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        cardDavClient.createDomainAddressBook(domain.id(), domain.technicalToken());
+        String domainContactUid = addDomainContact(domain, "Domain", "Contact");
+        // AND Alice, a member of this domain, has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts without domainContacts
+        JsonPath responseWithoutDomainContacts = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50));
+
+        // THEN the domain address book is not aggregated
+        assertThat(uids(responseWithoutDomainContacts)).containsExactly("anna");
+
+        // WHEN Alice lists her contacts with domainContacts=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainContacts", true));
+
+        // THEN the domain contact is aggregated, sorted by full name and linked to the domain address book
+        assertThat(response.getList(ITEM_HREFS, String.class)).containsExactly(
+            "/addressbooks/" + domainAlice.id() + "/contacts/anna.vcf",
+            "/addressbooks/" + domain.id() + "/dab/" + domainContactUid + ".vcf");
+    }
+
+    @Test
+    void domainContactsAndDomainMemberCanBeCombined() {
+        // GIVEN a dedicated domain whose domain address book has a contact
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        cardDavClient.createDomainAddressBook(domain.id(), domain.technicalToken());
+        String domainContactUid = addDomainContact(domain, "Domain", "Contact");
+        // AND whose domain members address book has a contact
+        cardDavClient.createDomainMembersAddressBook(domain.id(), domain.technicalToken());
+        String memberUid = "member-" + UUID.randomUUID();
+        cardDavClient.upsertDomainMemberContact(domain.id(), memberUid,
+            VCardContact.builder().firstName("Domain").lastName("Member").build().toVCardPayload(memberUid), domain.technicalToken());
+        // AND Alice, a member of this domain, has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts with both domainContacts=true and domainMember=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainContacts", true, "domainMember", true));
+
+        // THEN her own contact, the domain contact and the domain member are merged, sorted by full name
+        assertThat(response.getList(ITEM_HREFS, String.class)).containsExactly(
+            "/addressbooks/" + domainAlice.id() + "/contacts/anna.vcf",
+            "/addressbooks/" + domain.id() + "/dab/" + domainContactUid + ".vcf",
+            "/addressbooks/" + domain.id() + "/domain-members/" + memberUid + ".vcf");
+    }
+
+    @Test
+    void disabledDomainAddressBookShouldNotBeIncluded() {
+        // GIVEN a dedicated domain whose domain address book is disabled and has a contact
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        cardDavClient.createDomainAddressBook(domain.id(), domain.technicalToken(), "[ \"{DAV:}read\" ]", "disabled");
+        addDomainContact(domain, "Domain", "Contact");
+        // AND Alice, a member of this domain, has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts with domainContacts=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainContacts", true));
+
+        // THEN the disabled domain address book is not aggregated
+        assertThat(uids(response)).containsExactly("anna");
+    }
+
+    @Test
+    void domainAddressBookShouldNotBeIncludedWhenMembersCannotReadIt() {
+        // GIVEN a dedicated domain whose domain address book grants no right to its members and has a contact
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        cardDavClient.createDomainAddressBook(domain.id(), domain.technicalToken(), "[]", "enabled");
+        addDomainContact(domain, "Domain", "Contact");
+        // AND Alice, a member of this domain, has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts with domainContacts=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainContacts", true));
+
+        // THEN the domain address book she cannot read is not aggregated
+        assertThat(uids(response)).containsExactly("anna");
+    }
+
+    @Test
+    void domainContactsShouldListOnlyOwnContactsWhenDomainHasNoDomainAddressBook() {
+        // GIVEN a dedicated domain without domain address book
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        // AND Alice, a member of this domain, has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts with domainContacts=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainContacts", true));
+
+        // THEN only her own contact is listed
+        assertThat(uids(response)).containsExactly("anna");
+    }
+
+    @Test
+    void domainContactsShouldNotIncludeDomainAddressBookOfAnotherDomain() {
+        // GIVEN another domain has a domain address book with a contact
+        TestDomain otherDomain = newDomain();
+        cardDavClient.createDomainAddressBook(otherDomain.id(), otherDomain.technicalToken());
+        addDomainContact(otherDomain, "Other", "Domain");
+        // AND Alice belongs to a domain without domain address book
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        // AND Alice has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists her contacts with domainContacts=true
+        JsonPath response = listContacts(domainAlice, Map.of("sort", "fn", "limit", 50, "domainContacts", true));
+
+        // THEN the domain address book of the other domain is not aggregated
+        assertThat(uids(response)).containsExactly("anna");
+    }
+
+    @Test
     void withoutContactsParameterShouldStillListAddressBooks() {
         addContact(alice, "contacts", "anna", "Anna", "Zed");
 
@@ -369,6 +512,23 @@ public abstract class CardAggregatedListingContract {
             .map(AddressBookURL::addressBookId)
             .filter(id -> !id.equals("contacts") && !id.equals("collected"))
             .blockFirst();
+    }
+
+    private record TestDomain(String name, String id, String technicalToken) {
+    }
+
+    private TestDomain newDomain() {
+        String domainName = "domain-" + UUID.randomUUID() + ".test";
+        Document domain = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(domainName);
+        String domainId = domain.getObjectId("_id").toString();
+        return new TestDomain(domainName, domainId, dockerExtension().twakeCalendarProvisioningService().generateToken(domainId));
+    }
+
+    private String addDomainContact(TestDomain domain, String firstName, String lastName) {
+        String uid = "dab-" + UUID.randomUUID();
+        cardDavClient.upsertDomainContact(domain.id(), uid,
+            VCardContact.builder().firstName(firstName).lastName(lastName).build().toVCardPayload(uid), domain.technicalToken());
+        return uid;
     }
 
     private OpenPaasUser newDomainUser(String domainName) {

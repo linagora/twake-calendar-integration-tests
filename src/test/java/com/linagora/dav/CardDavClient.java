@@ -653,17 +653,25 @@ public class CardDavClient {
     }
 
     public void createDomainAddressBook(String domainId, String technicalToken) {
+        createDomainAddressBook(domainId, technicalToken, "[ \"{DAV:}read\" ]", "enabled");
+    }
+
+    /**
+     * @param membersRightJson JSON array of the privileges granted to the domain members, e.g. {@code [ "{DAV:}read" ]}
+     * @param state {@code enabled} or {@code disabled}
+     */
+    public void createDomainAddressBook(String domainId, String technicalToken, String membersRightJson, String state) {
         String uri = "/addressbooks/" + domainId + ".json";
         byte[] payload = """
             {
                 "id": "dab",
                 "dav:name": "Domain address book",
                 "carddav:description": "Domain address book",
-                "dav:acl": [ "{DAV:}read" ],
+                "dav:acl": %s,
                 "type": "group",
-                "state": "enabled"
+                "state": "%s"
             }
-            """.getBytes(StandardCharsets.UTF_8);
+            """.formatted(membersRightJson, state).getBytes(StandardCharsets.UTF_8);
 
         client.headers(headers -> headers
                 .add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
