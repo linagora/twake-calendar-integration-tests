@@ -3,3 +3,8 @@ ARG SABRE_4_7_IMAGE="linagora/esn-sabre:2.4.6.7"
 FROM ${SABRE_4_7_IMAGE}
 
 COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /var/www/config/esn.key.pub
+
+# Compose passes JSON as an environment variable because CI's Docker daemon may not share the workspace.
+RUN grep -q 'SABRE_CONFIG_JSON' /var/www/scripts/start.sh || \
+    sed -i 's@^sh /var/www/scripts/generate_config.sh > /var/www/config.json$@if [ -n "${SABRE_CONFIG_JSON:-}" ]; then printf "%s" "$SABRE_CONFIG_JSON" > /var/www/config.json; else sh /var/www/scripts/generate_config.sh > /var/www/config.json; fi@' /var/www/scripts/start.sh
+RUN grep -q 'SABRE_CONFIG_JSON' /var/www/scripts/start.sh

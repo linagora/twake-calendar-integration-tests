@@ -20,6 +20,8 @@ package com.linagora.dav;
 
 import static com.linagora.dav.DockerTwakeCalendarSetup.SABRE_V4_7;
 
+import java.util.Map;
+
 public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtension {
 
     private static final boolean PRINCIPAL_PRIVACY_DISABLED = false;
@@ -35,7 +37,8 @@ public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtensi
 
     public DockerTwakeCalendarExtensionV4_7(boolean principalPrivacy) {
         if (principalPrivacy) {
-            dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(SABRE_V4_7, principalPrivacy);
+            dockerTwakeCalendarSetup = new DockerTwakeCalendarSetup(
+                SABRE_V4_7, Map.of("PRINCIPAL_PRIVACY", principalPrivacy));
             dockerTwakeCalendarSetup.start();
         } else {
             dockerTwakeCalendarSetup = defaultDockerTwakeCalendarSetup();
