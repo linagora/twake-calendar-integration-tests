@@ -19,20 +19,22 @@
 package com.linagora.dav;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
+import java.util.Map;
 
 import org.apache.http.client.utils.URIBuilder;
 import org.junit.platform.commons.util.Preconditions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.ComposeContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
-public class DockerTwakeCalendarSetup {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DockerTwakeCalendarSetup.class);
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.io.Resources;
 
+public class DockerTwakeCalendarSetup {
     public enum DockerService {
         CALENDAR_SIDE("twake-calendar-side-service", 8080),
         CALENDAR_SIDE_ADMIN("twake-calendar-side-service", 8000),
@@ -41,7 +43,6 @@ public class DockerTwakeCalendarSetup {
         SABRE_DAV("sabre_dav", 80),
         MONGO("mongo", 27017),
         OPENSEARCH("opensearch", 9200),
-        REDIS("redis", 6379),
         LDAP("ldap", 389);
 
         private final String serviceName;
@@ -67,12 +68,10 @@ public class DockerTwakeCalendarSetup {
     private TwakeCalendarProvisioningService twakeCalendarProvisioningService;
 
     public DockerTwakeCalendarSetup(String sabreVersion) {
-        this(sabreVersion, false);
+        this(sabreVersion, Map.of());
     }
 
-    public DockerTwakeCalendarSetup(String sabreVersion, boolean principalPrivacy) {
-        String principalPrivacyValue = Boolean.toString(principalPrivacy);
-        LOGGER.info("Test config: PRINCIPAL_PRIVACY={}", principalPrivacyValue);
+    public DockerTwakeCalendarSetup(String sabreVersion, Map<String, ?> sabreSettings) {
         try {
             environment = new ComposeContainer(
                 new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
@@ -83,16 +82,27 @@ public class DockerTwakeCalendarSetup {
                 .withExposedService(DockerService.SABRE_DAV.serviceName(), DockerService.SABRE_DAV.port())
                 .withExposedService(DockerService.MONGO.serviceName(), DockerService.MONGO.port())
                 .withExposedService(DockerService.OPENSEARCH.serviceName(), DockerService.OPENSEARCH.port())
-                .withExposedService(DockerService.REDIS.serviceName(), DockerService.REDIS.port())
                 .withExposedService(DockerService.LDAP.serviceName(), DockerService.LDAP.port())
                 .waitingFor(DockerService.CALENDAR_SIDE.serviceName(), Wait.forLogMessage(".*StartUpChecks all succeeded.*", 1)
                     .withStartupTimeout(Duration.ofMinutes(10)))
                 .withEnv("SABRE_DAV_IMAGE", sabreVersion)
-                .withEnv("PRINCIPAL_PRIVACY", principalPrivacyValue)
+                .withEnv("SABRE_CONFIG_JSON", createSabreConfig(sabreSettings))
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("[esn-sabre] " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("[twake-calendar-side-service] " + log.getUtf8String()));
         } catch (URISyntaxException e) {
             throw new RuntimeException("Failed to initialize Twake Calendar Setup from docker compose.", e);
+        }
+    }
+
+    static String createSabreConfig(Map<String, ?> settings) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            ObjectNode config = (ObjectNode) mapper.readTree(Resources.getResource("sabre-config.json"));
+            ObjectNode runtimeSettings = (ObjectNode) config.get("environment");
+            runtimeSettings.setAll((ObjectNode) mapper.valueToTree(settings));
+            return mapper.writeValueAsString(config);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to create Sabre test config.", e);
         }
     }
 
