@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.card;
 
 import static io.restassured.RestAssured.given;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,6 +33,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.SoftAssertions;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -98,16 +100,48 @@ public abstract class CardAggregatedListingContract {
     }
 
     @Test
-    void itemsShouldLinkToTheirAddressBook() {
+    void itemsShouldLinkToCorrectContact() {
+        // GIVEN Alice has contacts in her own address books
         String workBook = createAddressBook(alice, "Work");
         addContact(alice, "contacts", "anna", "Anna", "Zed");
         addContact(alice, workBook, "bob", "Bob", "Marley");
+        // AND Bob delegates his "contacts" book to Alice
+        addContact(bob, "contacts", "carl", "Carl", "Delegated");
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ);
+        // AND Alice subscribes to Bob's public "collected" book
+        addContact(bob, "collected", "dora", "Dora", "Subscribed");
+        cardDavClient.setPublicRight(bob, bob.id(), "collected", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "collected", "Bob collected");
 
         JsonPath response = listContacts(alice, Map.of("sort", "fn", "limit", 50));
 
-        assertThat(response.getList(ITEM_HREFS, String.class)).containsExactly(
-            "/addressbooks/" + alice.id() + "/contacts/anna.vcf",
-            "/addressbooks/" + alice.id() + "/" + workBook + "/bob.vcf");
+        // THEN each item's self href in the response link to the corresponding contact
+        List<String> hrefs = response.getList(ITEM_HREFS, String.class);
+        assertThat(hrefs).hasSize(4);
+        assertThat(hrefs.get(0)).isEqualTo("/addressbooks/" + alice.id() + "/contacts/anna.vcf");
+        assertThat(hrefs.get(1)).isEqualTo("/addressbooks/" + alice.id() + "/" + workBook + "/bob.vcf");
+        assertThat(hrefs.get(2)).startsWith("/addressbooks/" + alice.id() + "/").endsWith("/carl.vcf")
+            .doesNotContain("/contacts/");
+        assertThat(hrefs.get(3)).startsWith("/addressbooks/" + alice.id() + "/").endsWith("/dora.vcf")
+            .doesNotContain("/collected/");
+
+        // AND each link can be read by Alice and serves the listed contact
+        Map<String, String> fullNames = Map.of(
+            hrefs.get(0), "Anna Zed",
+            hrefs.get(1), "Bob Marley",
+            hrefs.get(2), "Carl Delegated",
+            hrefs.get(3), "Dora Subscribed");
+        SoftAssertions.assertSoftly(softly -> fullNames.forEach((href, fullName) -> {
+            String vcard = given()
+                .headers("Authorization", alice.impersonatedBasicAuth())
+                .accept("text/vcard")
+                .get(href)
+                .then()
+                .statusCode(SC_OK)
+                .extract()
+                .asString();
+            softly.assertThat(vcard).as(href).contains("FN:" + fullName);
+        }));
     }
 
     @Test
@@ -246,9 +280,8 @@ public abstract class CardAggregatedListingContract {
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("contacts", true)
             .queryParam("sort", "fn")
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get(contactsPath(bob.id()))
             .then()
             .statusCode(403);
     }
@@ -418,23 +451,6 @@ public abstract class CardAggregatedListingContract {
         assertThat(uids(response)).containsExactly("anna");
     }
 
-    @Test
-    void withoutContactsParameterShouldStillListAddressBooks() {
-        addContact(alice, "contacts", "anna", "Anna", "Zed");
-
-        JsonPath response = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sort", "fn")
-            .queryParam("limit", 50)
-            .get("/addressbooks/" + alice.id() + ".json")
-            .then()
-            .statusCode(SC_OK)
-            .extract()
-            .jsonPath();
-
-        assertThat(response.getList("_embedded.'dav:item'")).isNull();
-    }
-
     @ParameterizedTest
     @ValueSource(strings = {
         "not-base64!",
@@ -447,11 +463,10 @@ public abstract class CardAggregatedListingContract {
     void invalidCursorShouldBeRejected(String after) {
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("contacts", true)
             .queryParam("sort", "fn")
             .queryParam("limit", 2)
             .queryParam("after", after)
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get(contactsPath(alice.id()))
             .then()
             .statusCode(SC_BAD_REQUEST);
     }
@@ -460,9 +475,8 @@ public abstract class CardAggregatedListingContract {
     void unsupportedSortShouldBeRejected() {
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("contacts", true)
             .queryParam("sort", "email")
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get(contactsPath(alice.id()))
             .then()
             .statusCode(SC_BAD_REQUEST);
     }
@@ -472,24 +486,35 @@ public abstract class CardAggregatedListingContract {
     void invalidLimitShouldBeRejected(String limit) {
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("contacts", true)
             .queryParam("sort", "fn")
             .queryParam("limit", limit)
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get(contactsPath(alice.id()))
             .then()
             .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    void unknownUserShouldHaveNoContactList() {
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .get(contactsPath(new ObjectId().toHexString()))
+            .then()
+            .statusCode(SC_NOT_FOUND);
     }
 
     private JsonPath listContacts(OpenPaasUser user, Map<String, ?> params) {
         return given()
             .headers("Authorization", user.impersonatedBasicAuth())
-            .queryParam("contacts", true)
             .queryParams(params)
-            .get("/addressbooks/" + user.id() + ".json")
+            .get(contactsPath(user.id()))
             .then()
             .statusCode(SC_OK)
             .extract()
             .jsonPath();
+    }
+
+    private static String contactsPath(String userId) {
+        return "/contacts/" + userId + ".json";
     }
 
     private List<String> uids(JsonPath response) {
