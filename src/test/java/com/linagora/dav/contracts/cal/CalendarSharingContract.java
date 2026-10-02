@@ -47,6 +47,8 @@ import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
@@ -72,6 +74,7 @@ import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import net.javacrumbs.jsonunit.core.Option;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import reactor.core.publisher.Mono;
 
@@ -118,10 +121,11 @@ public abstract class CalendarSharingContract {
         channel = extension().getChannel();
     }
 
-    @Test
-    public void cannotSubscribeToPrivateCalendar() {
-        // Given: Bob sets his calendar as private
-        calDavClient.updateCalendarAcl(bob, "");
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotSubscribeToPrivateCalendar(String publicRight) {
+        // Given: Bob sets his calendar as not publicly readable
+        calDavClient.updateCalendarAcl(bob, publicRight);
 
         SubscribedCalendarRequest subscribedCalendarRequest = SubscribedCalendarRequest.builder()
             .id(UUID.randomUUID().toString())
@@ -137,9 +141,10 @@ public abstract class CalendarSharingContract {
             .hasMessageContaining("Unexpected status code");
     }
 
-    @Test
-    public void cannotReportPrivateCalendar() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotReportPrivateCalendar(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         // When: Alice reports Bob's private calendar directly
         DavResponse response = calDavClient.findEventsByTime(alice, CalendarURL.from(bob.id()), "20300110T000000", "20300110T235959");
@@ -153,10 +158,11 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
     @Disabled("Wait for new image")
-    public void cannotReadPrivateCalendarDataWithFilterlessCalendarQueryReport() {
-        createEventInBobPrivateCalendar();
+    public void cannotReadPrivateCalendarDataWithFilterlessCalendarQueryReport(String publicRight) {
+        createEventInBobPrivateCalendar(publicRight);
 
         // The filter-less XML calendar-query is the fast path used by the reindex task.
         DavResponse response = execute(extension().davHttpClient()
@@ -185,9 +191,10 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    @Test
-    public void cannotPropfindPrivateCalendar() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotPropfindPrivateCalendar(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = extension().davHttpClient()
             .headers(headers -> alice.impersonatedBasicAuth(headers)
@@ -207,9 +214,10 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    @Test
-    public void cannotGetPrivateCalendarEvent() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotGetPrivateCalendarEvent(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = extension().davHttpClient()
             .headers(headers -> alice.impersonatedBasicAuth(headers)
@@ -228,9 +236,10 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    @Test
-    public void cannotExportPrivateCalendar() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotExportPrivateCalendar(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = extension().davHttpClient()
             .headers(alice::impersonatedBasicAuth)
@@ -249,9 +258,10 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    @Test
-    public void cannotExportJsonPrivateCalendar() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotExportJsonPrivateCalendar(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = extension().davHttpClient()
             .headers(headers -> alice.impersonatedBasicAuth(headers)
@@ -271,9 +281,10 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    @Test
-    public void cannotReadPrivateCalendarDataWithJsonEventPathsReport() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotReadPrivateCalendarDataWithJsonEventPathsReport(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = execute(extension().davHttpClient()
             .headers(headers -> alice.impersonatedBasicAuth(headers)
@@ -293,9 +304,10 @@ public abstract class CalendarSharingContract {
         assertPrivateCalendarNotExposed(response, eventUid);
     }
 
-    @Test
-    public void cannotSyncTokenReportPrivateCalendar() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotSyncTokenReportPrivateCalendar(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(bob.id()),
@@ -304,9 +316,10 @@ public abstract class CalendarSharingContract {
         assertPrivateCalendarNotExposed(response, eventUid);
     }
 
-    @Test
-    public void cannotReadPrivateCalendarWithAllEventsJsonShortcut() {
-        String eventUid = createEventInBobPrivateCalendar();
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    public void cannotReadPrivateCalendarWithAllEventsJsonShortcut(String publicRight) {
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
 
         DavResponse response = execute(extension().davHttpClient()
             .headers(headers -> alice.impersonatedBasicAuth(headers)
@@ -326,9 +339,9 @@ public abstract class CalendarSharingContract {
         });
     }
 
-    private String createEventInBobPrivateCalendar() {
-        // Given: Bob sets his calendar as private
-        calDavClient.updateCalendarAcl(bob, "");
+    private String createEventInBobPrivateCalendar(String publicRight) {
+        // Given: Bob sets his calendar as not publicly readable
+        calDavClient.updateCalendarAcl(bob, publicRight);
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = """
@@ -348,6 +361,108 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         return eventUid;
+    }
+
+    @Test
+    void freeBusyQueryShouldBeForbiddenWhenPublicRightIsNone() {
+        // GIVEN: Bob exposes nothing, not even free/busy
+        createEventInBobPrivateCalendar(CalDavClient.PUBLIC_RIGHT_NONE);
+
+        // WHEN: Alice asks free/busy of Bob's calendar
+        DavResponse response = freeBusyQueryOnBobCalendar();
+
+        // THEN
+        assertSoftly(softly -> {
+            softly.assertThat(response.status()).isIn(403, 404);
+            softly.assertThat(response.body()).doesNotContain("2030-01-10T09:00:00Z");
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    void freeBusyQueryShouldShowBusyPeriodWhenPublicRightAllowsFreeBusy(String publicRight) throws Exception {
+        // GIVEN: Bob exposes his free/busy
+        createEventInBobPrivateCalendar(publicRight);
+
+        // WHEN: Alice asks free/busy of Bob's calendar
+        DavResponse response = freeBusyQueryOnBobCalendar();
+
+        // THEN: Alice sees the busy period, and only it
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(freeBusyPeriods(response.body()))
+            .containsExactly("2030-01-10T09:00:00Z/2030-01-10T10:00:00Z");
+        assertThat(response.body())
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
+    }
+
+    @Test
+    void bulkFreeBusyShouldNotExposeCalendarWhenPublicRightIsNone() {
+        // GIVEN: Bob exposes nothing, not even free/busy
+        String eventUid = createEventInBobPrivateCalendar(CalDavClient.PUBLIC_RIGHT_NONE);
+
+        // WHEN: Alice asks free/busy of Bob
+        DavResponse response = bulkFreeBusyOfBob();
+
+        // THEN
+        assertSoftly(softly -> {
+            softly.assertThat(response.body()).doesNotContain(eventUid);
+            softly.assertThat(response.body()).doesNotContain("20300110T090000Z");
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    void bulkFreeBusyShouldExposeBusyPeriodWhenPublicRightAllowsFreeBusy(String publicRight) {
+        // GIVEN: Bob exposes his free/busy
+        String eventUid = createEventInBobPrivateCalendar(publicRight);
+
+        // WHEN: Alice asks free/busy of Bob
+        DavResponse response = bulkFreeBusyOfBob();
+
+        // THEN
+        assertThat(response.status()).isEqualTo(200);
+        assertThatJson(response.body())
+            .when(Option.IGNORING_EXTRA_ARRAY_ITEMS, Option.IGNORING_EXTRA_FIELDS)
+            .isEqualTo("""
+                {"users":[{"id":"%s","calendars":[{"id":"%s","busy":[
+                    {"uid":"%s","start":"20300110T090000Z","end":"20300110T100000Z"}]}]}]}
+                """.formatted(bob.id(), bob.id(), eventUid));
+        assertThat(response.body())
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
+    }
+
+    private DavResponse freeBusyQueryOnBobCalendar() {
+        return execute(extension().davHttpClient()
+            .headers(headers -> alice.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(CalendarURL.from(bob.id()).asUri() + ".json")
+            .send(body("""
+                {"type":"free-busy-query","match":{"start":"20300110T000000","end":"20300111T000000"}}""")));
+    }
+
+    private DavResponse bulkFreeBusyOfBob() {
+        var response = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"start":"20300110T000000","end":"20300111T000000","users":["%s"]}""".formatted(bob.id()))
+        .when()
+            .post("/calendars/freebusy")
+        .then()
+            .extract();
+        return new DavResponse(response.statusCode(), response.body().asString());
+    }
+
+    private List<String> freeBusyPeriods(String jcalResponse) throws IOException {
+        // data = ["vcalendar", [props], [["vfreebusy", [props], []]]]
+        JsonNode vfreebusyProperties = MAPPER.readTree(jcalResponse).at("/data/2/0/1");
+        return StreamSupport.stream(vfreebusyProperties.spliterator(), false)
+            .filter(property -> property.get(0).asText().equals("freebusy"))
+            .map(property -> property.get(3).get(0).asText() + "/" + property.get(3).get(1).asText())
+            .toList();
     }
 
     @Test
@@ -1102,8 +1217,9 @@ public abstract class CalendarSharingContract {
             });
     }
 
-    @Test
-    void subscriptionIsRevokedWhenSourceBecomesPrivate() {
+    @ParameterizedTest
+    @ValueSource(strings = {"", CalDavClient.PUBLIC_RIGHT_NONE, CalDavClient.PUBLIC_RIGHT_FREE_BUSY})
+    void subscriptionIsRevokedWhenSourceBecomesPrivate(String publicRight) {
         // GIVEN: Bob sets his calendar as publicly-readable
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
 
@@ -1124,8 +1240,8 @@ public abstract class CalendarSharingContract {
         assertThat(aliceSubscribedBefore)
             .anySatisfy(node -> assertThat(node.get("dav:name").asText()).isEqualTo("Bob public shared"));
 
-        // WHEN: Bob changes his calendar to private
-        calDavClient.updateCalendarAcl(bob, "");
+        // WHEN: Bob changes his calendar to not publicly readable
+        calDavClient.updateCalendarAcl(bob, publicRight);
 
         // THEN: Alice should no longer see the subscription
         List<JsonNode> aliceSubscribedAfter = calDavClient.findUserSubscribedCalendars(alice)

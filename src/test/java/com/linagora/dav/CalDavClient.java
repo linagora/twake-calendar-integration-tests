@@ -54,6 +54,9 @@ import reactor.netty.http.client.HttpClient;
 public class CalDavClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    public static final String PUBLIC_RIGHT_NONE = "none";
+    public static final String PUBLIC_RIGHT_FREE_BUSY = "{urn:ietf:params:xml:ns:caldav}read-free-busy";
+
     public enum DelegationRight {
         READ("\"dav:read\": true", 2),
         READ_WRITE("\"dav:read-write\":true", 3),
@@ -718,7 +721,19 @@ public class CalDavClient {
     /**
      * <p>Examples of {@code public_right} values:
      * <ul>
-     *     <li><b>Hide calendar</b>:
+     *     <li><b>Nothing (not even free/busy)</b>:
+     *     <pre>{@code
+     *     {"public_right": "none"}
+     *     }</pre>
+     *     </li>
+     *
+     *     <li><b>Free/busy only</b>:
+     *     <pre>{@code
+     *     {"public_right": "{urn:ietf:params:xml:ns:caldav}read-free-busy"}
+     *     }</pre>
+     *     </li>
+     *
+     *     <li><b>Hide calendar</b> (legacy, still exposes free/busy to authenticated users):
      *     <pre>{@code
      *     {"public_right": ""}
      *     }</pre>
