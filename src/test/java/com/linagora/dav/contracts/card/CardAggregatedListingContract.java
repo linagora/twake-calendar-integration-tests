@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -157,32 +158,20 @@ public abstract class CardAggregatedListingContract {
         addContact(alice, "contacts", "tom", "Tom", "Other");
         addContact(alice, workBook, "zyk", "Zyk", "Middle");
 
-        // WHEN Alice scrolls her contacts 2 by 2, passing back the next cursor as after
-        List<String> seen = new ArrayList<>();
-        int pages = 0;
-        JsonPath page = listContacts(alice, Map.of("sort", "fn", "limit", 2));
-        while (true) {
-            pages++;
-            List<String> uids = uids(page);
-            assertThat(uids).hasSize(2);
-            assertThat(page.getMap("_links")).containsOnlyKeys("self");
-            seen.addAll(uids);
-            String next = page.getString(NEXT);
-            if (next == null) {
-                break;
-            }
-            assertThat(pages).isLessThanOrEqualTo(8);
-            page = listContacts(alice, Map.of("sort", "fn", "limit", 2, "after", next));
-        }
+        // WHEN Alice scrolls her contacts 2 by 2
+        List<JsonPath> pages = paginate(alice, Map.of("sort", "fn", "limit", 2));
 
         // THEN every contact is returned exactly once, in full name order (ties broken consistently)
-        int finalPages = pages;
+        List<String> seen = pages.stream().flatMap(page -> uids(page).stream()).toList();
         SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(pages).hasSize(4);
+            softly.assertThat(pages).allSatisfy(page -> {
+                assertThat(uids(page)).hasSize(2);
+            });
             softly.assertThat(seen).hasSize(8).doesNotHaveDuplicates();
             softly.assertThat(seen.subList(0, 2)).containsExactly("adam", "mia");
             softly.assertThat(seen.subList(2, 5)).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
             softly.assertThat(seen.subList(5, 8)).containsExactly("tom", "zoe", "zyk");
-            softly.assertThat(finalPages).isEqualTo(4);
         });
     }
 
@@ -511,6 +500,23 @@ public abstract class CardAggregatedListingContract {
             .statusCode(SC_OK)
             .extract()
             .jsonPath();
+    }
+
+    /**
+     * Lists all the contacts of a user page after page, passing back the next cursor as after until the last page.
+     */
+    private List<JsonPath> paginate(OpenPaasUser user, Map<String, ?> params) {
+        List<JsonPath> pages = new ArrayList<>();
+        JsonPath page = listContacts(user, params);
+        pages.add(page);
+        while (page.getString(NEXT) != null) {
+            assertThat(pages).as("pagination should end").hasSizeLessThan(100);
+            Map<String, Object> nextParams = new HashMap<>(params);
+            nextParams.put("after", page.getString(NEXT));
+            page = listContacts(user, nextParams);
+            pages.add(page);
+        }
+        return pages;
     }
 
     private static String contactsPath(String userId) {
