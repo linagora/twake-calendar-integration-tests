@@ -36,7 +36,7 @@ services:
       - emaily
 
   rabbitmq:
-    image: rabbitmq:3.13.3-management
+    image: rabbitmq:4.1.1-management
     networks:
       - emaily
 
