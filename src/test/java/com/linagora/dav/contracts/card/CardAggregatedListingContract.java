@@ -38,6 +38,9 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.linagora.dav.AddressBookURL;
@@ -566,5 +569,133 @@ public abstract class CardAggregatedListingContract {
         return dockerExtension().twakeCalendarProvisioningService()
             .createUser("user_" + UUID.randomUUID(), domainName)
             .block();
+    }
+
+    @Test
+    protected void shouldDefaultToAscendingFullNameOrder() {
+        // GIVEN names whose insertion order differs from their full-name order
+        addContact(alice, "contacts", "zoe", "Zoe", "Last");
+        addContact(alice, "collected", "anna", "Anna", "First");
+
+        // WHEN listing with defaults and with explicit ascending order
+        JsonPath defaultResponse = listContacts(alice, Map.of());
+        JsonPath ascendingResponse = listContacts(alice, Map.of("sort", "fn", "order", "asc"));
+
+        // THEN both requests return contacts from A to Z
+        assertThat(uids(defaultResponse)).containsExactly("anna", "zoe");
+        assertThat(uids(ascendingResponse)).containsExactly("anna", "zoe");
+    }
+
+    @Test
+    protected void shouldSortOwnDelegatedAndSubscribedContactsDescending() {
+        // GIVEN contacts from all three sources, including an accented and a lowercase name
+        addContact(alice, "contacts", "anna", "Anna", "First");
+        addContact(bob, "contacts", "elodie", "Élodie", "Martin");
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ);
+        addContact(bob, "collected", "bob", "bob", "Marley");
+        cardDavClient.setPublicRight(bob, bob.id(), "collected", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "collected", "Bob collected");
+
+        // WHEN listing descending THEN all sources are sorted together
+        JsonPath response = listContacts(alice, Map.of("sort", "fn", "order", "desc"));
+        assertThat(uids(response)).containsExactly("elodie", "bob", "anna");
+        assertThat(response.getString(NEXT)).isNull();
+
+        // WHEN delegated and subscribed books are excluded THEN only Alice's contact remains
+        JsonPath ownContactsResponse = listContacts(alice, Map.of("order", "desc", "delegate", false, "share", false));
+        assertThat(uids(ownContactsResponse)).containsExactly("anna");
+    }
+
+    @ParameterizedTest
+    @MethodSource("expectedContactPages")
+    protected void shouldPaginateInRequestedOrderWithoutDuplicatesNorMisses(String order, List<List<String>> expectedPages) {
+        // GIVEN six contacts in two address books, created in a different order from their names
+        String workBook = createAddressBook(alice, "Work");
+        addContact(alice, "contacts", "zoe", "Zoe", "Last");
+        addContact(alice, workBook, "bob", "bob", "Marley");
+        addContact(alice, "contacts", "anna", "Anna", "First");
+        addContact(alice, workBook, "elodie", "Élodie", "Martin");
+        addContact(alice, "contacts", "dora", "Dora", "Middle");
+        addContact(alice, workBook, "carl", "Carl", "Middle");
+
+        // WHEN scrolling two contacts at a time in the requested order
+        List<JsonPath> pages = paginate(alice, Map.of("sort", "fn", "order", order, "limit", 2));
+        List<List<String>> actualPages = pages.stream().map(this::uids).toList();
+
+        // THEN every page contains exactly the expected contacts in order, with no omissions or duplicates
+        assertThat(actualPages).containsExactlyElementsOf(expectedPages);
+        assertThat(pages.getLast().getString(NEXT)).isNull();
+    }
+
+    static List<Arguments> expectedContactPages() {
+        return List.of(
+            Arguments.of("asc", List.of(
+                List.of("anna", "bob"),
+                List.of("carl", "dora"),
+                List.of("elodie", "zoe"))),
+            Arguments.of("desc", List.of(
+                List.of("zoe", "elodie"),
+                List.of("dora", "carl"),
+                List.of("bob", "anna"))));
+    }
+
+    @Test
+    protected void shouldPaginateEquivalentNamesInBothOrders() {
+        // GIVEN three names that compare equal when ignoring accents and case, in two address books
+        String workBook = createAddressBook(alice, "Work");
+        addContact(alice, "contacts", "same-1", "Same", "Name");
+        addContact(alice, workBook, "same-2", "Same", "Name");
+        addContact(alice, "contacts", "same-3", "sáme", "name");
+
+        // WHEN every contact is on its own page, the cursor must break name ties using _id
+        List<JsonPath> ascendingPages = paginate(alice, Map.of("order", "asc", "limit", 1));
+        List<JsonPath> descendingPages = paginate(alice, Map.of("order", "desc", "limit", 1));
+        List<String> ascendingUids = ascendingPages.stream().flatMap(page -> uids(page).stream()).toList();
+        List<String> descendingUids = descendingPages.stream().flatMap(page -> uids(page).stream()).toList();
+
+        // THEN all three contacts appear once, and descending reverses the _id order of equal names
+        assertThat(ascendingPages).hasSize(3).allSatisfy(page -> assertThat(uids(page)).hasSize(1));
+        assertThat(descendingPages).hasSize(3).allSatisfy(page -> assertThat(uids(page)).hasSize(1));
+        assertThat(ascendingUids).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
+        assertThat(descendingUids).containsExactlyElementsOf(ascendingUids.reversed());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "invalid", "1"})
+    protected void invalidOrderShouldBeRejected(String order) {
+        // WHEN order is unsupported THEN reject it instead of silently using ascending
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("order", order)
+            .get(contactsPath(alice.id()))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    protected void arrayOrderShouldBeRejected() {
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("order[]", "asc")
+            .get(contactsPath(alice.id()))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"asc, desc", "desc, asc"})
+    protected void cursorFromOppositeOrderShouldBeRejected(String cursorOrder, String requestedOrder) {
+        // GIVEN a cursor from a non-final page
+        addContact(alice, "contacts", "anna", "Anna", "First");
+        addContact(alice, "contacts", "zoe", "Zoe", "Last");
+        String cursor = listContacts(alice, Map.of("order", cursorOrder, "limit", 1)).getString(NEXT);
+
+        // WHEN changing order while keeping that cursor THEN require a fresh listing
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParams(Map.of("order", requestedOrder, "after", cursor))
+            .get(contactsPath(alice.id()))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
     }
 }
