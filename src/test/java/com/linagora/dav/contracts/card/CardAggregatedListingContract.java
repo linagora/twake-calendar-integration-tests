@@ -861,6 +861,72 @@ public abstract class CardAggregatedListingContract {
                 List.of("single", "multiple")));
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("emailResponseOrder")
+    protected void shouldReturnEmailsInPreferenceOrder(EmailPreferenceScenario scenario) {
+        // GIVEN one contact with the email properties from the scenario
+        String cardData = """
+            BEGIN:VCARD
+            VERSION:{version}
+            UID:multiple
+            FN:Multiple Emails
+            {emails}END:VCARD
+            """.replace("{version}", scenario.vcardVersion()).replace("{emails}", scenario.emailProperties());
+        cardDavClient.upsertContact(alice, "contacts", "multiple", cardData.getBytes(StandardCharsets.UTF_8));
+
+        // WHEN listing contacts with default settings or sorting contacts by email in either direction
+        JsonPath defaultListing = listContacts(alice, Map.of());
+        JsonPath ascendingListing = listContacts(alice, Map.of("sort", "email", "order", "asc"));
+        JsonPath descendingListing = listContacts(alice, Map.of("sort", "email", "order", "desc"));
+
+        // THEN emails inside the vCard always follow preference order, independent of contact sort direction
+        assertThat(emailsOfFirstContact(defaultListing))
+            .as("Default listing")
+            .containsExactlyElementsOf(scenario.expectedOrder());
+        assertThat(emailsOfFirstContact(ascendingListing))
+            .as("Contacts sorted by email ascending")
+            .containsExactlyElementsOf(scenario.expectedOrder());
+        assertThat(emailsOfFirstContact(descendingListing))
+            .as("Contacts sorted by email descending")
+            .containsExactlyElementsOf(scenario.expectedOrder());
+    }
+
+    private List<String> emailsOfFirstContact(JsonPath response) {
+        // jCard data is ["vcard", properties]; each property is [name, parameters, type, value].
+        return response.getList(
+            "_embedded.'dav:item'[0].data[1].findAll { property -> property[0] == 'email' }.collect { property -> property[3] }",
+            String.class);
+    }
+
+    protected static List<EmailPreferenceScenario> emailResponseOrder() {
+        return List.of(
+            new EmailPreferenceScenario("vCard 3: TYPE=PREF emails come first", "3.0", """
+                EMAIL;TYPE=WORK:zoe@example.org
+                EMAIL;TYPE=INTERNET,PREF:alpha@example.org
+                EMAIL;TYPE=HOME,PREF:bravo@example.org
+                EMAIL;TYPE=HOME:gamma@example.org
+                """,
+                List.of("alpha@example.org", "bravo@example.org", "zoe@example.org", "gamma@example.org")),
+            new EmailPreferenceScenario("vCard 4: lowest PREF comes first; equal PREF keeps original order", "4.0", """
+                EMAIL:zoe@example.org
+                EMAIL;PREF=50:delta@example.org
+                EMAIL;PREF=2:alpha@example.org
+                EMAIL;PREF=2:bravo@example.org
+                EMAIL;PREF=100:charlie@example.org
+                """,
+                List.of("alpha@example.org", "bravo@example.org", "delta@example.org", "charlie@example.org", "zoe@example.org")),
+            new EmailPreferenceScenario("No PREF: keep original email order", "4.0", """
+                EMAIL;TYPE=HOME:zoe@example.org
+                EMAIL;TYPE=WORK:alpha@example.org
+                """,
+                List.of("zoe@example.org", "alpha@example.org")),
+            new EmailPreferenceScenario("Single email: return that email", "4.0", """
+                EMAIL;PREF=1:zoe@example.org
+                """,
+                List.of("zoe@example.org")),
+            new EmailPreferenceScenario("No email: return an empty email list", "4.0", "", List.of()));
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {1, 2, 4})
     protected void shouldPaginateAcrossContactsWithAndWithoutEmail(int pageSize) {
