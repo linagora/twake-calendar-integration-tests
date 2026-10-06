@@ -467,7 +467,7 @@ public abstract class CardAggregatedListingContract {
     void unsupportedSortShouldBeRejected() {
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .queryParam("sort", "email")
+            .queryParam("sort", "phone")
             .get(contactsPath(alice.id()))
             .then()
             .statusCode(SC_BAD_REQUEST);
@@ -533,11 +533,15 @@ public abstract class CardAggregatedListingContract {
     }
 
     private void addContact(OpenPaasUser user, String addressBook, String uid, String firstName, String lastName) {
-        VCardContact contact = VCardContact.builder()
-            .firstName(firstName)
-            .lastName(lastName)
-            .build();
-        cardDavClient.upsertContact(user, addressBook, uid, contact.toVCardPayload(uid));
+        addContact(user, addressBook, uid, firstName, lastName, null);
+    }
+
+    private void addContact(OpenPaasUser user, String addressBook, String uid, String firstName, String lastName, String email) {
+        VCardContact.Builder builder = VCardContact.builder().firstName(firstName).lastName(lastName);
+        if (email != null) {
+            builder.email(email);
+        }
+        cardDavClient.upsertContact(user, addressBook, uid, builder.build().toVCardPayload(uid));
     }
 
     private String createAddressBook(OpenPaasUser user, String name) {
@@ -697,5 +701,214 @@ public abstract class CardAggregatedListingContract {
             .get(contactsPath(alice.id()))
             .then()
             .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    protected void shouldPaginateContactsByEmailAscending() {
+        // GIVEN emails whose order differs from full names, including a contact with no email
+        String workBook = createAddressBook(alice, "Work");
+        addContact(alice, "contacts", "zoe", "Zoe", "Last", "alpha@example.org");
+        addContact(alice, workBook, "bob", "Bob", "Marley", "CHARLIE@example.org");
+        addContact(alice, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(alice, workBook, "no-email", "Élodie", "Martin");
+        addContact(alice, "contacts", "dora", "Dora", "Middle", "delta@example.org");
+        addContact(alice, workBook, "carl", "Carl", "Middle", "bravo@example.org");
+
+        // WHEN listing contacts by email ascending, two contacts at a time
+        List<JsonPath> pages = paginate(alice, Map.of("sort", "email", "order", "asc", "limit", 2));
+
+        // THEN each page follows email order, with the missing email first
+        assertThat(pages).hasSize(3);
+        assertThat(uids(pages.get(0))).containsExactly("no-email", "zoe");
+        assertThat(uids(pages.get(1))).containsExactly("carl", "bob");
+        assertThat(uids(pages.get(2))).containsExactly("dora", "anna");
+        assertThat(pages.getLast().getString(NEXT)).isNull();
+    }
+
+    @Test
+    protected void shouldPaginateContactsByEmailDescending() {
+        // GIVEN emails whose order differs from full names, including a contact with no email
+        String workBook = createAddressBook(alice, "Work");
+        addContact(alice, "contacts", "zoe", "Zoe", "Last", "alpha@example.org");
+        addContact(alice, workBook, "bob", "Bob", "Marley", "CHARLIE@example.org");
+        addContact(alice, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(alice, workBook, "no-email", "Élodie", "Martin");
+        addContact(alice, "contacts", "dora", "Dora", "Middle", "delta@example.org");
+        addContact(alice, workBook, "carl", "Carl", "Middle", "bravo@example.org");
+
+        // WHEN listing contacts by email descending, two contacts at a time
+        List<JsonPath> pages = paginate(alice, Map.of("sort", "email", "order", "desc", "limit", 2));
+
+        // THEN each page follows reversed email order, with the missing email last
+        assertThat(pages).hasSize(3);
+        assertThat(uids(pages.get(0))).containsExactly("anna", "dora");
+        assertThat(uids(pages.get(1))).containsExactly("bob", "carl");
+        assertThat(uids(pages.get(2))).containsExactly("zoe", "no-email");
+        assertThat(pages.getLast().getString(NEXT)).isNull();
+    }
+
+    @Test
+    protected void shouldPaginateEqualAndMissingEmailsInBothOrders() {
+        // GIVEN equal emails ignoring case, and two contacts without emails, in different books
+        String workBook = createAddressBook(alice, "Work");
+        addContact(alice, "contacts", "same-1", "Anna", "First", "same@example.org");
+        addContact(alice, workBook, "same-2", "Bob", "Second", "SAME@example.org");
+        addContact(alice, "contacts", "same-3", "Carl", "Third", "same@example.org");
+        addContact(alice, "contacts", "empty-1", "Dora", "Fourth");
+        addContact(alice, workBook, "empty-2", "Zoe", "Last");
+
+        // WHEN each contact is on its own page THEN _id breaks ties in both directions
+        List<JsonPath> ascendingPages = paginate(alice, Map.of("sort", "email", "order", "asc", "limit", 1));
+        List<JsonPath> descendingPages = paginate(alice, Map.of("sort", "email", "order", "desc", "limit", 1));
+        List<String> ascendingUids = ascendingPages.stream().flatMap(page -> uids(page).stream()).toList();
+        List<String> descendingUids = descendingPages.stream().flatMap(page -> uids(page).stream()).toList();
+
+        assertThat(ascendingPages).hasSize(5).allSatisfy(page -> assertThat(uids(page)).hasSize(1));
+        assertThat(descendingPages).hasSize(5).allSatisfy(page -> assertThat(uids(page)).hasSize(1));
+        assertThat(ascendingUids.subList(0, 2)).containsExactlyInAnyOrder("empty-1", "empty-2");
+        assertThat(ascendingUids.subList(2, 5)).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
+        assertThat(descendingUids).containsExactlyElementsOf(ascendingUids.reversed());
+    }
+
+    @Test
+    protected void shouldSortOwnDelegatedAndSubscribedContactsByEmail() {
+        // GIVEN emails across all three sources whose order differs from contact names
+        addContact(alice, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(bob, "contacts", "elodie", "Élodie", "Martin", "alpha@example.org");
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ);
+        addContact(bob, "collected", "bob", "Bob", "Marley", "middle@example.org");
+        cardDavClient.setPublicRight(bob, bob.id(), "collected", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "collected", "Bob collected");
+
+        // WHEN sorting by email THEN sort all sources together
+        JsonPath ascending = listContacts(alice, Map.of("sort", "email", "order", "asc"));
+        JsonPath descending = listContacts(alice, Map.of("sort", "email", "order", "desc"));
+        assertThat(uids(ascending)).containsExactly("elodie", "bob", "anna");
+        assertThat(uids(descending)).containsExactly("anna", "bob", "elodie");
+    }
+
+    @Test
+    protected void shouldUpdateEmailSortWhenEmailChangesOrIsRemoved() {
+        // GIVEN two contacts ordered by email
+        addContact(alice, "contacts", "anna", "Anna", "First", "alpha@example.org");
+        addContact(alice, "contacts", "bob", "Bob", "Second", "middle@example.org");
+        assertThat(uids(listContacts(alice, Map.of("sort", "email")))).containsExactly("anna", "bob");
+
+        // WHEN Anna changes her email THEN her position is updated
+        addContact(alice, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        assertThat(uids(listContacts(alice, Map.of("sort", "email")))).containsExactly("bob", "anna");
+
+        // WHEN Anna removes her email THEN her empty email sorts first
+        addContact(alice, "contacts", "anna", "Anna", "First");
+        assertThat(uids(listContacts(alice, Map.of("sort", "email")))).containsExactly("anna", "bob");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("emailPreferences")
+    protected void shouldSortUsingPreferredEmail(EmailPreferenceScenario scenario) {
+        // GIVEN several emails and another contact between alpha and zoe
+        String multipleEmails = """
+            BEGIN:VCARD
+            VERSION:{version}
+            UID:multiple
+            FN:Multiple Emails
+            {emails}END:VCARD
+            """.replace("{version}", scenario.vcardVersion()).replace("{emails}", scenario.emailProperties());
+        cardDavClient.upsertContact(alice, "contacts", "multiple", multipleEmails.getBytes(StandardCharsets.UTF_8));
+        addContact(alice, "contacts", "single", "Single", "Email", "middle@example.org");
+
+        // WHEN sorting in either direction THEN use the preferred email, or the first without a preference
+        assertThat(uids(listContacts(alice, Map.of("sort", "email", "order", "asc"))))
+            .containsExactlyElementsOf(scenario.expectedOrder());
+        assertThat(uids(listContacts(alice, Map.of("sort", "email", "order", "desc"))))
+            .containsExactlyElementsOf(scenario.expectedOrder().reversed());
+    }
+
+    protected record EmailPreferenceScenario(String description, String vcardVersion, String emailProperties, List<String> expectedOrder) {
+        @Override
+        public String toString() {
+            return description;
+        }
+    }
+
+    static List<EmailPreferenceScenario> emailPreferences() {
+        return List.of(
+            new EmailPreferenceScenario("vCard 3 TYPE=PREF", "3.0", """
+                EMAIL:zoe@example.org
+                EMAIL;TYPE=INTERNET,PREF:alpha@example.org
+                """,
+                List.of("multiple", "single")),
+            new EmailPreferenceScenario("vCard 4 lowest PREF", "4.0", """
+                EMAIL:zoe@example.org
+                EMAIL;PREF=50:bravo@example.org
+                EMAIL;PREF=2:alpha@example.org
+                """,
+                List.of("multiple", "single")),
+            new EmailPreferenceScenario("vCard 4 PREF=100 before unpreferred", "4.0", """
+                EMAIL:zoe@example.org
+                EMAIL;PREF=100:alpha@example.org
+                """,
+                List.of("multiple", "single")),
+            new EmailPreferenceScenario("same PREF keeps first", "4.0", """
+                EMAIL;PREF=2:zoe@example.org
+                EMAIL;PREF=2:alpha@example.org
+                """,
+                List.of("single", "multiple")),
+            new EmailPreferenceScenario("no PREF keeps first", "3.0", """
+                EMAIL:zoe@example.org
+                EMAIL:alpha@example.org
+                """,
+                List.of("single", "multiple")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 4})
+    protected void shouldPaginateAcrossContactsWithAndWithoutEmail(int pageSize) {
+        // GIVEN three contacts with emails and three without, spread over two books
+        String workBook = createAddressBook(alice, "Work");
+        addContact(alice, "contacts", "alpha-1", "Anna", "First", "alpha@example.org");
+        addContact(alice, workBook, "alpha-2", "Bob", "Second", "ALPHA@example.org");
+        addContact(alice, "contacts", "bravo", "Carl", "Third", "bravo@example.org");
+        addContact(alice, "contacts", "empty-1", "Dora", "Fourth");
+        addContact(alice, workBook, "empty-2", "Ella", "Fifth");
+        addContact(alice, workBook, "empty-3", "Fred", "Sixth");
+        List<String> expectedAscending = uids(listContacts(alice, Map.of("sort", "email", "order", "asc")));
+        assertThat(expectedAscending.subList(0, 3)).containsExactlyInAnyOrder("empty-1", "empty-2", "empty-3");
+        assertThat(expectedAscending.subList(3, 5)).containsExactlyInAnyOrder("alpha-1", "alpha-2");
+        assertThat(expectedAscending.get(5)).isEqualTo("bravo");
+
+        // WHEN pages cross the boundary between missing and present emails in either direction
+        List<JsonPath> ascendingPages = paginate(alice, Map.of("sort", "email", "order", "asc", "limit", pageSize));
+        List<JsonPath> descendingPages = paginate(alice, Map.of("sort", "email", "order", "desc", "limit", pageSize));
+
+        // THEN pagination preserves all contacts and reverses the tie order, including empty emails
+        assertThat(ascendingPages.stream().flatMap(page -> uids(page).stream()).toList())
+            .containsExactlyElementsOf(expectedAscending);
+        assertThat(descendingPages.stream().flatMap(page -> uids(page).stream()).toList())
+            .containsExactlyElementsOf(expectedAscending.reversed());
+        assertThat(ascendingPages).hasSize((6 + pageSize - 1) / pageSize);
+        assertThat(descendingPages).hasSize((6 + pageSize - 1) / pageSize);
+        assertThat(ascendingPages.getLast().getString(NEXT)).isNull();
+        assertThat(descendingPages.getLast().getString(NEXT)).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"asc", "desc"})
+    protected void shouldPaginateContactsWhenEveryEmailIsMissing(String order) {
+        // GIVEN contacts without any email
+        addContact(alice, "contacts", "anna", "Anna", "First");
+        addContact(alice, "contacts", "bob", "Bob", "Second");
+        addContact(alice, "contacts", "carl", "Carl", "Third");
+
+        // WHEN sorting contacts by email in the requested direction
+        List<JsonPath> pages = paginate(alice, Map.of("sort", "email", "order", order, "limit", 2));
+
+        // THEN every contact is returned once, with no next cursor on the last page
+        assertThat(pages).hasSize(2);
+        assertThat(uids(pages.getFirst())).hasSize(2);
+        assertThat(uids(pages.getLast())).hasSize(1);
+        assertThat(pages.stream().flatMap(page -> uids(page).stream()).toList())
+            .containsExactlyInAnyOrder("anna", "bob", "carl");
+        assertThat(pages.getLast().getString(NEXT)).isNull();
     }
 }
