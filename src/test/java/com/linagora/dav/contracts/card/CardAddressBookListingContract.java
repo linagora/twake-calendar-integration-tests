@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts.card;
 
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static io.restassured.RestAssured.given;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
@@ -308,6 +309,85 @@ public abstract class CardAddressBookListingContract {
 
         // THEN she is not allowed to
         assertThat(statusCode).isIn(SC_FORBIDDEN, SC_NOT_FOUND);
+    }
+
+    @Test
+    void userOfAnotherDomainShouldNotListPublicAddressBook() {
+        // GIVEN John, from another domain, has a contact in a book he made public
+        TestDomain otherDomain = newDomain();
+        OpenPaasUser john = newDomainUser(otherDomain.name());
+        cardDavClient.setPublicRight(john, john.id(), "contacts", PublicRight.READ_WRITE);
+        addContact(john, "contacts", "anna", "Anna", "Zed");
+
+        // WHEN Alice lists the contacts of this book
+        int statusCode = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sort", "fn")
+            .get(contactsPath(john.id(), "contacts"))
+            .then()
+            .extract()
+            .statusCode();
+
+        // THEN the public right does not cross the domain boundary
+        assertThat(statusCode).isIn(SC_FORBIDDEN, SC_NOT_FOUND);
+    }
+
+    @Test
+    void userOfAnotherDomainShouldNotListDomainAddressBook() {
+        // GIVEN a domain whose domain address book, readable by its members, has a contact
+        TestDomain domain = newDomain();
+        cardDavClient.createDomainAddressBook(domain.id(), domain.technicalToken());
+        addDomainContact(domain, "Domain", "Contact");
+
+        // WHEN Alice, who does not belong to this domain, lists its contacts
+        int statusCode = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sort", "fn")
+            .get(contactsPath(domain.id(), "dab"))
+            .then()
+            .extract()
+            .statusCode();
+
+        // THEN she is not allowed to
+        assertThat(statusCode).isIn(SC_FORBIDDEN, SC_NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dab", "domain-members"})
+    void foreignTechnicalTokenShouldNotListDomainAddressBooks(String addressBookId) {
+        // GIVEN a contact in one of the address books of domain B
+        TestDomain domainB = newDomain();
+        String uid;
+        if (addressBookId.equals("dab")) {
+            cardDavClient.createDomainAddressBook(domainB.id(), domainB.technicalToken());
+            uid = addDomainContact(domainB, "Visible", "Contact");
+        } else {
+            cardDavClient.createDomainMembersAddressBook(domainB.id(), domainB.technicalToken());
+            uid = "member-" + UUID.randomUUID();
+            addDomainMember(domainB, uid, "Visible", "Contact");
+        }
+        TestDomain domainA = newDomain();
+
+        // WHEN a technical token of domain A lists the contacts of this book
+        int statusCode = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, domainA.technicalToken())
+            .queryParam("sort", "fn")
+            .get(contactsPath(domainB.id(), addressBookId))
+            .then()
+            .extract()
+            .statusCode();
+
+        // THEN domain B contacts are not exposed, and remain listed for a technical token of domain B
+        assertThat(statusCode).isIn(SC_FORBIDDEN, SC_NOT_FOUND);
+        JsonPath response = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, domainB.technicalToken())
+            .queryParam("sort", "fn")
+            .get(contactsPath(domainB.id(), addressBookId))
+            .then()
+            .statusCode(SC_OK)
+            .extract()
+            .jsonPath();
+        assertThat(uids(response)).containsExactly(uid);
     }
 
     @Test
