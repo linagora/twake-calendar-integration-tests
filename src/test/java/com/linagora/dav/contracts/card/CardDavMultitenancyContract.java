@@ -24,6 +24,7 @@ import static com.linagora.dav.TestUtil.execute;
 import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.TwakeCalendarProvisioningService.DEFAULT_DOMAIN;
 import static io.restassured.RestAssured.given;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -287,6 +288,64 @@ public abstract class CardDavMultitenancyContract {
             .uri("/addressbooks/" + john.id() + ".json"));
 
         assertThat(status).isIn(403, 404);
+    }
+
+    @Test
+    protected void aggregatedContactsShouldReturnErrorStatusForCrossDomainUser() {
+        // GIVEN John has a contact in another tenant
+        cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
+
+        // WHEN Bob requests John's aggregated contacts
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
+            .get()
+            .uri("/contacts/" + john.id() + ".json?sort=email"));
+
+        // THEN cross-tenant access is denied
+        assertThat(status).isIn(403, 404);
+    }
+
+    @Test
+    protected void aggregatedContactsShouldRejectForeignTechnicalToken() {
+        // GIVEN John has a contact in the second tenant
+        cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
+
+        // WHEN the first tenant's technical token requests John's aggregated contacts
+        int status = executeNoContent(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/contacts/" + john.id() + ".json?sort=email"));
+
+        // THEN access is denied, while the second tenant's token can read the contact
+        assertThat(status).isIn(403, 404);
+        DavResponse ownTenantResponse = execute(dockerExtension().davHttpClient()
+            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+                .add("Accept", "application/json"))
+            .get()
+            .uri("/contacts/" + john.id() + ".json?sort=email"));
+        assertThat(ownTenantResponse.status()).isEqualTo(200);
+        assertThatJson(ownTenantResponse.body()).inPath("_embedded.dav:item[0]._links.self.href")
+            .isEqualTo("/addressbooks/" + john.id() + "/contacts/abcdef.vcf");
+    }
+
+    @Test
+    protected void aggregatedContactsShouldOnlyIncludeOwnTenantData() {
+        // GIVEN Bob and John belong to different tenants and each has a contact
+        cardDavClient.upsertContact(bob, CONTACTS_BOOK, "own", VCARD);
+        cardDavClient.upsertContact(john, CONTACTS_BOOK, "foreign", VCARD);
+
+        // WHEN Bob lists his aggregated contacts sorted by email
+        DavResponse response = execute(dockerExtension().davHttpClient()
+            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
+            .get()
+            .uri("/contacts/" + bob.id() + ".json?sort=email"));
+
+        // THEN only Bob's contact is returned
+        assertThat(response.status()).isEqualTo(200);
+        assertThatJson(response.body()).inPath("_embedded.dav:item").isArray().hasSize(1);
+        assertThatJson(response.body()).inPath("_embedded.dav:item[0]._links.self.href")
+            .isEqualTo("/addressbooks/" + bob.id() + "/contacts/own.vcf");
     }
 
     @Test
