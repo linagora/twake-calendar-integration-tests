@@ -674,6 +674,136 @@ public abstract class CardAddressBookListingContract {
             .statusCode(SC_BAD_REQUEST);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"asc", "desc"})
+    protected void shouldPaginateContactsByEmail(String order) {
+        // GIVEN emails sort differently from names, including a missing email and mixed case
+        addContact(alice, "contacts", "zoe", "Anna", "First", "zoe@example.org");
+        addContact(alice, "contacts", "alpha", "Zoe", "Last", "alpha@example.org");
+        addContact(alice, "contacts", "bravo", "Bob", "Middle", "BRAVO@example.org");
+        addContact(alice, "contacts", "no-email", "Missing", "Email");
+
+        // WHEN Alice lists the contacts two at a time by email
+        List<JsonPath> pages = paginate(alice, alice.id(), "contacts", Map.of("sort", "email", "order", order, "limit", 2));
+
+        // THEN both pages follow the requested email order, without missing or duplicate contacts
+        List<String> expected = List.of("no-email", "alpha", "bravo", "zoe");
+        assertThat(pages).hasSize(2);
+        assertThat(pages.stream().flatMap(page -> uids(page).stream()).toList())
+            .containsExactlyElementsOf(order.equals("asc") ? expected : expected.reversed());
+        assertThat(pages).allSatisfy(page -> assertThat(page.getString(SYNC_TOKEN)).isNotNull());
+        assertThat(pages.getLast().getString(NEXT)).isNull();
+    }
+
+    @Test
+    protected void shouldSortByPreferredEmail() {
+        // GIVEN the preferred email of one contact is not its first email
+        String preferredUid = "preferred";
+        String payload = new String(VCardContact.builder().firstName("Preferred").lastName("Email").email("aaa@example.org")
+            .build().toVCardPayload(preferredUid), StandardCharsets.UTF_8)
+            .replace("EMAIL;TYPE=WORK:aaa@example.org", "EMAIL:aaa@example.org\nEMAIL;TYPE=PREF:zoe@example.org");
+        cardDavClient.upsertContact(alice, "contacts", preferredUid, payload.getBytes(StandardCharsets.UTF_8));
+        addContact(alice, "contacts", "middle", "Middle", "Email", "middle@example.org");
+
+        // WHEN sorting by email THEN the preferred address determines the contact position
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("sort", "email"));
+        assertThat(uids(response)).containsExactly("middle", preferredUid);
+    }
+
+    @Test
+    protected void shouldPaginateEquivalentEmailsInBothOrders() {
+        // GIVEN emails that compare equal under the case-insensitive collation
+        addContact(alice, "contacts", "same-1", "First", "Contact", "same@example.org");
+        addContact(alice, "contacts", "same-2", "Second", "Contact", "SAME@example.org");
+        addContact(alice, "contacts", "same-3", "Third", "Contact", "same@example.org");
+
+        // WHEN each contact is on its own page in both directions
+        List<String> ascending = paginate(alice, alice.id(), "contacts", Map.of("sort", "email", "order", "asc", "limit", 1))
+            .stream().flatMap(page -> uids(page).stream()).toList();
+        List<String> descending = paginate(alice, alice.id(), "contacts", Map.of("sort", "email", "order", "desc", "limit", 1))
+            .stream().flatMap(page -> uids(page).stream()).toList();
+
+        // THEN _id breaks ties consistently, with no duplicates or omissions
+        assertThat(ascending).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
+        assertThat(descending).containsExactlyElementsOf(ascending.reversed());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"fn, email", "email, fn"})
+    protected void cursorFromDifferentSortShouldBeRejected(String cursorSort, String requestedSort) {
+        // GIVEN a cursor issued for one sort field
+        addContact(alice, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(alice, "contacts", "zoe", "Zoe", "Last", "anna@example.org");
+        String cursor = listContacts(alice, alice.id(), "contacts", Map.of("sort", cursorSort, "limit", 1)).getString(NEXT);
+
+        // WHEN changing sort without restarting pagination THEN reject the incompatible cursor
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParams(Map.of("sort", requestedSort, "after", cursor))
+            .get(contactsPath(alice.id(), "contacts"))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"asc", "desc"})
+    protected void shouldSortDelegatedAddressBookByEmail(String order) {
+        // GIVEN Bob delegates a book whose name and email orders differ
+        addContact(bob, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(bob, "contacts", "zoe", "Zoe", "Last", "anna@example.org");
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ);
+        String delegatedBook = otherAddressBookOf(alice);
+
+        // WHEN Alice paginates the delegated book by email
+        List<JsonPath> pages = paginate(alice, alice.id(), delegatedBook, Map.of("sort", "email", "order", order, "limit", 1));
+
+        // THEN the source emails determine the order while links stay in the delegated book
+        List<String> expected = List.of("zoe", "anna");
+        assertThat(pages.stream().flatMap(page -> uids(page).stream()).toList())
+            .containsExactlyElementsOf(order.equals("asc") ? expected : expected.reversed());
+        assertThat(pages).allSatisfy(page -> assertThat(page.getList(ITEM_HREFS, String.class))
+            .allSatisfy(href -> assertThat(href).contains("/" + alice.id() + "/" + delegatedBook + "/")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"asc", "desc"})
+    protected void shouldSortSubscribedAddressBookByEmail(String order) {
+        // GIVEN Alice subscribes to a public book whose name and email orders differ
+        addContact(bob, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(bob, "contacts", "zoe", "Zoe", "Last", "anna@example.org");
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscription = otherAddressBookOf(alice);
+
+        // WHEN Alice paginates the subscription by email
+        List<JsonPath> pages = paginate(alice, alice.id(), subscription, Map.of("sort", "email", "order", order, "limit", 1));
+
+        // THEN source emails determine the order while links stay in the subscription
+        List<String> expected = List.of("zoe", "anna");
+        assertThat(pages.stream().flatMap(page -> uids(page).stream()).toList())
+            .containsExactlyElementsOf(order.equals("asc") ? expected : expected.reversed());
+        assertThat(pages).allSatisfy(page -> assertThat(page.getList(ITEM_HREFS, String.class))
+            .allSatisfy(href -> assertThat(href).contains("/" + alice.id() + "/" + subscription + "/")));
+    }
+
+    @Test
+    protected void shouldSortByEmailWithOffset() {
+        // GIVEN contact names and emails sort in different orders
+        addContact(alice, "contacts", "anna", "Anna", "First", "zoe@example.org");
+        addContact(alice, "contacts", "zoe", "Zoe", "Last", "anna@example.org");
+        addContact(alice, "contacts", "middle", "Middle", "Contact", "MIDDLE@example.org");
+
+        // WHEN listing by email with offset pagination
+        JsonPath first = listContacts(alice, alice.id(), "contacts", Map.of("sort", "email", "offset", 0, "limit", 2));
+        JsonPath last = listContacts(alice, alice.id(), "contacts", Map.of("sort", "email", "offset", 2, "limit", 2));
+
+        // THEN emails sort ascending and pagination continues using an offset link
+        assertThat(uids(first)).containsExactly("zoe", "middle");
+        assertThat(first.getString("_links.next.href")).contains("offset=2");
+        assertThat(first.getString(NEXT)).isNull();
+        assertThat(uids(last)).containsExactly("anna");
+    }
+
     private JsonPath listContacts(OpenPaasUser user, String baseId, String addressBookId, Map<String, ?> params) {
         return given()
             .headers("Authorization", user.impersonatedBasicAuth())
@@ -714,11 +844,15 @@ public abstract class CardAddressBookListingContract {
     }
 
     private void addContact(OpenPaasUser user, String addressBook, String uid, String firstName, String lastName) {
-        VCardContact contact = VCardContact.builder()
-            .firstName(firstName)
-            .lastName(lastName)
-            .build();
-        cardDavClient.upsertContact(user, addressBook, uid, contact.toVCardPayload(uid));
+        addContact(user, addressBook, uid, firstName, lastName, null);
+    }
+
+    private void addContact(OpenPaasUser user, String addressBook, String uid, String firstName, String lastName, String email) {
+        VCardContact.Builder builder = VCardContact.builder().firstName(firstName).lastName(lastName);
+        if (email != null) {
+            builder.email(email);
+        }
+        cardDavClient.upsertContact(user, addressBook, uid, builder.build().toVCardPayload(uid));
     }
 
     private String createAddressBook(OpenPaasUser user, String name) {
