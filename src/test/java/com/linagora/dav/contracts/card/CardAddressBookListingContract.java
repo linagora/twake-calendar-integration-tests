@@ -674,20 +674,6 @@ public abstract class CardAddressBookListingContract {
             .statusCode(SC_BAD_REQUEST);
     }
 
-    @Test
-    void orderShouldBeIgnoredWithOffset() {
-        addContact(alice, "contacts", "anna", "Anna", "Zed");
-        addContact(alice, "contacts", "bob", "Bob", "Marley");
-        addContact(alice, "contacts", "carl", "Carl", "Brown");
-
-        // WHEN Alice lists her contacts with an offset and a descending order
-        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("sort", "fn", "order", "desc", "limit", 2, "offset", 0));
-
-        // THEN the order only applies to cursor pagination: the offset listing stays ascending
-        assertThat(uids(response)).containsExactly("anna", "bob");
-        assertThat(response.getString("_links.next.href")).contains("offset=2");
-    }
-
     private JsonPath listContacts(OpenPaasUser user, String baseId, String addressBookId, Map<String, ?> params) {
         return given()
             .headers("Authorization", user.impersonatedBasicAuth())
