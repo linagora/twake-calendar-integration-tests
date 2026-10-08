@@ -1316,11 +1316,9 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
-        Thread.sleep(3000);
-
-        assertThat(messages)
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
-                assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id()));
+                assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id())));
     }
 
     @Test

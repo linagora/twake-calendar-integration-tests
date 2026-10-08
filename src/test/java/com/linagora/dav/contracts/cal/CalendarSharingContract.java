@@ -1281,11 +1281,9 @@ public abstract class CalendarSharingContract {
 
         // THEN: Ensure message is emitted for Alice's copy (but Bob's is fine)
         String aliceCalendarPath = "/calendars/" + alice.id();
-        Thread.sleep(2000);
-
-        assertThat(messages)
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
-                assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+                assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath)));
     }
 
     @Test
@@ -2595,11 +2593,9 @@ public abstract class CalendarSharingContract {
 
         // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)
         String aliceCalendarPath = "/calendars/" + alice.id();
-        Thread.sleep(2000);
-
-        assertThat(messages)
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
-                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath)));
     }
 
     @Test
@@ -2671,11 +2667,9 @@ public abstract class CalendarSharingContract {
 
         // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)
         String aliceCalendarPath = "/calendars/" + alice.id();
-        Thread.sleep(2000);
-
-        assertThat(messages)
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
-                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath)));
     }
 
     @Test
@@ -2773,11 +2767,9 @@ public abstract class CalendarSharingContract {
 
         // THEN an AMQP message should be emitted for Alice's subscribed calendar (copy of resource calendar)
         String aliceCalendarPath = "/calendars/" + alice.id();
-        Thread.sleep(2000);
-
-        assertThat(messages)
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
-                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+                AssertionsForClassTypes.assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath)));
     }
 
     @Test
