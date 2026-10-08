@@ -90,7 +90,6 @@ public abstract class SchedulingContract {
     private OpenPaasUser bob;
     private OpenPaasUser alice;
     private OpenPaasUser cedric;
-    private OpenPaasUser david;
 
     @BeforeEach
     void setUp() {
@@ -98,7 +97,6 @@ public abstract class SchedulingContract {
         bob = extension().newTestUser();
         alice = extension().newTestUser();
         cedric = extension().newTestUser();
-        david = extension().newTestUser();
     }
 
     @Test
@@ -2205,6 +2203,7 @@ public abstract class SchedulingContract {
     @Test
     void attendeeAddingNewAttendeeShouldNotPropagateToOthersNorInviteNewAttendee() {
         // Given Bob creates an event with Alice and Cedric as attendees
+        OpenPaasUser david = extension().newTestUser();
         String organizerEventUid = "event-" + UUID.randomUUID();
         String organizerEventIcs = """
             BEGIN:VCALENDAR
@@ -3854,6 +3853,7 @@ public abstract class SchedulingContract {
     @Test
     void updatingRecurringMasterParticipationShouldPreserveOtherAttendeeOverrideResponses() {
         // Given David invites three attendees, with a future override so the past-override guard cannot hide a regression.
+        OpenPaasUser david = extension().newTestUser();
         String eventUid = "event-" + UUID.randomUUID();
         String secondOccurrenceRecurrenceId = "30250102T090000Z";
         String initialIcs = """

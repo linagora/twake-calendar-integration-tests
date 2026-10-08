@@ -899,8 +899,8 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void copiedCalendarShouldContainsExistingEvent() throws JsonProcessingException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -931,8 +931,8 @@ public abstract class CalDavDelegationContract {
     @ParameterizedTest(name = "{0}")
     @EnumSource(DelegationRight.class)
     void delegatedUserCannotReadPrivateEventDetails(DelegationRight right) throws JsonProcessingException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -963,8 +963,8 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void canExportWhenCalendarIsReadable() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -992,8 +992,8 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void canExportWhenCalendarIsWritable() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -1185,8 +1185,8 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void copiedCalendarShouldContainsNewEvent() throws JsonProcessingException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
 
@@ -1217,8 +1217,8 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void copiedCalendarShouldContainsUpdatedEvent() throws JsonProcessingException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -1261,8 +1261,8 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void copiedCalendarShouldNotContainsDeletedEvent() throws JsonProcessingException {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = TwakeCalendarEvent.builder()
@@ -1297,8 +1297,8 @@ public abstract class CalDavDelegationContract {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:deleted", "");
 
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
 
@@ -1329,8 +1329,8 @@ public abstract class CalDavDelegationContract {
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:updated", "");
         dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:alarm:deleted", "");
 
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-        OpenPaasUser testUser2 = dockerExtension().newTestUser();
+        OpenPaasUser testUser = bob;
+        OpenPaasUser testUser2 = alice;
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
 

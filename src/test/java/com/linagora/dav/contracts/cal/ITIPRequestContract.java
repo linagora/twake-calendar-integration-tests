@@ -85,8 +85,6 @@ public abstract class ITIPRequestContract {
     private OpenPaasUser bob;
     private OpenPaasUser cedric;
 
-    private String bobCustomCalendarId;
-
     @BeforeEach
     void setUp() {
         calDavClient = new CalDavClient(extension().davHttpClient());
@@ -98,15 +96,13 @@ public abstract class ITIPRequestContract {
         alice = extension().newTestUser();
         bob = extension().newTestUser();
         cedric = extension().newTestUser();
-
-        bobCustomCalendarId = UUID.randomUUID().toString();
-
-        calDavClient.createNewCalendar(bob, bobCustomCalendarId, "Bob Custom Calendar", 2);
     }
 
     @Test
     void itipRequestShouldResultInEventInDefaultCalendar() {
-        // GIVEN Cedric and Bob
+        // GIVEN Cedric and Bob, whose custom calendar must remain empty after the invitation
+        String bobCustomCalendarId = UUID.randomUUID().toString();
+        calDavClient.createNewCalendar(bob, bobCustomCalendarId, "Bob Custom Calendar", 2);
         String eventUid = "event-" + UUID.randomUUID();
         String ics = """
             BEGIN:VCALENDAR
