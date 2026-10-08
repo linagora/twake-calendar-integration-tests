@@ -456,11 +456,10 @@ class SabreV4TrustedUrlsTest {
 
     private String awaitItipEvent(String uid, String expectedSummary) {
         CalDavClient client = new CalDavClient(extension.davHttpClient());
-        URI eventUri = awaitAtMost.until(
-            () -> client.findFirstUserCalendarObjectUriByEventUid(user, CalendarURL.from(user.id()), uid),
-            Optional::isPresent).orElseThrow();
-        return awaitAtMost.until(() -> client.getCalendarEvent(user, eventUri),
-            ics -> ics.contains("SUMMARY:" + expectedSummary))
+        return awaitAtMost.until(
+            () -> client.findUserCalendarObjectDataByEventUid(user, CalendarURL.from(user.id()), uid)
+                .filter(ics -> ics.contains("SUMMARY:" + expectedSummary)),
+            Optional::isPresent).orElseThrow()
             .replaceAll("\\r?\\n[ \\t]", "");
     }
 
