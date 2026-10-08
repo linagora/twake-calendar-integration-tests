@@ -86,7 +86,7 @@ public class TwakeCalendarProvisioningService {
 
         return Mono.from(domains.find(filter).first())
             .switchIfEmpty(Mono.defer(() -> {
-                Document newDomain = new Document()
+                Document newDomain = new Document("_id", new ObjectId())
                     .append("timestamp", new Document()
                         .append("creation", new Date()))
                     .append("hostnames", List.of())
@@ -95,7 +95,7 @@ public class TwakeCalendarProvisioningService {
                     .append("administrators", List.of());
 
                 return Mono.from(domains.insertOne(newDomain))
-                    .then(Mono.from(domains.find(filter).first()));
+                    .thenReturn(newDomain);
             }))
             .block();
     }
@@ -265,7 +265,8 @@ public class TwakeCalendarProvisioningService {
         ObjectId domainId = domainDoc.getObjectId("_id");
         String email = localPart + "@" + domainName;
 
-        Document userToSave = new Document()
+        // Generate the ID locally so the inserted fixture does not need to be read back.
+        Document userToSave = new Document("_id", new ObjectId())
             .append("firstname", "User_" + localPart)
             .append("lastname", "User_" + localPart)
             .append("password", PASSWORD)
@@ -275,8 +276,7 @@ public class TwakeCalendarProvisioningService {
                 .append("emails", List.of(email))));
 
         return Mono.from(database.getCollection("users").insertOne(userToSave))
-            .flatMap(success ->
-                Mono.from(database.getCollection("users").find(new Document("_id", success.getInsertedId())).first()))
+            .thenReturn(userToSave)
             .map(OpenPaasUser::fromDocument);
     }
 
