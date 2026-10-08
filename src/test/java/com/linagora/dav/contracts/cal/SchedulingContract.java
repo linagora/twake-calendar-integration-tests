@@ -4952,7 +4952,7 @@ public abstract class SchedulingContract {
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
-        return awaitAtMost.until(() -> calDavClient.findFirstEventId(user),
+        return awaitAtMost.until(() -> calDavClient.findFirstEventId(user, CalendarURL.from(user.id())),
                 Optional::isPresent)
             .orElseThrow(() -> new AssertionError("Expected event id to be present"));
     }

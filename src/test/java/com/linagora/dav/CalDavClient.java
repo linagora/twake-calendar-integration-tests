@@ -272,6 +272,11 @@ public class CalDavClient {
             .flatMap(e -> e.stream().findFirst());
     }
 
+    public Optional<String> findFirstEventId(OpenPaasUser openPaaSUser, CalendarURL calendarURL) {
+        return Optional.ofNullable(findUserCalendarEventIds(openPaaSUser, calendarURL)
+            .blockFirst());
+    }
+
     public Flux<String> findUserCalendarEventIds(OpenPaasUser openPaaSUser, CalendarURL calendarURL) {
         return httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers).add(HttpHeaderNames.CONTENT_TYPE, "application/xml"))
             .request(HttpMethod.valueOf("PROPFIND"))
