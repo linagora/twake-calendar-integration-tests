@@ -1423,8 +1423,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldNotSendNotificationEmailWhenImportSingleEvent() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String futureDtStart = "30250411T100000";
         String futureDtEnd = "30250411T110000";
@@ -1448,8 +1448,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldNotSendNotificationEmailWhenCreateSingleEventWithPastDtStart() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String pastDtStart = "20200101T100000";
         String pastDtEnd = "20200101T110000";
@@ -1473,8 +1473,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldNotSendNotificationEmailWhenCreateRecurringEventWithPastDtStartAndAllOccurrencesInPast() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String pastDtStart = "20200101T100000";
         String pastDtEnd = "20200101T110000";
@@ -1522,8 +1522,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithInternalAttendee() throws IOException, InterruptedException {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String calendarData = """
@@ -1571,7 +1571,7 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldNotSendNotificationEmailWhenOrganizerPartStatIsNeedsActionAndPubliclyCreatedWithExternalAttendee() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
         String eventUid = UUID.randomUUID().toString();
@@ -1620,8 +1620,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldOnlySendCancelNotificationEmailToBookerWhenOrganizerDeletesUnacceptedPubliclyCreatedEvent() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser internalAttendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser internalAttendee = alice;
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
         String eventUid = UUID.randomUUID().toString();
@@ -1686,8 +1686,8 @@ public abstract class EmailAMQPMessageContract {
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
     protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithInternalAttendee(String partStat) {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String eventUid = UUID.randomUUID().toString();
 
@@ -1802,7 +1802,7 @@ public abstract class EmailAMQPMessageContract {
     @ParameterizedTest
     @ValueSource(strings = {"ACCEPTED", "TENTATIVE"})
     protected void shouldSendNotificationEmailWhenOrganizerPartStatUpdatedFromNeedsActionToAcceptedWithExternalAttendee(String partStat) {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
         String eventUid = UUID.randomUUID().toString();
@@ -1917,8 +1917,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldSendNotificationEmailWhenAcceptedAfterSetRecurringPubliclyCreated() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
         String eventUid = UUID.randomUUID().toString();
         String recurrenceRule = "RRULE:FREQ=DAILY;COUNT=3";
 
@@ -1997,8 +1997,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldOnlySendNotificationEmailToBookerWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithInternalAttendee() throws InterruptedException, IOException {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String eventUid = UUID.randomUUID().toString();
 
@@ -2098,7 +2098,7 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     protected void shouldOnlySendNotificationEmailToBookerWhenOrganizerPartStatUpdatedFromNeedsActionToDeclinedWithExternalAttendee() throws InterruptedException, IOException {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
         String externalAttendeeEmail = "external-attendee-" + UUID.randomUUID() + "@external-domain.com";
 
         String eventUid = UUID.randomUUID().toString();
@@ -2498,8 +2498,8 @@ public abstract class EmailAMQPMessageContract {
 
     @Test
     void shouldReceiveNotificationEmailMessageWhenRecurringOverrideInstanceStartTimeIsUpdated() {
-        OpenPaasUser organizer = dockerExtension().newTestUser();
-        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
 
         String eventUid = UUID.randomUUID().toString();
         String initialCalendarData = """
