@@ -138,6 +138,14 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                                 ]
                               }
                             ]
+                          },
+                          {
+                            "name": "darkMode",
+                            "value": null
+                          },
+                          {
+                            "name": "highContrastMode",
+                            "value": null
                           }
                         ]
                       },
