@@ -489,10 +489,97 @@ public abstract class CalDavDelegationContract {
         assertThatCannotReadAliceSourceCalendar(bob, eventUid);
     }
 
+    @Test
+    void freeBusyShareeShouldStillGetFreeBusyWhenPublicRightIsNone() {
+        // GIVEN Alice exposes nothing publicly, not even free/busy
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC", CalDavClient.PUBLIC_RIGHT_NONE);
+        // AND Alice shares her calendar free-busy only with Bob
+        calDavClient.delegateCalendar(alice, alice.id(), bob, "dav:freebusy");
+
+        // WHEN Bob asks free/busy of Alice's calendar
+        DavResponse freeBusyQuery = freeBusyQueryOnAliceCalendar(bob);
+        DavResponse bulkFreeBusy = bulkFreeBusyOfAlice(bob);
+
+        // THEN Bob sees the busy period without any detail
+        assertSoftly(softly -> {
+            softly.assertThat(freeBusyQuery.status()).as("free-busy-query status").isEqualTo(200);
+            softly.assertThat(freeBusyQuery.body()).as("free-busy-query period")
+                .contains("2030-04-11T10:00:00Z")
+                .contains("2030-04-11T11:00:00Z");
+            softly.assertThat(bulkFreeBusy.status()).as("bulk freebusy status").isEqualTo(200);
+            softly.assertThat(bulkFreeBusy.body()).as("bulk freebusy period")
+                .contains(eventUid)
+                .contains("20300411T100000Z")
+                .contains("20300411T110000Z");
+        });
+        assertThatDoesNotLeakPrivateEventDetails(freeBusyQuery.body());
+        assertThatDoesNotLeakPrivateEventDetails(bulkFreeBusy.body());
+    }
+
+    @Test
+    void freeBusyShareeCannotReadEventsWhenPublicRightIsNone() {
+        // GIVEN Alice exposes nothing publicly, not even free/busy
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC", CalDavClient.PUBLIC_RIGHT_NONE);
+        // AND Alice shares her calendar free-busy only with Bob
+        calDavClient.delegateCalendar(alice, alice.id(), bob, "dav:freebusy");
+
+        // THEN Bob cannot read the events of Alice's calendar
+        assertThatCannotReadAliceSourceCalendar(bob, eventUid);
+    }
+
+    @Test
+    void nonShareeCannotGetFreeBusyWhenPublicRightIsNone() {
+        // GIVEN Alice exposes nothing publicly, not even free/busy
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent("PUBLIC", CalDavClient.PUBLIC_RIGHT_NONE);
+        // AND Alice shares her calendar free-busy only with Bob
+        calDavClient.delegateCalendar(alice, alice.id(), bob, "dav:freebusy");
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+
+        // WHEN Charlie, who is not a sharee, asks free/busy of Alice's calendar
+        DavResponse freeBusyQuery = freeBusyQueryOnAliceCalendar(charlie);
+        DavResponse bulkFreeBusy = bulkFreeBusyOfAlice(charlie);
+
+        // THEN Charlie gets nothing
+        assertSoftly(softly -> {
+            softly.assertThat(freeBusyQuery.status()).as("free-busy-query status").isIn(403, 404);
+            softly.assertThat(freeBusyQuery.body()).as("free-busy-query period").doesNotContain("2030-04-11T10:00:00Z");
+            softly.assertThat(bulkFreeBusy.body()).as("bulk freebusy")
+                .doesNotContain(eventUid)
+                .doesNotContain("20300411T100000Z");
+        });
+    }
+
+    private DavResponse freeBusyQueryOnAliceCalendar(OpenPaasUser user) {
+        return execute(dockerExtension().davHttpClient()
+            .headers(headers -> user.impersonatedBasicAuth(headers)
+                .add("Depth", 0)
+                .add("Accept", "application/json"))
+            .request(HttpMethod.valueOf("REPORT"))
+            .uri(CalendarURL.from(alice.id()).asUri() + ".json")
+            .send(body("""
+                {"type":"free-busy-query","match":{"start":"20300411T000000","end":"20300412T000000"}}""")));
+    }
+
+    private DavResponse bulkFreeBusyOfAlice(OpenPaasUser user) {
+        var response = given()
+            .headers("Authorization", user.impersonatedBasicAuth())
+            .body("""
+                {"start":"20300411T000000","end":"20300412T000000","users":["%s"]}""".formatted(alice.id()))
+        .when()
+            .post("/calendars/freebusy")
+        .then()
+            .extract();
+        return new DavResponse(response.statusCode(), response.body().asString());
+    }
+
     private static final String INITIAL_SYNC_TOKEN = "http://sabre.io/ns/sync/1";
 
     private String givenAlicePrivateSourceCalendarWithEvent(String eventClass) {
-        calDavClient.updateCalendarAcl(alice, "");
+        return givenAlicePrivateSourceCalendarWithEvent(eventClass, "");
+    }
+
+    private String givenAlicePrivateSourceCalendarWithEvent(String eventClass, String publicRight) {
+        calDavClient.updateCalendarAcl(alice, publicRight);
 
         String eventUid = "event-" + UUID.randomUUID();
         String calendarData = """
