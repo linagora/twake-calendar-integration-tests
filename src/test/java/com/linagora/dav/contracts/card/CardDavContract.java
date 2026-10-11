@@ -562,14 +562,14 @@ public abstract class CardDavContract {
             .statusCode(200)
             .extract().asString();
 
-        assertThat(responseBody).isEqualTo("""
+        assertThat(responseBody).isEqualToNormalizingNewlines("""
             BEGIN:VCARD
             VERSION:3.0
             FN:John Doe
             EMAIL:john.doe@example.com
             UID:123456789
             END:VCARD
-            """.replace("\n", "\r\n"));
+            """);
     }
 
     @Test
@@ -605,7 +605,7 @@ public abstract class CardDavContract {
             .statusCode(200)
             .extract().asString();
 
-        assertThat(responseBody).isEqualTo("""
+        assertThat(responseBody).isEqualToNormalizingNewlines("""
             BEGIN:VCARD
             VERSION:3.0
             FN:John Doe
@@ -613,7 +613,7 @@ public abstract class CardDavContract {
             PHOTO;VALUE=URI:https://example.com/avatar.jpg
             UID:123456789
             END:VCARD
-            """.replace("\n", "\r\n"));
+            """);
     }
 
     @Test
@@ -1375,7 +1375,7 @@ public abstract class CardDavContract {
             .statusCode(200)
             .extract().asString();
 
-        assertThat(responseBody).isEqualTo("""
+        assertThat(responseBody).isEqualToNormalizingNewlines("""
             BEGIN:VCARD
             VERSION:3.0
             FN:John Doe
@@ -1383,7 +1383,7 @@ public abstract class CardDavContract {
             EMAIL:john.doe@example.com
             UID:123456789
             END:VCARD
-            """.replace("\n", "\r\n"));
+            """);
     }
 
     @Test
