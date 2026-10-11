@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -29,7 +30,6 @@ import static org.hamcrest.Matchers.is;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +45,6 @@ import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -71,12 +70,7 @@ public abstract class CalendarSharingContract {
 
     public static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final ConditionFactory calmlyAwait = Awaitility.with()
-        .pollInterval(Duration.ofMillis(500))
-        .and()
-        .with()
-        .pollDelay(Duration.ofMillis(500))
-        .await();
+    private final ConditionFactory calmlyAwait = awaitEvery500Millis();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public abstract DockerTwakeCalendarExtension extension();

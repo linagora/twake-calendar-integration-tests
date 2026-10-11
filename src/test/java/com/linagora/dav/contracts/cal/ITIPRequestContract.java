@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
+import static com.linagora.dav.TestUtil.awaitAtMost;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -27,7 +28,6 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -42,8 +42,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
-import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -67,13 +65,6 @@ import net.fortuna.ical4j.model.parameter.PartStat;
 import net.fortuna.ical4j.model.property.Attendee;
 
 public abstract class ITIPRequestContract {
-    private static final ConditionFactory calmlyAwait = Awaitility.with()
-        .pollDelay(Duration.ofSeconds(2))
-        .pollInterval(Duration.ofSeconds(1))
-        .await();
-
-    public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
-
     public abstract DockerTwakeCalendarExtension extension();
 
     private CalDavClient calDavClient;

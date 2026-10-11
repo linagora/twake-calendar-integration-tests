@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static com.linagora.dav.TwakeCalendarProvisioningService.DEFAULT_DOMAIN;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
 import static io.restassured.RestAssured.given;
@@ -31,7 +32,6 @@ import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -50,7 +50,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 import org.w3c.dom.Node;
 import org.xmlunit.assertj3.XmlAssert;
@@ -279,13 +278,7 @@ public abstract class CalDavContract {
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
-    private final ConditionFactory calmlyAwait = Awaitility.with()
-        .pollInterval(Duration.ofMillis(500))
-        .and()
-        .with()
-        .pollDelay(Duration.ofMillis(500))
-        .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = awaitEvery500Millis().atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
     private OpenPaasUser testUser;

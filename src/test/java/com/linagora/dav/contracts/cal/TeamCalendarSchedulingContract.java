@@ -18,6 +18,7 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.TestUtil.awaitPresent;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -1066,9 +1067,7 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     private URI awaitCalendarObjectUriByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
-        return awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(user, calendarURL, eventUid),
-                Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected calendar object URI to be present for UID " + eventUid));
+        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(user, calendarURL, eventUid));
     }
 
     private List<URI> calendarObjectUrisByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {

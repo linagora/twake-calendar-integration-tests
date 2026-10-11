@@ -18,10 +18,11 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.TestUtil.awaitPresent;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -31,7 +32,6 @@ import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
@@ -55,12 +55,7 @@ public abstract class AlarmSchedulingContract {
     private static final String ALARM_TRIGGER_20M = "-PT20M";
     private static final String ALARM_TRIGGER_20M_EXPLICIT = "-P0DT0H20M0S";
 
-    private final ConditionFactory calmlyAwait = Awaitility.with()
-        .pollInterval(Duration.ofMillis(500))
-        .and()
-        .with()
-        .pollDelay(Duration.ofMillis(500))
-        .await();
+    private final ConditionFactory calmlyAwait = awaitEvery500Millis();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public abstract DockerTwakeCalendarExtension extension();
@@ -1901,9 +1896,7 @@ public abstract class AlarmSchedulingContract {
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
-        return awaitAtMost.until(() -> calDavClient.findFirstEventId(user),
-                Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected event id to be present"));
+        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstEventId(user));
     }
 
     private String readEventSummary(String icsContent) {

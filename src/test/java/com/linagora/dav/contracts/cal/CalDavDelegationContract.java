@@ -20,8 +20,8 @@ package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.TestUtil.awaitAtMost;
 import static com.linagora.dav.TestUtil.awaitCalendarEntries;
-import static com.linagora.dav.contracts.cal.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;

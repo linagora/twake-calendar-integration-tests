@@ -25,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 import org.testcontainers.shaded.org.awaitility.Awaitility;
@@ -44,6 +46,17 @@ public class TestUtil {
     public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public static final String TWAKE_CALENDAR_TOKEN_HEADER = "TwakeCalendarToken";
+
+    public static ConditionFactory awaitEvery500Millis() {
+        return Awaitility.with()
+            .pollDelay(Duration.ofMillis(500))
+            .pollInterval(Duration.ofMillis(500))
+            .await();
+    }
+
+    public static <T> T awaitPresent(ConditionFactory await, Callable<Optional<T>> condition) {
+        return await.until(condition, Optional::isPresent).orElseThrow();
+    }
 
     public static Mono<ByteBuf> body(String body) {
         return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
