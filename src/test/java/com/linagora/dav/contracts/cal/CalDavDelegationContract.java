@@ -22,6 +22,7 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.awaitAtMost;
 import static com.linagora.dav.TestUtil.awaitCalendarEntries;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
@@ -1365,11 +1366,10 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
-        Thread.sleep(3000);
-
-        assertThat(messages)
-            .noneSatisfy(json ->
-                assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id()));
+        awaitEvery500Millis().during(Duration.ofSeconds(3)).untilAsserted(() ->
+            assertThat(messages)
+                .noneSatisfy(json ->
+                    assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id())));
     }
 
     @Test

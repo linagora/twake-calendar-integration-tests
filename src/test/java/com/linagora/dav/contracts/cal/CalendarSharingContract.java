@@ -1325,11 +1325,10 @@ public abstract class CalendarSharingContract {
 
         // THEN: Ensure no alarm message is emitted for Alice's copy
         String aliceCalendarPath = "/calendars/" + alice.id();
-        Thread.sleep(2000);
-
-        assertThat(messages)
-            .noneSatisfy(json ->
-                assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath));
+        awaitAtMost.during(2, TimeUnit.SECONDS).untilAsserted(() ->
+            assertThat(messages)
+                .noneSatisfy(json ->
+                    assertThat(json.path("eventPath").asText()).startsWith(aliceCalendarPath)));
     }
 
     @Test

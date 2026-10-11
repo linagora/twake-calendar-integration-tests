@@ -39,7 +39,6 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
-import com.rabbitmq.client.GetResponse;
 
 import net.javacrumbs.jsonunit.core.Option;
 
@@ -1117,13 +1116,9 @@ public abstract class SearchAMQPMessageContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // THEN: There should be NO message published to calendar:event:request
-        Thread.sleep(1000);
-        GetResponse response = dockerExtension()
-            .getChannel()
-            .basicGet(testQueue, true);
-
-        assertThat(response)
-            .as("No AMQP message must be published for self-invite when ATTENDEE lacks mailto")
-            .isNull();
+        awaitAtMost.during(1, TimeUnit.SECONDS).untilAsserted(() ->
+            assertThat(dockerExtension().getChannel().messageCount(testQueue))
+                .as("No AMQP message must be published for self-invite when ATTENDEE lacks mailto")
+                .isZero());
     }
 }
