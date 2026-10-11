@@ -18,11 +18,12 @@
 
 package com.linagora.dav;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeoutException;
 
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.extension.AfterEachCallback;
-import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
@@ -40,7 +41,7 @@ import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 import reactor.netty.http.client.HttpClient;
 
-public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback, AfterEachCallback, ParameterResolver {
+public abstract class DockerTwakeCalendarExtension implements AfterEachCallback, ParameterResolver {
 
     public static final String QUEUE_NAME = "tcalendar:event:test";
 
@@ -50,25 +51,20 @@ public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback
     abstract DockerTwakeCalendarSetup setup();
 
     @Override
-    public void beforeEach(ExtensionContext extensionContext) throws Exception {
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(getDockerTwakeCalendarSetupSingleton().getHost(DockerTwakeCalendarSetup.DockerService.RABBITMQ));
-        factory.setPort(getDockerTwakeCalendarSetupSingleton().getPort(DockerTwakeCalendarSetup.DockerService.RABBITMQ));
-        factory.setUsername("guest");
-        factory.setPassword("guest");
-
-        connection = factory.newConnection();
-        channel = connection.createChannel();
-        channel.queueDeclare(QUEUE_NAME, false, true, true, null);
-    }
-
-    @Override
     public void afterEach(ExtensionContext extensionContext) throws Exception {
-        if (channel != null && channel.isOpen()) {
-            channel.close();
-        }
-        if (connection != null && connection.isOpen()) {
-            connection.close();
+        try {
+            if (channel != null && channel.isOpen()) {
+                channel.close();
+            }
+        } finally {
+            channel = null;
+            try {
+                if (connection != null && connection.isOpen()) {
+                    connection.close();
+                }
+            } finally {
+                connection = null;
+            }
         }
     }
 
@@ -138,7 +134,23 @@ public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback
             .build();
     }
 
-    public Channel getChannel() {
+    public synchronized Channel getChannel() {
+        if (channel == null) {
+            // Most DAV tests do not consume AMQP messages; open a connection only when needed.
+            ConnectionFactory factory = new ConnectionFactory();
+            factory.setHost(setup().getHost(DockerTwakeCalendarSetup.DockerService.RABBITMQ));
+            factory.setPort(setup().getPort(DockerTwakeCalendarSetup.DockerService.RABBITMQ));
+            factory.setUsername("guest");
+            factory.setPassword("guest");
+
+            try {
+                connection = factory.newConnection();
+                channel = connection.createChannel();
+                channel.queueDeclare(QUEUE_NAME, false, true, true, null);
+            } catch (IOException | TimeoutException e) {
+                throw new IllegalStateException("Failed to initialize the test AMQP channel", e);
+            }
+        }
         return channel;
     }
 }
