@@ -97,9 +97,7 @@ public abstract class CardDavSharingContract {
         .when()
             .get("/addressbooks/" + alice.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN a copy of Bob's address book is visible in Alice's address book list
         assertThatJson(response)
@@ -161,9 +159,7 @@ public abstract class CardDavSharingContract {
         .when()
             .get("/addressbooks/" + alice.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN a copy of Bob's address book is visible in Alice's address book list
         assertThatJson(response)
@@ -304,8 +300,9 @@ public abstract class CardDavSharingContract {
 
         String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
 
-        assertThat(response).doesNotContain("John Doe");
-        assertThat(response).contains("John Cole");
+        assertThat(response)
+            .doesNotContain("John Doe")
+            .contains("John Cole");
     }
 
     @Test
@@ -344,9 +341,7 @@ public abstract class CardDavSharingContract {
             .when()
             .get("/addressbooks/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(response).doesNotContain("\"openpaas:source\":\"\\/addressbooks\\/" + bob.id() + "\\/collected.json\"");
     }
@@ -376,9 +371,7 @@ public abstract class CardDavSharingContract {
             .when()
             .get("/addressbooks/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(response).doesNotContain("\"openpaas:source\":\"\\/addressbooks\\/" + bob.id() + "\\/" + addressBookURL.addressBookId() + ".json\"");
     }
@@ -623,8 +616,9 @@ public abstract class CardDavSharingContract {
 
         String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
 
-        assertThat(response).doesNotContain("John Doe");
-        assertThat(response).contains("John Cole");
+        assertThat(response)
+            .doesNotContain("John Doe")
+            .contains("John Cole");
     }
 
     @Test
@@ -712,9 +706,9 @@ public abstract class CardDavSharingContract {
         );
 
         // Alice should have at least 3 addressbooks: collected, contacts, and the subscription
-        assertThat(addressBookHrefs.size()).isGreaterThanOrEqualTo(3);
-        assertThat(addressBookHrefs).contains("/addressbooks/" + alice.id() + "/collected/");
-        assertThat(addressBookHrefs).contains("/addressbooks/" + alice.id() + "/contacts/");
+        assertThat(addressBookHrefs)
+            .hasSizeGreaterThanOrEqualTo(3)
+            .contains("/addressbooks/" + alice.id() + "/collected/", "/addressbooks/" + alice.id() + "/contacts/");
 
         // The subscription should be listed among Alice's addressbooks
         assertThat(addressBookHrefs.stream()

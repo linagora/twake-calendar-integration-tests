@@ -86,9 +86,7 @@ public abstract class OpenPaaSAPIContract {
             .get("api/users/" + testUser.id())
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .whenIgnoringPaths("domains[0].joined_at",
@@ -131,9 +129,7 @@ public abstract class OpenPaaSAPIContract {
             .get("api/user")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .whenIgnoringPaths("domains[0].joined_at", "_id", "id", "domains[0].domain_id", "accounts[0].timestamps")
@@ -317,9 +313,7 @@ public abstract class OpenPaaSAPIContract {
             .get("api/users")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .whenIgnoringPaths("[0].domains[0].joined_at",
@@ -361,9 +355,7 @@ public abstract class OpenPaaSAPIContract {
             .get("api/domains/" + domainId)
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .whenIgnoringPaths("administrators", //twake missing
@@ -405,9 +397,7 @@ public abstract class OpenPaaSAPIContract {
             .post("/api/jwt/generate")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(jwtResponseBody.startsWith("\"eyJ")).isTrue();
     }
@@ -420,9 +410,7 @@ public abstract class OpenPaaSAPIContract {
             .post("/api/jwt/generate")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
 
         String jwtToken = jwtResponseBody.substring(1, jwtResponseBody.length() - 1);
@@ -443,9 +431,7 @@ public abstract class OpenPaaSAPIContract {
             .post("/api/jwt/generate")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         String jwtToken = jwtResponseBody.substring(1, jwtResponseBody.length() - 1);
 
@@ -472,9 +458,7 @@ public abstract class OpenPaaSAPIContract {
             .get("api/themes/" + domainId)
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(theme).isEqualTo("{\"logos\":{},\"colors\":{}}");
     }
@@ -502,9 +486,7 @@ public abstract class OpenPaaSAPIContract {
             .post("api/configurations")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("[{\"name\":\"core\",\"configurations\":[{\"name\":\"davserver\",\"value\":{\"backend\":{\"url\":\"http://esn_sabre:80\"}}}]}]");
     }
@@ -544,9 +526,7 @@ public abstract class OpenPaaSAPIContract {
             .post("api/configurations")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("[{\"name\":\"linagora.esn.calendar\",\"configurations\":[{\"name\":\"workingDays\"},{\"name\":\"hideDeclinedEvents\"}]}]");
     }
@@ -593,9 +573,7 @@ public abstract class OpenPaaSAPIContract {
         .when()
             .post("calendar/api/events/search")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response).isEqualTo("{\"_links\":{\"self\":{\"href\":\"/calendar/api/events/search?limit=30&offset=0\"}},\"_total_hits\":0,\"_embedded\":{\"events\":[]}}");
     }
@@ -608,9 +586,7 @@ public abstract class OpenPaaSAPIContract {
         .when()
             .post("api/people/search")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .whenIgnoringPaths("$[*].id")
@@ -653,9 +629,7 @@ public abstract class OpenPaaSAPIContract {
         .when()
             .post("api/people/search")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("");
     }
@@ -680,9 +654,7 @@ public abstract class OpenPaaSAPIContract {
             .baseUri(secretLink)
             .get()
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(body.startsWith("BEGIN:VCALENDAR")).isTrue();
     }
@@ -697,9 +669,7 @@ public abstract class OpenPaaSAPIContract {
             .post("api/configurations")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("""
             [
@@ -748,9 +718,7 @@ public abstract class OpenPaaSAPIContract {
             .post("api/configurations")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("""
             [
@@ -985,9 +953,7 @@ public abstract class OpenPaaSAPIContract {
             .get("api/user")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_FIELDS)

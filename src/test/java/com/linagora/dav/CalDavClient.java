@@ -85,10 +85,8 @@ public class CalDavClient {
                                  String recipient,
                                  String eventUid,
                                  int sequence) {
-        private static final ObjectMapper mapper = new ObjectMapper();
-
         public String toJson() {
-            ObjectNode root = mapper.createObjectNode();
+            ObjectNode root = MAPPER.createObjectNode();
 
             root.put("ical", calendarData);
             root.put("sender", sender);
@@ -98,7 +96,7 @@ public class CalDavClient {
             root.put("method", "COUNTER");
 
             try {
-                return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+                return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
@@ -106,8 +104,6 @@ public class CalDavClient {
     }
 
     private static final String CONTENT_TYPE_JSON = "application/json";
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final HttpClient httpClient;
 
@@ -650,7 +646,7 @@ public class CalDavClient {
 
     private List<CalendarURL> extractCalendarURLsFromResponse(String json) {
         try {
-            JsonNode node = OBJECT_MAPPER.readTree(json);
+            JsonNode node = MAPPER.readTree(json);
             ArrayNode calendars = (ArrayNode) node.path("_embedded").path("dav:calendar");
             return Streams.stream(calendars.elements())
                 .map(calendarNode -> calendarNode.path("_links").path("self").path("href").asText())
@@ -807,8 +803,7 @@ public class CalDavClient {
             })
             .flatMapMany(body -> {
                 try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    JsonNode root = mapper.readTree(body);
+                    JsonNode root = MAPPER.readTree(body);
                     ArrayNode items = (ArrayNode) root.path("_embedded").path("dav:item");
                     return Flux.fromIterable(items);
                 } catch (Exception e) {

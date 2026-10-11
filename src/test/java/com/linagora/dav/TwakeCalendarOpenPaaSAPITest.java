@@ -80,9 +80,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .get("api/user")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .whenIgnoringPaths("domains[0].joined_at", "_id", "id", "domains[0].domain_id", "accounts[0].timestamps")
@@ -268,9 +266,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .post("api/configurations")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("[{\"name\":\"linagora.esn.calendar\",\"configurations\":[{\"name\":\"workingDays\",\"value\":null},{\"name\":\"hideDeclinedEvents\",\"value\":null}]}]");
     }
@@ -287,9 +283,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .post("api/configurations")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("""
             [
@@ -345,9 +339,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .post("/api/jwt/generate")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         String jwtToken = jwtResponseBody.substring(1, jwtResponseBody.length() - 1);
 
@@ -392,9 +384,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .post("api/configurations")
             .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body).isEqualTo("[{\"name\":\"core\",\"configurations\":[{\"name\":\"davserver\",\"value\":{\"frontend\":{\"url\":\"http://esn_sabre\"},\"backend\":{\"url\":\"http://esn_sabre\"}}}]}]");
     }

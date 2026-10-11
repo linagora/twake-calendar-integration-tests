@@ -110,9 +110,7 @@ public abstract class CalResourceJsonContract {
             .get("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
         .then()
             .statusCode(200)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
@@ -159,9 +157,7 @@ public abstract class CalResourceJsonContract {
             .request("REPORT", "/calendars/" + resource.id() + "/" + resource.id() + ".json")
         .then()
             .statusCode(200)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_FIELDS)
@@ -176,9 +172,7 @@ public abstract class CalResourceJsonContract {
             .get("/calendars/" + resource.id() + ".json")
         .then()
             .statusCode(200)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_FIELDS)

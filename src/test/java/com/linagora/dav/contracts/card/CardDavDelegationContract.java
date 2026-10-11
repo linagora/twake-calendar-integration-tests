@@ -85,9 +85,7 @@ public abstract class CardDavDelegationContract {
             .when()
             .get("/addressbooks/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN a copy of Bob's address book is visible in Alice's address book list
         assertThatJson(response)
@@ -147,9 +145,7 @@ public abstract class CardDavDelegationContract {
             .when()
             .get("/addressbooks/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN Bob's address book is removed from Alice's address book list
         assertThat(response).doesNotContain("\"openpaas:source\":\"\\/addressbooks\\/" + bob.id() + "\\/collected.json\"");
@@ -171,9 +167,7 @@ public abstract class CardDavDelegationContract {
             .when()
             .get("/addressbooks/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN the sharing right is shown on Bob's source address book
         assertThatJson(response)
@@ -258,9 +252,7 @@ public abstract class CardDavDelegationContract {
             .when()
             .get("/addressbooks/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN the sharing right for Alice is removed on Bob's source address book
         assertThat(response).doesNotContain(alice.id());
@@ -347,8 +339,9 @@ public abstract class CardDavDelegationContract {
 
         String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
 
-        assertThat(response).doesNotContain("John Doe");
-        assertThat(response).contains("John Cole");
+        assertThat(response)
+            .doesNotContain("John Doe")
+            .contains("John Cole");
     }
 
     @Test
@@ -472,8 +465,9 @@ public abstract class CardDavDelegationContract {
 
         String response = cardDavClient.getContacts(bob, bob.id(), addressBook);
 
-        assertThat(response).doesNotContain("John Doe");
-        assertThat(response).contains("John Cole");
+        assertThat(response)
+            .doesNotContain("John Doe")
+            .contains("John Cole");
     }
 
     @Test
@@ -736,8 +730,9 @@ public abstract class CardDavDelegationContract {
 
         String response = cardDavClient.getContacts(alice, alice.id(), addressBookURL.addressBookId());
 
-        assertThat(response).doesNotContain("John Doe");
-        assertThat(response).contains("John Cole");
+        assertThat(response)
+            .doesNotContain("John Doe")
+            .contains("John Cole");
     }
 
     @Test
@@ -788,9 +783,7 @@ public abstract class CardDavDelegationContract {
             .when()
             .get("/addressbooks/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .inPath("_embedded.dav:addressbook[0]")
@@ -969,9 +962,7 @@ public abstract class CardDavDelegationContract {
             .when()
             .get("/addressbooks/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .when(Option.IGNORING_ARRAY_ORDER)
@@ -1312,8 +1303,6 @@ public abstract class CardDavDelegationContract {
         .when()
             .get(AddressBookURL.URL_PATH_PREFIX + "/" + user.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
     }
 }

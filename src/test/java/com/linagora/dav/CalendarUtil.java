@@ -119,10 +119,6 @@ public class CalendarUtil {
             return CalendarUtil.getAttendeePartStat(calendar, attendeeEmail);
         }
 
-        public Calendar asCalendar() {
-            return calendar;
-        }
-
         private static boolean matchesRecurrenceId(Component eventComponent, Optional<String> recurrenceId) {
             return eventComponent.getProperty(Property.RECURRENCE_ID)
                 .map(Property::getValue)

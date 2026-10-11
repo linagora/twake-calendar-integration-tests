@@ -807,9 +807,7 @@ public abstract class TeamCalendarContract {
             .request("REPORT", bobDelegatedCalendar.asUri() + ".json")
         .then()
             .statusCode(200)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .node("_embedded.dav:item").isArray().hasSizeGreaterThanOrEqualTo(1);
@@ -874,9 +872,7 @@ public abstract class TeamCalendarContract {
             .request("REPORT", teamCalendarCanonicalUrl.asUri() + ".json")
         .then()
             .statusCode(200)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // Then Charlie can read the public calendar but cannot see classified event details in the JSON response
         assertThatJson(body)
@@ -955,9 +951,7 @@ public abstract class TeamCalendarContract {
             .request("REPORT", teamCalendarCanonicalUrl.asUri().toString())
         .then()
             .statusCode(207)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // Then Charlie can read the public calendar but cannot see classified event details in the XML calendar-data response
         assertThat(body)

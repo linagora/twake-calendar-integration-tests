@@ -93,8 +93,7 @@ public abstract class ITIPRequestContract {
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 
         calDavClient = new CalDavClient(extension().davHttpClient());
-        extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        extension().twakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 
@@ -154,9 +153,7 @@ public abstract class ITIPRequestContract {
         awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + bob.email());
-                assertThat(json).contains("Meeting from Cedric");
+                assertThat(json).contains(eventUid, "mailto:" + bob.email(), "Meeting from Cedric");
             }));
 
         // THEN. Bob’s custom calendar should remain empty
@@ -200,8 +197,7 @@ public abstract class ITIPRequestContract {
         List<JsonNode> beforeUpdate = bobEventsForUri.apply(bobDefaultCalendarUri);
         assertThat(beforeUpdate).anySatisfy(item -> {
             String json = item.toString();
-            assertThat(json).contains(eventUid);
-            assertThat(json).contains("Initial Meeting");
+            assertThat(json).contains(eventUid, "Initial Meeting");
         });
 
         // WHEN sends an update (change time and summary)
@@ -238,9 +234,9 @@ public abstract class ITIPRequestContract {
         awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("Updated Meeting");
-                assertThat(json).doesNotContain("Initial Meeting");
+                assertThat(json)
+                    .contains(eventUid, "Updated Meeting")
+                    .doesNotContain("Initial Meeting");
             }));
     }
 
@@ -310,9 +306,9 @@ public abstract class ITIPRequestContract {
         awaitAtMost.untilAsserted(() -> assertThat(bobEventsForUri.apply(bobDefaultCalendarUri))
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("Updated Meeting Without Organizer");
-                assertThat(json).doesNotContain("Initial Meeting Without Organizer Update");
+                assertThat(json)
+                    .contains(eventUid, "Updated Meeting Without Organizer")
+                    .doesNotContain("Initial Meeting Without Organizer Update");
             }));
     }
 
@@ -526,8 +522,7 @@ public abstract class ITIPRequestContract {
         List<JsonNode> beforeCancel = bobEventsForUri.apply(bobDefaultCalendarUri);
         assertThat(beforeCancel).anySatisfy(item -> {
             String json = item.toString();
-            assertThat(json).contains(eventUid);
-            assertThat(json).contains("Meeting To Be Cancelled");
+            assertThat(json).contains(eventUid, "Meeting To Be Cancelled");
         });
 
         // WHEN Cedric sends an ITIP CANCEL
@@ -825,9 +820,7 @@ public abstract class ITIPRequestContract {
 
             assertThat(aliceEvents).anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + alice.email());
-                assertThat(json).contains("mailto:" + bob.email());
+                assertThat(json).contains(eventUid, "mailto:" + alice.email(), "mailto:" + bob.email());
             });
         });
 
@@ -876,10 +869,7 @@ public abstract class ITIPRequestContract {
                 .as("Bob should receive Alice's COUNTER proposal in inbox")
                 .anySatisfy(item -> {
                     String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("\"COUNTER\"");
-                    assertThat(json).contains("mailto:" + alice.email());
-                    assertThat(json).contains("mailto:" + bob.email());
+                    assertThat(json).contains(eventUid, "\"COUNTER\"", "mailto:" + alice.email(), "mailto:" + bob.email());
                 });
         });
     }
@@ -1187,10 +1177,7 @@ public abstract class ITIPRequestContract {
                 .as("Bob should receive delegated COUNTER sent on behalf of Alice")
                 .anySatisfy(item -> {
                     String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("\"COUNTER\"");
-                    assertThat(json).contains("mailto:" + bob.email());
-                    assertThat(json).contains("mailto:" + alice.email());
+                    assertThat(json).contains(eventUid, "\"COUNTER\"", "mailto:" + bob.email(), "mailto:" + alice.email());
                 });
         });
     }
@@ -2359,8 +2346,7 @@ public abstract class ITIPRequestContract {
         List<JsonNode> beforeCancel = bobEventsForUri.apply(bobDefaultCalendarUri);
         assertThat(beforeCancel).anySatisfy(item -> {
             String json = item.toString();
-            assertThat(json).contains(eventUid);
-            assertThat(json).contains("Meeting To Be Cancelled");
+            assertThat(json).contains(eventUid, "Meeting To Be Cancelled");
         });
 
         // WHEN Cedric sends an ITIP CANCEL

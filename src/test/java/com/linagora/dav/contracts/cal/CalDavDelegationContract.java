@@ -29,6 +29,8 @@ import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -68,15 +70,12 @@ import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
-import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.javacrumbs.jsonunit.core.Option;
-import reactor.core.publisher.Mono;
 
 public abstract class CalDavDelegationContract {
     private static final Map<String, String> DAV_NAMESPACES = Map.of("d", "DAV:");
@@ -117,9 +116,7 @@ public abstract class CalDavDelegationContract {
         .when()
             .get("/calendars/" + alice.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
         assertThatJson(response)
             .inPath("_embedded.dav:calendar")
@@ -839,9 +836,7 @@ public abstract class CalDavDelegationContract {
         .when()
             .get("/calendars/" + alice.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
 
         // THEN a copy of bob calendar is removed from Alice calendar list
@@ -866,9 +861,7 @@ public abstract class CalDavDelegationContract {
         .when()
             .get("/calendars/" + bob.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[0]")
             .satisfies(calendar -> assertThatJson(calendar)
@@ -2332,9 +2325,7 @@ public abstract class CalDavDelegationContract {
         .when()
             .get("/calendars/" + bob.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN Bob source calendar ACL is not changed by Alice direct canonical URL access
         assertThat(response)
@@ -2384,9 +2375,7 @@ public abstract class CalDavDelegationContract {
         .when()
             .get("/calendars/" + bob.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN Bob source calendar delegation list is not changed by Alice direct canonical URL access
         assertThat(response)
@@ -2502,9 +2491,7 @@ public abstract class CalDavDelegationContract {
             .when()
             .get("/calendars/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN the right is updated in Bob original calendar
         assertThatJson(response)
@@ -2616,9 +2603,7 @@ public abstract class CalDavDelegationContract {
             .when()
             .get("/calendars/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN the right is updated in Bob original calendar
         assertThatJson(response)
@@ -2769,9 +2754,7 @@ public abstract class CalDavDelegationContract {
             .when()
             .get("/calendars/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // THEN the right is updated in Alice local copy of Bob original calendar
         String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
@@ -2875,9 +2858,7 @@ public abstract class CalDavDelegationContract {
             .when()
             .get("/calendars/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(response)
             .containsOnlyOnce("\"dav:name\":\"new name\"")
@@ -2901,9 +2882,7 @@ public abstract class CalDavDelegationContract {
             .when()
             .get("/calendars/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(response)
             .doesNotContain("\"dav:name\":\"new name\"")
@@ -2947,8 +2926,7 @@ public abstract class CalDavDelegationContract {
 
     @Test
     void updateResourceCalendarNameShouldUpdateUncustomizedDelegatedResourceCalendarName() {
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
         String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
@@ -2987,8 +2965,7 @@ public abstract class CalDavDelegationContract {
     @Test
     void resourceAdminCanUpdateParticipationStatus() {
         // GIVEN: Create a resource 'whiteboard' with Bob as administrator
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
 
@@ -3067,8 +3044,7 @@ public abstract class CalDavDelegationContract {
     @Test
     public void shouldPropagateToOrganizerWhenResourceAdminUpdatePartStat() {
         // GIVEN: Create a resource 'whiteboard' with Bob as administrator
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
 
@@ -3143,8 +3119,7 @@ public abstract class CalDavDelegationContract {
     @Test
     void resourceAdminCanSendItipCounterViaResourceEventUri() {
         // GIVEN: a resource "whiteboard" with Bob as administrator
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
 
@@ -3205,20 +3180,15 @@ public abstract class CalDavDelegationContract {
             .method("COUNTER")
             .buildJson();
 
-        Map.Entry<Integer, String> postResponse = dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .headers(header -> header.add("Accept", "application/json, text/plain, */*")
-                .add("Content-Type", "application/calendar+json"))
-            .request(HttpMethod.valueOf("ITIP"))
-            .uri(resourceEventUri.toASCIIString())
-            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
-            .responseSingle((response, content) ->
-                content.asString().defaultIfEmpty("").map(body -> Map.entry(response.status().code(), body)))
-            .block();
-
-        assertThat(postResponse.getKey())
-            .as("POST COUNTER request by resource admin should succeed")
-            .isIn(200, 202, 204);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json, text/plain, */*")
+            .contentType("application/calendar+json")
+            .body(counterJsonBody.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("ITIP", resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(anyOf(is(200), is(202), is(204)));
 
         // THEN: Alice should receive the COUNTER request in her inbox
         String aliceInboxUri = "/calendars/" + alice.id() + "/inbox/";
@@ -3234,18 +3204,14 @@ public abstract class CalDavDelegationContract {
             .as("Alice should receive a COUNTER proposal from the resource in her inbox")
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("\"COUNTER\"");
-                assertThat(json).contains("mailto:" + alice.email());
-                assertThat(json).contains("mailto:" + resource.id() + "@open-paas.org");
+                assertThat(json).contains(eventUid, "\"COUNTER\"", "mailto:" + alice.email(), "mailto:" + resource.id() + "@open-paas.org");
             });
     }
 
     @Test
     void resourceAdminCanSendItipCounterViaDelegatedCalendarUri() {
         // GIVEN: Create resource with Bob as admin and grant him read-write rights on the resource calendar
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
 
@@ -3309,20 +3275,15 @@ public abstract class CalDavDelegationContract {
             .method("COUNTER")
             .buildJson();
 
-        Map.Entry<Integer, String> postResponse = dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .headers(header -> header.add("Accept", "application/json, text/plain, */*")
-                .add("Content-Type", "application/calendar+json"))
-            .request(HttpMethod.valueOf("ITIP"))
-            .uri(propfindHrefs.getFirst())
-            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
-            .responseSingle((response, content) ->
-                content.asString().defaultIfEmpty("").map(body -> Map.entry(response.status().code(), body)))
-            .block();
-
-        assertThat(postResponse.getKey())
-            .as("POST COUNTER request by resource admin should succeed")
-            .isIn(200, 202, 204);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json, text/plain, */*")
+            .contentType("application/calendar+json")
+            .body(counterJsonBody.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("ITIP", propfindHrefs.getFirst())
+        .then()
+            .statusCode(anyOf(is(200), is(202), is(204)));
 
         // THEN: Alice should receive the COUNTER request in her inbox
         String aliceInboxUri = "/calendars/" + alice.id() + "/inbox/";
@@ -3338,18 +3299,14 @@ public abstract class CalDavDelegationContract {
             .as("Alice should receive a COUNTER proposal from the resource in her inbox")
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("\"COUNTER\"");
-                assertThat(json).contains("mailto:" + alice.email());
-                assertThat(json).contains("mailto:" + resource.id() + "@open-paas.org");
+                assertThat(json).contains(eventUid, "\"COUNTER\"", "mailto:" + alice.email(), "mailto:" + resource.id() + "@open-paas.org");
             });
     }
 
     @Test
     void resourceAdminShouldNotBeAbleToPutAfterDelegationRevoked() {
         // GIVEN: a resource with Bob as delegated admin
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
 
@@ -3412,8 +3369,7 @@ public abstract class CalDavDelegationContract {
     @Test
     void resourceAdminShouldNotBeAbleToSendItipAfterDelegationRevoked() {
         // GIVEN: a resource with Bob as delegated admin
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared whiteboard", bob)
             .block();
 
@@ -3473,38 +3429,27 @@ public abstract class CalDavDelegationContract {
             .buildJson();
 
         // sanity check: ITIP works before revocation
-        Supplier<Integer> sendItipAsDelegatedResourceAdmin = () -> dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .headers(header -> header.add("Accept", "application/json, text/plain, */*")
-                .add("Content-Type", "application/calendar+json"))
-            .request(HttpMethod.valueOf("ITIP"))
-            .uri(resourceEventUri.toASCIIString())
-            .send(Mono.fromCallable(() -> Unpooled.wrappedBuffer(counterJsonBody.getBytes(StandardCharsets.UTF_8))))
-            .responseSingle((response, content) -> Mono.just(response.status().code()))
-            .block();
+        Supplier<Response> sendItipAsDelegatedResourceAdmin = () -> given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json, text/plain, */*")
+            .contentType("application/calendar+json")
+            .body(counterJsonBody.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("ITIP", resourceEventUri.toASCIIString());
 
-        int itipBeforeRevokeStatus = sendItipAsDelegatedResourceAdmin.get();
-        assertThat(itipBeforeRevokeStatus)
-            .as("Bob is able to send ITIP on delegated event URI before revocation")
-            .isEqualTo(204);
+        sendItipAsDelegatedResourceAdmin.get().then().statusCode(204);
 
         // WHEN: revoke Bob's delegated right on the resource calendar
         revokeResourceAdmin(resource, bob, technicalToken);
 
         // THEN: ITIP via delegated resource event URI is no longer allowed
-        awaitAtMost.untilAsserted(() -> {
-            int itipAfterRevokeStatus = sendItipAsDelegatedResourceAdmin.get();
-
-            assertThat(itipAfterRevokeStatus)
-                .as("Bob is not able to send ITIP on delegated event URI after revocation")
-                .isIn(403, 404);
-        });
+        awaitAtMost.untilAsserted(() -> sendItipAsDelegatedResourceAdmin.get().then()
+            .statusCode(anyOf(is(403), is(404))));
     }
 
     @Test
     protected void resourceAdminCanListEventsViaDelegatedCalendar() {
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("resourceA", "Shared resource", bob)
             .block();
 
@@ -3649,9 +3594,7 @@ public abstract class CalDavDelegationContract {
         .when()
             .get("/calendars/" + bob.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         assertThatJson(bobCalendarsResponse)
             .inPath("_embedded.dav:calendar[0].invite[1]")
             .isEqualTo("""

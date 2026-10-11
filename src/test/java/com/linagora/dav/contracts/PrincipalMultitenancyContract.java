@@ -297,9 +297,7 @@ public abstract class PrincipalMultitenancyContract {
             .post("/api/jwt/generate")
         .then()
             .statusCode(SC_OK)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         return quotedJwt.substring(1, quotedJwt.length() - 1);
     }

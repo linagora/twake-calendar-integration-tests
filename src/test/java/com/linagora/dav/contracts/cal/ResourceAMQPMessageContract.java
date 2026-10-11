@@ -69,8 +69,7 @@ public abstract class ResourceAMQPMessageContract {
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser)
             .block();
 
@@ -156,8 +155,7 @@ public abstract class ResourceAMQPMessageContract {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
         OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", resourceAdmin)
             .block();
 
@@ -260,8 +258,7 @@ public abstract class ResourceAMQPMessageContract {
         OpenPaasUser testUser = dockerExtension().newTestUser();
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
         OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", resourceAdmin)
             .block();
 
