@@ -30,6 +30,7 @@ import org.bson.types.ObjectId;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoClients;
@@ -64,6 +65,8 @@ public class TwakeCalendarProvisioningService {
     private final MongoDatabase database;
     private final HttpClient httpClient;
     private final HttpClient davHttpClient;
+    // The shared-calendar flag is constant for this test environment.
+    private final Mono<Void> sharedCalendarModuleInitialization = Mono.defer(this::initializeSharedCalendarModule).cache();
 
     public TwakeCalendarProvisioningService(String mongoUri, String calendarSideServiceUri, String sabreDavUri) {
         MongoClient mongoClient = MongoClients.create(mongoUri);
@@ -296,6 +299,10 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Mono<Void> enableSharedCalendarModule() {
+        return sharedCalendarModuleInitialization;
+    }
+
+    private Mono<Void> initializeSharedCalendarModule() {
         ObjectId domainId = openPaasDomain().getObjectId("_id");
 
         List<Document> newConfigurations = List.of(new Document("name", "features").append("value", new Document("isSharingCalendarEnabled", true)));
@@ -317,7 +324,8 @@ public class TwakeCalendarProvisioningService {
                         Filters.and(
                             Filters.eq("domain_id", domainId),
                             Filters.eq("user_id", null)),
-                        Updates.push("modules", newModule)));
+                        Updates.push("modules", newModule),
+                        new UpdateOptions().upsert(true)));
                 } else {
                     return Mono.empty();
                 }
