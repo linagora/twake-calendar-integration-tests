@@ -912,8 +912,6 @@ public abstract class DomainAddressBookContract {
             .when()
             .get("/addressbooks/" + domainId + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
     }
 }

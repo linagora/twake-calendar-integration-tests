@@ -160,11 +160,10 @@ public abstract class CardAggregatedListingContract {
 
         // THEN every contact is returned exactly once, in full name order (ties broken consistently)
         List<String> seen = pages.stream().flatMap(page -> uids(page).stream()).toList();
+        assertThat(pages)
+            .hasSize(4)
+            .allSatisfy(page -> assertThat(uids(page)).hasSize(2));
         SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(pages).hasSize(4);
-            softly.assertThat(pages).allSatisfy(page -> {
-                assertThat(uids(page)).hasSize(2);
-            });
             softly.assertThat(seen).hasSize(8).doesNotHaveDuplicates();
             softly.assertThat(seen.subList(0, 2)).containsExactly("adam", "mia");
             softly.assertThat(seen.subList(2, 5)).containsExactlyInAnyOrder("same-1", "same-2", "same-3");

@@ -26,22 +26,17 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
-import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.junit.jupiter.api.Assumptions;
 
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;

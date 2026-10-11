@@ -155,9 +155,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + testUser.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -284,9 +282,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + testUser.id() + "/events.json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
 
         assertThatJson(response)
@@ -609,25 +605,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00Z")
-                .dtend("2030-04-15T04:00:00Z")
-                .recurrenceId("2030-04-15T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-16T03:00:00Z")
-                .dtend("2030-04-16T04:00:00Z")
-                .recurrenceId("2030-04-16T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-15T03:00:00Z")
+                    .dtend("2030-04-15T04:00:00Z")
+                    .recurrenceId("2030-04-15T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-16T03:00:00Z")
+                    .dtend("2030-04-16T04:00:00Z")
+                    .recurrenceId("2030-04-16T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -663,24 +656,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-12T03:00:00Z")
-                .dtend("3025-04-12T04:00:00Z")
-                .recurrenceId("3025-04-12T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-12T03:00:00Z")
+                    .dtend("3025-04-12T04:00:00Z")
+                    .recurrenceId("3025-04-12T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -716,24 +707,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-12T03:00:00Z")
-                .dtend("3025-04-12T04:00:00Z")
-                .recurrenceId("3025-04-12T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-12T03:00:00Z")
+                    .dtend("3025-04-12T04:00:00Z")
+                    .recurrenceId("3025-04-12T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -769,24 +758,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-13T03:00:00Z")
-                .dtend("3025-04-13T04:00:00Z")
-                .recurrenceId("3025-04-13T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-13T03:00:00Z")
+                    .dtend("3025-04-13T04:00:00Z")
+                    .recurrenceId("3025-04-13T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -822,24 +809,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-18T03:00:00Z")
-                .dtend("3025-04-18T04:00:00Z")
-                .recurrenceId("3025-04-18T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-18T03:00:00Z")
+                    .dtend("3025-04-18T04:00:00Z")
+                    .recurrenceId("3025-04-18T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -875,24 +860,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-18T03:00:00Z")
-                .dtend("3025-04-18T04:00:00Z")
-                .recurrenceId("3025-04-18T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-18T03:00:00Z")
+                    .dtend("3025-04-18T04:00:00Z")
+                    .recurrenceId("3025-04-18T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -928,24 +911,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-25T03:00:00Z")
-                .dtend("3025-04-25T04:00:00Z")
-                .recurrenceId("3025-04-25T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-25T03:00:00Z")
+                    .dtend("3025-04-25T04:00:00Z")
+                    .recurrenceId("3025-04-25T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -981,32 +962,28 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(3);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-15T03:00:00Z")
-                .dtend("3025-04-15T04:00:00Z")
-                .recurrenceId("3025-04-15T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(2)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-22T03:00:00Z")
-                .dtend("3025-04-22T04:00:00Z")
-                .recurrenceId("3025-04-22T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(3)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-15T03:00:00Z")
+                    .dtend("3025-04-15T04:00:00Z")
+                    .recurrenceId("3025-04-15T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-22T03:00:00Z")
+                    .dtend("3025-04-22T04:00:00Z")
+                    .recurrenceId("3025-04-22T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1042,24 +1019,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00Z")
-                .dtend("2030-04-15T04:00:00Z")
-                .recurrenceId("2030-04-15T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-05-15T03:00:00Z")
-                .dtend("2030-05-15T04:00:00Z")
-                .recurrenceId("2030-05-15T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-15T03:00:00Z")
+                    .dtend("2030-04-15T04:00:00Z")
+                    .recurrenceId("2030-04-15T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-05-15T03:00:00Z")
+                    .dtend("2030-05-15T04:00:00Z")
+                    .recurrenceId("2030-05-15T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1095,33 +1070,28 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(3);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-15T03:00:00Z")
-                .dtend("3025-04-15T04:00:00Z")
-                .recurrenceId("3025-04-15T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(2)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-05-15T03:00:00Z")
-                .dtend("3025-05-15T04:00:00Z")
-                .recurrenceId("3025-05-15T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(3)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-15T03:00:00Z")
+                    .dtend("3025-04-15T04:00:00Z")
+                    .recurrenceId("3025-04-15T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-05-15T03:00:00Z")
+                    .dtend("3025-05-15T04:00:00Z")
+                    .recurrenceId("3025-05-15T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1157,33 +1127,28 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(3);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-11T03:00:00Z")
-                .dtend("3025-04-11T04:00:00Z")
-                .recurrenceId("3025-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-04-15T03:00:00Z")
-                .dtend("3025-04-15T04:00:00Z")
-                .recurrenceId("3025-04-15T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(2)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("3025-05-15T03:00:00Z")
-                .dtend("3025-05-15T04:00:00Z")
-                .recurrenceId("3025-05-15T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(3)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-11T03:00:00Z")
+                    .dtend("3025-04-11T04:00:00Z")
+                    .recurrenceId("3025-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-04-15T03:00:00Z")
+                    .dtend("3025-04-15T04:00:00Z")
+                    .recurrenceId("3025-04-15T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("3025-05-15T03:00:00Z")
+                    .dtend("3025-05-15T04:00:00Z")
+                    .recurrenceId("3025-05-15T03:00:00Z")
+                    .build()
+            );
     }
 
     @Disabled("https://github.com/linagora/esn-sabre/issues/50")
@@ -1220,24 +1185,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-11T03:00:00Z")
-                .dtend("2030-04-11T04:00:00Z")
-                .recurrenceId("2030-04-11T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-05-15T03:00:00Z")
-                .dtend("2030-05-15T04:00:00Z")
-                .recurrenceId("2030-05-15T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-11T03:00:00Z")
+                    .dtend("2030-04-11T04:00:00Z")
+                    .recurrenceId("2030-04-11T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-05-15T03:00:00Z")
+                    .dtend("2030-05-15T04:00:00Z")
+                    .recurrenceId("2030-05-15T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1273,24 +1236,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-05-06T03:00:00Z")
-                .dtend("2030-05-06T04:00:00Z")
-                .recurrenceId("2030-05-06T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-06-03T03:00:00Z")
-                .dtend("2030-06-03T04:00:00Z")
-                .recurrenceId("2030-06-03T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-05-06T03:00:00Z")
+                    .dtend("2030-05-06T04:00:00Z")
+                    .recurrenceId("2030-05-06T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-06-03T03:00:00Z")
+                    .dtend("2030-06-03T04:00:00Z")
+                    .recurrenceId("2030-06-03T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1327,15 +1288,16 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00Z")
-                .dtend("2030-04-15T04:00:00Z")
-                .recurrenceId("2030-04-15T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(1)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-15T03:00:00Z")
+                    .dtend("2030-04-15T04:00:00Z")
+                    .recurrenceId("2030-04-15T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1372,24 +1334,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.from(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-15T03:00:00Z")
-                .dtend("2030-04-15T04:00:00Z")
-                .recurrenceId("2030-04-15T03:00:00Z")
-                .build()
-        );
-
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-16T08:00:00Z")
-                .dtend("2030-04-16T09:00:00Z")
-                .recurrenceId("2030-04-16T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-15T03:00:00Z")
+                    .dtend("2030-04-15T04:00:00Z")
+                    .recurrenceId("2030-04-15T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-16T08:00:00Z")
+                    .dtend("2030-04-16T09:00:00Z")
+                    .recurrenceId("2030-04-16T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -1756,9 +1716,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
@@ -1976,9 +1934,7 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/freebusy")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
@@ -2023,9 +1979,7 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/freebusy")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         // One busy period per occurrence of the window, all carrying the uid of
         // the master event: 2030-04-12 as scheduled, 2030-04-13 skipped by the
@@ -2263,9 +2217,7 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/freebusy")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
@@ -2292,9 +2244,7 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/freebusy")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
     }
 
     private String expectedSingleBusyPeriod(OpenPaasUser user, String eventUid) {
@@ -2601,9 +2551,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + alice.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -2946,9 +2894,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + alice.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -3144,9 +3090,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         given()
             .header("Authorization", bob.impersonatedBasicAuth())
@@ -3189,9 +3133,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         given()
             .header("Authorization", bob.impersonatedBasicAuth())
@@ -3302,9 +3244,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         given()
             .header("Authorization", bob.impersonatedBasicAuth())
@@ -3370,9 +3310,7 @@ public abstract class CalJsonContract {
         .when()
             .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         given()
             .header("Authorization", bob.impersonatedBasicAuth())
@@ -3408,9 +3346,8 @@ public abstract class CalJsonContract {
 
         // Check for sync-token in _embedded
         // The sync-token should have the namespace http://sabre.io/ns/sync/
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode root = mapper.readTree(responseBody);
-        assertThat(root.at("/_embedded").at("/sync-token").asText()).isEqualTo("http://sabre.io/ns/sync/2");
+        assertThatJson(responseBody).inPath("_embedded.sync-token")
+            .isEqualTo("http://sabre.io/ns/sync/2");
     }
 
 
@@ -3444,23 +3381,22 @@ public abstract class CalJsonContract {
 
         List<EventData> result = EventData.fromReportSingleEvent(responseBody);
 
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-12T03:00:00Z")
-                .dtend("2030-04-12T04:00:00Z")
-                .recurrenceId("2030-04-12T03:00:00Z")
-                .build()
-        );
-        assertThat(result.get(1)).isEqualTo(
-            EventData.builder()
-                .uid(eventUid)
-                .dtstart("2030-04-13T03:00:00Z")
-                .dtend("2030-04-13T04:00:00Z")
-                .recurrenceId("2030-04-13T03:00:00Z")
-                .build()
-        );
+        assertThat(result)
+            .hasSize(2)
+            .containsExactly(
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-12T03:00:00Z")
+                    .dtend("2030-04-12T04:00:00Z")
+                    .recurrenceId("2030-04-12T03:00:00Z")
+                    .build(),
+                EventData.builder()
+                    .uid(eventUid)
+                    .dtstart("2030-04-13T03:00:00Z")
+                    .dtend("2030-04-13T04:00:00Z")
+                    .recurrenceId("2030-04-13T03:00:00Z")
+                    .build()
+            );
     }
 
     @Test
@@ -3605,17 +3541,12 @@ public abstract class CalJsonContract {
             .extract().asString();
 
 
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode jsonResponse = mapper.readTree(responseBody);
-
-        assertThat(jsonResponse.has("etag")).isTrue();
-        assertThat(jsonResponse.get("etag").asText()).isNotEmpty();
+        assertThatJson(responseBody).inPath("etag").isString().isNotEmpty();
     }
 
     @Test
     public void reportShouldSanitizePrivateEvents() {
-        dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        dockerExtension().twakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 
@@ -3682,8 +3613,7 @@ public abstract class CalJsonContract {
     @Test
     public void reportShouldPreservePrivateRecurringEventTimingWhenSanitizing() throws JsonProcessingException {
         // GIVEN: shared calendar support is enabled.
-        dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        dockerExtension().twakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 
@@ -3767,8 +3697,7 @@ public abstract class CalJsonContract {
     @Test
     public void reportShouldPreservePrivateRecurringEventRDATETimingWhenSanitizing() throws JsonProcessingException {
         // GIVEN: shared calendar support is enabled.
-        dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        dockerExtension().twakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 
@@ -3851,8 +3780,7 @@ public abstract class CalJsonContract {
     @Test
     public void reportShouldPreservePrivateRecurringEventOverrideTimingWhenSanitizing() throws JsonProcessingException {
         // GIVEN: shared calendar support is enabled.
-        dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        dockerExtension().twakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 

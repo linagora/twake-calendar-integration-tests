@@ -148,15 +148,13 @@ public abstract class ReportContract {
             .extract().asString();
         JsonCalendarData result = JsonCalendarData.from(responseBody);
 
-        SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(result.items()).hasSize(2);
-            softly.assertThat(result.items())
-                .extracting(JsonCalendarData.DavItem::href)
-                .containsExactlyInAnyOrder(
-                    "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid1 + ".ics",
-                    "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid2 + ".ics");
-            softly.assertThat(result.items()).allMatch(item -> item.status() == 200);
-        });
+        assertThat(result.items())
+            .hasSize(2)
+            .allMatch(item -> item.status() == 200)
+            .extracting(JsonCalendarData.DavItem::href)
+            .containsExactlyInAnyOrder(
+                "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid1 + ".ics",
+                "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid2 + ".ics");
     }
 
     @Test

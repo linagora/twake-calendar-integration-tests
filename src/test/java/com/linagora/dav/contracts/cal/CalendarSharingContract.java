@@ -23,7 +23,6 @@ import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
-import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
 
@@ -92,8 +91,7 @@ public abstract class CalendarSharingContract {
     @BeforeEach
     void setUp() throws Exception {
         calDavClient = new CalDavClient(extension().davHttpClient());
-        extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        extension().twakeCalendarProvisioningService()
             .enableSharedCalendarModule()
             .block();
 
@@ -170,11 +168,10 @@ public abstract class CalendarSharingContract {
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(responseBody).doesNotContain("BEGIN:VCALENDAR");
-            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
-            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
-        });
+        assertThat(responseBody)
+            .doesNotContain("BEGIN:VCALENDAR")
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     @Test
@@ -189,11 +186,10 @@ public abstract class CalendarSharingContract {
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(responseBody).doesNotContain(eventUid);
-            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
-            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
-        });
+        assertThat(responseBody)
+            .doesNotContain(eventUid)
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     @Test
@@ -209,10 +205,9 @@ public abstract class CalendarSharingContract {
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
-            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
-        });
+        assertThat(responseBody)
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     @Test
@@ -228,11 +223,10 @@ public abstract class CalendarSharingContract {
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(responseBody).doesNotContain(eventUid);
-            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
-            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
-        });
+        assertThat(responseBody)
+            .doesNotContain(eventUid)
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     @Test
@@ -249,11 +243,10 @@ public abstract class CalendarSharingContract {
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(responseBody).doesNotContain(eventUid);
-            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
-            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
-        });
+        assertThat(responseBody)
+            .doesNotContain(eventUid)
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     @Test
@@ -710,8 +703,7 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains(description);
+                assertThat(json).contains(eventUid, description);
             });
     }
 
@@ -763,9 +755,9 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("[\"summary\",{},\"text\",\"Busy\"]");
-                assertThat(json).doesNotContain(description);
+                assertThat(json)
+                    .contains(eventUid, "[\"summary\",{},\"text\",\"Busy\"]")
+                    .doesNotContain(description);
             });
     }
 
@@ -817,9 +809,9 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("[\"summary\",{},\"text\",\"Busy\"]");
-                assertThat(json).doesNotContain(description);
+                assertThat(json)
+                    .contains(eventUid, "[\"summary\",{},\"text\",\"Busy\"]")
+                    .doesNotContain(description);
             });
     }
 
@@ -962,8 +954,7 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains(description);
+                assertThat(json).contains(eventUid, description);
             });
     }
 
@@ -1034,9 +1025,9 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains(updatedDescription);
-                assertThat(json).doesNotContain(originalDescription);
+                assertThat(json)
+                    .contains(eventUid, updatedDescription)
+                    .doesNotContain(originalDescription);
             });
     }
 
@@ -1088,8 +1079,7 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents.get())
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains(description);
+                assertThat(json).contains(eventUid, description);
             });
 
         // WHEN: Bob deletes the event
@@ -1627,9 +1617,10 @@ public abstract class CalendarSharingContract {
         assertThat(bobEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).doesNotContain("Event created by Bob");
-                assertThat(json).contains("Alice updated the event");
+                assertThat(json)
+                    .contains(eventUid)
+                    .doesNotContain("Event created by Bob")
+                    .contains("Alice updated the event");
             });
 
         // Alice should see the updated event
@@ -1637,9 +1628,10 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEventsAfter)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).doesNotContain("Event created by Bob");
-                assertThat(json).contains("Alice updated the event");
+                assertThat(json)
+                    .contains(eventUid)
+                    .doesNotContain("Event created by Bob")
+                    .contains("Alice updated the event");
             });
     }
 
@@ -1785,8 +1777,7 @@ public abstract class CalendarSharingContract {
         assertThat(bobEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains(cedric.email());
+                assertThat(json).contains(eventUid, cedric.email());
             });
 
         // AND: Cedric should have an iTIP request in his inbox
@@ -1800,10 +1791,7 @@ public abstract class CalendarSharingContract {
             assertThat(cedricInboxItems)
                 .anySatisfy(item -> {
                     String json = item.toString();
-                    assertThat(json).contains("\"REQUEST\"");
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("mailto:" + cedric.email());
-                    assertThat(json).contains("\"partstat\":\"NEEDS-ACTION\"");
+                    assertThat(json).contains("\"REQUEST\"", eventUid, "mailto:" + cedric.email(), "\"partstat\":\"NEEDS-ACTION\"");
                 });
         });
     }
@@ -1877,8 +1865,7 @@ public abstract class CalendarSharingContract {
         assertThat(bobEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("Updated by Alice");
+                assertThat(json).contains(eventUid, "Updated by Alice");
             });
 
         // AND: Both Alice and Cedric should receive an iTIP UPDATE request
@@ -1897,9 +1884,7 @@ public abstract class CalendarSharingContract {
                 assertThat(inboxItems)
                     .anySatisfy(item -> {
                         String json = item.toString();
-                        assertThat(json).contains(eventUid);
-                        assertThat(json).contains("mailto:" + attendee.email());
-                        assertThat(json).contains("Updated by Alice");
+                        assertThat(json).contains(eventUid, "mailto:" + attendee.email(), "Updated by Alice");
                         assertThatJson(item)
                             .inPath("data[1]")
                             .isArray()
@@ -1978,8 +1963,7 @@ public abstract class CalendarSharingContract {
                 assertThat(inboxItems)
                     .anySatisfy(item -> {
                         String json = item.toString();
-                        assertThat(json).contains(eventUid);
-                        assertThat(json).contains("mailto:" + attendee.email());
+                        assertThat(json).contains(eventUid, "mailto:" + attendee.email());
                         assertThatJson(item)
                             .inPath("data[1]")
                             .isArray()
@@ -2017,8 +2001,7 @@ public abstract class CalendarSharingContract {
                 assertThat(inboxItems)
                     .anySatisfy(item -> {
                         String json = item.toString();
-                        assertThat(json).contains(eventUid);
-                        assertThat(json).contains("mailto:" + attendee.email());
+                        assertThat(json).contains(eventUid, "mailto:" + attendee.email());
 
                         assertThatJson(item)
                             .inPath("data[1]")
@@ -2100,8 +2083,9 @@ public abstract class CalendarSharingContract {
         assertThat(bobEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).doesNotContain(cedric.email());
+                assertThat(json)
+                    .contains(eventUid)
+                    .doesNotContain(cedric.email());
             });
 
         // AND: Cedric should receive an iTIP CANCEL request in his inbox
@@ -2117,8 +2101,7 @@ public abstract class CalendarSharingContract {
             assertThat(cedricInboxItems)
                 .anySatisfy(item -> {
                     String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("mailto:" + cedric.email());
+                    assertThat(json).contains(eventUid, "mailto:" + cedric.email());
 
                     // check it is a CANCEL method
                     assertThatJson(item.path("data").get(1))
@@ -2180,9 +2163,7 @@ public abstract class CalendarSharingContract {
             .when()
             .get("/calendars/" + bob.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         Assertions.assertThat(response)
             .doesNotContain("\"dav:name\":\"new name\"")
@@ -2216,9 +2197,7 @@ public abstract class CalendarSharingContract {
             .when()
             .get("/calendars/" + alice.id() + ".json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .inPath("_embedded.dav:calendar[1].dav:name")
@@ -2233,8 +2212,7 @@ public abstract class CalendarSharingContract {
     @Test
     void shouldCreateSucceedSubscribedOfResourceCalendar() {
         // GIVEN: Alice and a resource "whiteboard" in the same domain
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("whiteboard", "Shared meeting whiteboard", bob)
             .block();
 
@@ -2278,8 +2256,7 @@ public abstract class CalendarSharingContract {
     @Test
     void shouldSeeResourceEventsInSubscribedCalendar() {
         // GIVEN: a resource "projector" in the same domain as Alice and Bob
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("projector", "Meeting room projector", bob)
             .block();
 
@@ -2347,17 +2324,14 @@ public abstract class CalendarSharingContract {
             .isNotEmpty()
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains(summary);
-                assertThat(json).contains("mailto:" + resource.id() + "@open-paas.org");
+                assertThat(json).contains(eventUid, summary, "mailto:" + resource.id() + "@open-paas.org");
             });
     }
 
     @Test
     void subscribedUserShouldNotBeAbleToModifyResourceEvents() {
         // GIVEN: a resource and an event created by Bob (organizer)
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("tv-room", "Shared TV Room", bob)
             .block();
 
@@ -2424,8 +2398,7 @@ public abstract class CalendarSharingContract {
     @Test
     protected void adminShouldBeAbleToModifyResourceEventsWhenDeletingSubscriptionAndThenSubscribingAgain() {
         // GIVEN: a resource with alice as admin
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("tv-room", "Shared TV Room", alice)
             .block();
 
@@ -2513,8 +2486,7 @@ public abstract class CalendarSharingContract {
 
     @Test
     public void cannotSubscribeToResourceFromAnotherDomain() {
-        TwakeCalendarProvisioningService provisioningService = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService();
+        TwakeCalendarProvisioningService provisioningService = extension().twakeCalendarProvisioningService();
 
         // GIVEN: a resource in Bob's domain
         OpenPaaSResource resource = provisioningService
@@ -2551,8 +2523,7 @@ public abstract class CalendarSharingContract {
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
 
         // AND a resource "projector" in the same domain as Alice and Bob, administered by Alice so Bob's request is not auto-accepted
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("projector", "Meeting room projector", alice)
             .block();
 
@@ -2624,8 +2595,7 @@ public abstract class CalendarSharingContract {
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
 
         // AND a resource "projector" in the same domain as Alice and Bob, administered by Alice so Bob's request is not auto-accepted
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("projector", "Meeting room projector", alice)
             .block();
 
@@ -2700,8 +2670,7 @@ public abstract class CalendarSharingContract {
         BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(channel, queueName);
 
         // AND a resource "projector" in the same domain as Alice and Bob, administered by Alice so Bob's request is not auto-accepted
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("projector", "Meeting room projector", alice)
             .block();
 
@@ -2975,8 +2944,7 @@ public abstract class CalendarSharingContract {
         assertThat(aliceEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("Alice's new event");
+                assertThat(json).contains(eventUid, "Alice's new event");
             });
     }
 
@@ -3030,9 +2998,7 @@ public abstract class CalendarSharingContract {
         assertThat(bobEvents)
             .anySatisfy(eventNode -> {
                 String json = eventNode.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("Alice's replicated event");
-                assertThat(json).contains(description);
+                assertThat(json).contains(eventUid, "Alice's replicated event", description);
             });
     }
 
@@ -3385,8 +3351,7 @@ public abstract class CalendarSharingContract {
         OpenPaasUser alice = extension().newTestUser();
 
         // GIVEN resource
-        OpenPaaSResource resource = extension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = extension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", bob)
             .block();
 

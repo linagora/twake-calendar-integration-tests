@@ -25,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -843,8 +842,9 @@ public abstract class SearchAMQPMessageContract {
             assertThat(messages)
                 .anySatisfy(message -> {
                     String eventPath = message.path("eventPath").asText();
-                    assertThat(eventPath).startsWith(expectedPrefix);
-                    assertThat(eventPath).endsWith(".ics");
+                    assertThat(eventPath)
+                        .startsWith(expectedPrefix)
+                        .endsWith(".ics");
                     assertThat(message.path("rawEvent").asText()).contains("UID:" + eventUid);
                 }));
     }

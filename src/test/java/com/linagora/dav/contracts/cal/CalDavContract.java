@@ -1371,9 +1371,7 @@ public abstract class CalDavContract {
         awaitAtMost.untilAsserted(() -> assertThat(findEvents.apply(attendeeInboxUri))
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + attendee.email());
-                assertThat(json).contains("Meeting invitation");
+                assertThat(json).contains(eventUid, "mailto:" + attendee.email(), "Meeting invitation");
                 assertThatJson(item)
                     .inPath("data[1]")
                     .isArray()
@@ -1422,9 +1420,7 @@ public abstract class CalDavContract {
         awaitAtMost.untilAsserted(() -> assertThat(findEvents.apply(attendeeInboxUri))
             .anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + attendee.email());
-                assertThat(json).contains("Meeting invitation");
+                assertThat(json).contains(eventUid, "mailto:" + attendee.email(), "Meeting invitation");
                 assertThatJson(item)
                     .inPath("data[1]")
                     .isArray()
@@ -1500,8 +1496,7 @@ public abstract class CalDavContract {
                 .as("Attendee should have received an ITIP update (REQUEST)")
                 .anySatisfy(item -> {
                     String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("Updated meeting");
+                    assertThat(json).contains(eventUid, "Updated meeting");
                     assertThatJson(item)
                         .inPath("data[1]")
                         .isArray()
@@ -1555,8 +1550,7 @@ public abstract class CalDavContract {
                 .as("Attendee should have received an ITIP CANCEL message after organizer deletion")
                 .anySatisfy(item -> {
                     String json = item.toString();
-                    assertThat(json).contains(eventUid);
-                    assertThat(json).contains("Meeting to be cancelled");
+                    assertThat(json).contains(eventUid, "Meeting to be cancelled");
                     assertThatJson(item)
                         .inPath("data[1]")
                         .isArray()
@@ -1643,8 +1637,7 @@ public abstract class CalDavContract {
             List<JsonNode> organizerInbox = organizerEventsForUri.apply(organizerInboxUri);
             assertThat(organizerInbox).anySatisfy(item -> {
                 String json = item.toString();
-                assertThat(json).contains(eventUid);
-                assertThat(json).contains("mailto:" + attendee.email());
+                assertThat(json).contains(eventUid, "mailto:" + attendee.email());
                 assertThatJson(item)
                     .inPath("data[1]")
                     .isArray()
@@ -2385,8 +2378,7 @@ public abstract class CalDavContract {
     @Test
     void userShouldBeAbleToRequestParticipationOfResource() {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser2)
             .block();
 
@@ -2448,8 +2440,7 @@ public abstract class CalDavContract {
     @Test
     protected void resourceCalendarShouldBeAccessibleWhenAuthenticatedByAdminImpersonation() {
         // Given a resource exists but its CalDAV calendar has not been accessed yet
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser)
             .block();
 
@@ -2480,8 +2471,7 @@ public abstract class CalDavContract {
     @Test
     void normalUserShouldNotBeAbleToAcceptParticipationOfResource() {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser2)
             .block();
 
@@ -2521,8 +2511,7 @@ public abstract class CalDavContract {
     @Test
     void shouldBeAbleToAcceptParticipationOfResourceByUsingToken() {
         OpenPaasUser testUser2 = dockerExtension().newTestUser();
-        OpenPaaSResource resource = dockerExtension().getDockerTwakeCalendarSetupSingleton()
-            .getTwakeCalendarProvisioningService()
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
             .createResource("projector", "This is a projector", testUser2)
             .block();
 

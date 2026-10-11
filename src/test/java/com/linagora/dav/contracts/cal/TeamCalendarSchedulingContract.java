@@ -972,8 +972,7 @@ public abstract class TeamCalendarSchedulingContract {
             .isEqualTo(ALARM_TRIGGER_5M));
 
         // And the Team Calendar event and aliceMember copy keep the original alarm trigger
-        awaitAtMost
-            .during(2, TimeUnit.SECONDS)
+        awaitAtMost.during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
                 assertThat(readFirstAlarmTrigger(calDavClient.getCalendarEvent(bobMember, teamCalendarEventUri)))
                     .isEqualTo(ALARM_TRIGGER_15M);

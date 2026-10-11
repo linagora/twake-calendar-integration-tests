@@ -67,9 +67,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -178,9 +176,7 @@ public abstract class CardJsonContract {
             .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response).isEqualTo(String.format("""
             {
@@ -274,9 +270,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .whenIgnoringPaths("_embedded.dav:item[0].etag")
@@ -434,9 +428,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json/abcdef.vcf")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .whenIgnoringPaths("[1][1][3]") // Path to prodid value
@@ -573,9 +565,7 @@ public abstract class CardJsonContract {
             .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .whenIgnoringPaths("_embedded.dav:item[0].etag")
@@ -713,9 +703,7 @@ public abstract class CardJsonContract {
             .get("/addressbooks/" + testUser.id() + "/contacts/d1ed30c8-15e7-4e81-a7dd-f5c60beab420.vcf")
         .then()
             .statusCode(200)
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(storedCard)
             .doesNotContain("PHOTO")
@@ -811,9 +799,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .whenIgnoringPaths("_embedded.dav:item[0].etag")
@@ -1014,9 +1000,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -1160,9 +1144,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -1300,9 +1282,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -1394,9 +1374,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThat(response)
             .isEqualToNormalizingNewlines("""
@@ -1440,9 +1418,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + ".json/contacts")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .whenIgnoringPaths("_embedded.dav:item[0].etag")
@@ -1541,9 +1517,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + testUser.id() + ".json/contacts")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .isEqualTo(String.format("""
@@ -1609,9 +1583,7 @@ public abstract class CardJsonContract {
             .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         String response2 = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
@@ -1621,9 +1593,7 @@ public abstract class CardJsonContract {
             .when()
             .get("/addressbooks/" + testUser.id() + "/collected.json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         assertThat(response1).doesNotContain("abcdef.vcf");
         assertThat(response2).contains("abcdef.vcf");
     }
@@ -1676,9 +1646,7 @@ public abstract class CardJsonContract {
             .when()
             .get("/addressbooks/" + testUser.id() + "/contacts.json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         String response2 = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("limit", 20)
@@ -1688,9 +1656,7 @@ public abstract class CardJsonContract {
             .when()
             .get("/addressbooks/" + testUser.id() + "/collected.json")
             .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
         assertThat(response1).contains("abcdef.vcf");
         assertThat(response2).contains("abcdef.vcf");
     }
@@ -2091,7 +2057,6 @@ public abstract class CardJsonContract {
     void shouldListShareeCalendar() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
-        OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // Alice has a contact
         given()
@@ -2147,9 +2112,7 @@ public abstract class CardJsonContract {
         .when()
             .get("/addressbooks/" + bob.id() + ".json")
         .then()
-            .extract()
-            .body()
-            .asString();
+            .extract().asString();
 
         assertThatJson(response)
             .whenIgnoringPaths("_embedded.dav:addressbook[2]._links.self.href")
