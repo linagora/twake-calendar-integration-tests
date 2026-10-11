@@ -43,7 +43,6 @@ import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
-import com.rabbitmq.client.GetResponse;
 
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
@@ -2524,15 +2523,10 @@ public abstract class AlarmAMQPMessageContract {
 
         calDavClient.upsertCalendarEvent(bob, bobEventId, acceptedIcs);
 
-        Thread.sleep(1000);
-
         // THEN  Alice should NOT receive alarm:request
-        GetResponse aliceMsg = dockerExtension()
-            .getChannel()
-            .basicGet(testQueue, true);
-
-        assertThat(aliceMsg)
-            .as("Unexpected alarm:request published for Alice")
-            .isNull();
+        awaitAtMost.during(1, TimeUnit.SECONDS).untilAsserted(() ->
+            assertThat(dockerExtension().getChannel().messageCount(testQueue))
+                .as("Unexpected alarm:request published for Alice")
+                .isZero());
     }
 }

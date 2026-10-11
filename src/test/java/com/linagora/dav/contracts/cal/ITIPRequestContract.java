@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitAtMost;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -1902,18 +1903,19 @@ public abstract class ITIPRequestContract {
 
         // WHEN: Cedric checks inbox again after Bob’s modification
         // THEN Cedric should not receive any new iTIP messages
-        Thread.sleep(1000);
-        String cedricInboxResponseBody = given()
-            .header("Authorization", cedric.impersonatedBasicAuth())
-        .when()
-            .request("PROPFIND", cedricInbox)
-        .then()
-            .statusCode(207)
-            .extract().asString();
-        List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(cedricInboxResponseBody);
-        assertThat(hrefs)
-            .as("No new ITIP should be received by uninvited attendee when organizer edits unrelated instance")
-            .hasSize(1);
+        awaitEvery500Millis().during(1, TimeUnit.SECONDS).untilAsserted(() -> {
+            String cedricInboxResponseBody = given()
+                .header("Authorization", cedric.impersonatedBasicAuth())
+            .when()
+                .request("PROPFIND", cedricInbox)
+            .then()
+                .statusCode(207)
+                .extract().asString();
+            List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(cedricInboxResponseBody);
+            assertThat(hrefs)
+                .as("No new ITIP should be received by uninvited attendee when organizer edits unrelated instance")
+                .hasSize(1);
+        });
     }
 
     @Test
