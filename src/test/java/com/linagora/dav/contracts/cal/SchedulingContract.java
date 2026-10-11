@@ -19,10 +19,12 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
-import static com.linagora.dav.TestUtil.executeNoContent;
+import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.net.URI;
 import java.time.Duration;
@@ -48,12 +50,12 @@ import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.CalendarUtil.CalendarExtractor;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
 
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.RestAssured;
+import io.restassured.response.Response;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Parameter;
@@ -94,6 +96,9 @@ public abstract class SchedulingContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
+        RestAssured.requestSpecification = extension().davRequestSpecification();
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         calDavClient = new CalDavClient(extension().davHttpClient());
         bob = extension().newTestUser();
         alice = extension().newTestUser();
@@ -1175,9 +1180,9 @@ public abstract class SchedulingContract {
 
         // Then both Bob and Alice see the private event, not sanitized, when listing their own calendar
         for (OpenPaasUser user : List.of(bob, alice)) {
-            DavResponse response = calDavClient.findEventsByTime(user, "20351005T000000", "20351006T000000");
-            assertThat(response.status()).isEqualTo(200);
-            assertThat(JsonCalendarEventData.from(response.body()))
+            Response response = calDavClient.findEventsByTime(user, "20351005T000000", "20351006T000000");
+            response.then().statusCode(200);
+            assertThat(JsonCalendarEventData.from(response.asString()))
                 .singleElement()
                 .satisfies(event -> {
                     assertThat(event.uid()).isEqualTo(organizerEventUid);
@@ -2862,11 +2867,11 @@ public abstract class SchedulingContract {
 
         // When Alice's REPORT requests a range containing only the later detached occurrence
         // (the earlier occurrence is deliberately outside the requested range)
-        DavResponse response = calDavClient.findEventsByTime(alice, "20351008T000000", "20351009T000000");
-        List<JsonCalendarEventData> events = JsonCalendarEventData.from(response.body());
+        Response response = calDavClient.findEventsByTime(alice, "20351008T000000", "20351009T000000");
+        List<JsonCalendarEventData> events = JsonCalendarEventData.from(response.asString());
 
         // Then the later occurrence must still be returned even though Alice's copy has no recurring master
-        assertThat(response.status()).isEqualTo(200);
+        response.then().statusCode(200);
         assertThat(events).anySatisfy(event -> {
             assertThat(event.uid()).isEqualTo(organizerEventUid);
             assertThat(event.summary()).contains("Second invited occurrence");
@@ -4598,9 +4603,13 @@ public abstract class SchedulingContract {
         CalendarURL bobOtherPersonalCalendar = new CalendarURL(bob.id(), bobOtherPersonalCalendarId);
 
         URI bobOtherPersonalEventUri = URI.create(bobOtherPersonalCalendar.asUri() + "/" + UUID.randomUUID() + ".ics");
-        assertThat(moveEvent(bob, bobDefaultEventUri, bobOtherPersonalEventUri))
-            .as("Bob should be able to move the invited event from default calendar to Other Personal")
-            .isIn(201, 204);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Destination", bobOtherPersonalEventUri.toASCIIString())
+        .when()
+            .request("MOVE", bobDefaultEventUri.toASCIIString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
 
         // When Bob accepts the moved event
         String bobMovedEventIcs = calDavClient.getCalendarEvent(bob, bobOtherPersonalEventUri);
@@ -4648,9 +4657,13 @@ public abstract class SchedulingContract {
         calDavClient.createNewCalendar(alice, aliceOtherPersonalCalendarId, "Other Personal", 2);
         CalendarURL aliceOtherPersonalCalendarURL = new CalendarURL(alice.id(), aliceOtherPersonalCalendarId);
         URI aliceOtherPersonalEventUri = URI.create(aliceOtherPersonalCalendarURL.asUri() + "/" + UUID.randomUUID() + ".ics");
-        assertThat(moveEvent(alice, aliceDefaultEventUri, aliceOtherPersonalEventUri))
-            .as("Alice should be able to move the invited event from default calendar to Other Personal")
-            .isIn(201, 204);
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", aliceOtherPersonalEventUri.toASCIIString())
+        .when()
+            .request("MOVE", aliceDefaultEventUri.toASCIIString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
 
         // When Bob updates the organizer event
         URI bobOrganizerEventUri = URI.create(CalendarURL.from(bob.id()).asUri() + "/" + eventUid + ".ics");
@@ -4708,9 +4721,13 @@ public abstract class SchedulingContract {
 
         CalendarURL aliceOtherPersonalCalendarURL = new CalendarURL(alice.id(), aliceOtherPersonalCalendarId);
         URI aliceOtherPersonalEventUri = URI.create(aliceOtherPersonalCalendarURL.asUri() + "/" + UUID.randomUUID() + ".ics");
-        assertThat(moveEvent(alice, aliceDefaultEventUri, aliceOtherPersonalEventUri))
-            .as("Alice should be able to move the invited event from default calendar to Other Personal")
-            .isIn(201, 204);
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", aliceOtherPersonalEventUri.toASCIIString())
+        .when()
+            .request("MOVE", aliceDefaultEventUri.toASCIIString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
 
         // When Cedric accepts the event
         URI cedricEventUri = awaitCalendarObjectUriByEventUid(cedric, CalendarURL.from(cedric.id()), eventUid);
@@ -4967,14 +4984,6 @@ public abstract class SchedulingContract {
         return calDavClient.findUserCalendarObjectUrisByEventUid(user, calendarURL, eventUid)
             .collectList()
             .block();
-    }
-
-    private int moveEvent(OpenPaasUser user, URI sourceEventUri, URI destinationEventUri) {
-        return executeNoContent(extension().davHttpClient()
-            .headers(headers -> user.impersonatedBasicAuth(headers)
-                .add("Destination", destinationEventUri.toASCIIString()))
-            .request(HttpMethod.valueOf("MOVE"))
-            .uri(sourceEventUri.toASCIIString()));
     }
 
     private Set<String> organizerEmails(String icsContent) {

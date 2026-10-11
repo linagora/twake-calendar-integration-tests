@@ -18,6 +18,8 @@
 
 package com.linagora.dav;
 
+import java.nio.charset.StandardCharsets;
+
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
@@ -31,6 +33,9 @@ import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 
 import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.config.EncoderConfig;
+import io.restassured.config.RedirectConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 import reactor.netty.http.client.HttpClient;
@@ -109,6 +114,18 @@ public abstract class DockerTwakeCalendarExtension implements BeforeEachCallback
     public HttpClient davHttpClient() {
         return HttpClient.create()
             .baseUrl(getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString());
+    }
+
+    public RequestSpecification davRequestSpecification() {
+        return new RequestSpecBuilder()
+            .setBaseUri(getDockerTwakeCalendarSetupSingleton()
+                .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
+                .toString())
+            .setUrlEncodingEnabled(false)
+            .setConfig(RestAssuredConfig.newConfig()
+                .encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8))
+                .redirect(RedirectConfig.redirectConfig().followRedirects(false)))
+            .build();
     }
 
     public RequestSpecification webAdminRequestSpecification() {

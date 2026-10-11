@@ -18,18 +18,19 @@
 
 package com.linagora.dav.contracts.card;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
+import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -40,14 +41,12 @@ import org.xmlunit.diff.DefaultNodeMatcher;
 import org.xmlunit.diff.DifferenceEvaluator;
 import org.xmlunit.diff.ElementSelectors;
 
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.XMLUtil;
 
-import io.netty.handler.codec.http.HttpMethod;
-import reactor.netty.http.client.HttpClient.RequestSender;
-import reactor.netty.http.client.HttpClientResponse;
+import io.restassured.RestAssured;
+import io.restassured.specification.RequestSpecification;
 
 public abstract class CardDavContract {
     public static final String STRING = "BEGIN:VCARD\n" +
@@ -91,6 +90,15 @@ public abstract class CardDavContract {
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
+    @BeforeEach
+    void setUp() {
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType("application/xml")
+            .accept("application/xml");
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
     @ParameterizedTest(name = "[{index}] {0}")
     @MethodSource("unauthenticatedEndpoints")
     protected void unauthenticatedRequestsShouldReturn401(AuthenticatedEndpoint input) {
@@ -99,17 +107,14 @@ public abstract class CardDavContract {
         String resolvedPath = input.pathTemplate().replace("{userId}", realUserId);
         Optional<String> resolvedPayload = input.payloadTemplate().map(payload -> payload.replace("{userId}", realUserId));
 
-        RequestSender sender = dockerExtension().davHttpClient()
-            .headers(h -> input.headers().forEach(h::add))
-            .request(HttpMethod.valueOf(input.method()));
+        RequestSpecification request = given()
+            .headers(input.headers());
+        resolvedPayload.ifPresent(payload -> request.body(payload.getBytes(StandardCharsets.UTF_8)));
 
-        RequestSender request = sender.uri(resolvedPath);
-        int status = resolvedPayload.map(s -> executeNoContent(request.send(body(s))))
-            .orElseGet(() -> executeNoContent(request));
-
-        assertThat(status)
-            .as("Expected 401 for unauthenticated endpoint %s %s", input.method(), resolvedPath)
-            .isEqualTo(401);
+        request.when()
+            .request(input.method(), resolvedPath)
+        .then()
+            .statusCode(401);
     }
 
     protected record AuthenticatedEndpoint(String method, String pathTemplate, Optional<String> payloadTemplate, Map<String, String> headers) {
@@ -182,25 +187,28 @@ public abstract class CardDavContract {
     void authenticatedCallsShouldBeAccepted() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks"));
-
-        assertThat(response.status()).isEqualTo(207);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks")
+        .then()
+            .statusCode(207);
     }
 
     @Test
     void propfindShouldListUserAddressBooks() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id()));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         List<String> actual = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );
@@ -214,12 +222,9 @@ public abstract class CardDavContract {
     void mkcolShouldCreateNewAddressBook() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -227,15 +232,22 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id()));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         List<String> actual = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );
@@ -247,12 +259,9 @@ public abstract class CardDavContract {
     void deleteAddressBookShouldWork() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -260,14 +269,18 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/awesome"));
-
-        assertThat(status).isEqualTo(204);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(204);
     }
 
     @Test
@@ -275,12 +288,9 @@ public abstract class CardDavContract {
 
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -288,20 +298,29 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/awesome"));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(204);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id()));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         List<String> actual = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );
@@ -313,12 +332,9 @@ public abstract class CardDavContract {
     void mkcolShouldSucceed() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -326,21 +342,20 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
-
-        assertThat(status).isEqualTo(201);
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(201);
     }
 
     @Test
     void nestingAddressBookShouldNotBeSupported() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + testUser.id() + "/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -348,14 +363,15 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/awesome")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + testUser.id() + "/awesome/v2")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -363,21 +379,20 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
-
-        assertThat(status).isEqualTo(403);
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/awesome/v2")
+        .then()
+            .statusCode(403);
     }
 
     @Test
     void creatingAddressBookShouldNotBeAllowedOutOfUserRoot() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(header -> testUser.impersonatedBasicAuth(header)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/awesome")
-            .send(body(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "         <d:mkcol xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "          <d:set>" +
                 "                <d:prop>" +
@@ -385,21 +400,26 @@ public abstract class CardDavContract {
                 "                  <d:displayname>AWESOME DISPLAY NAME</d:displayname>" +
                 "                </d:prop>" +
                 "          </d:set>" +
-                "         </d:mkcol>"))));
-
-        assertThat(status).isEqualTo(405);
+                "         </d:mkcol>")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/awesome")
+        .then()
+            .statusCode(405);
     }
 
     @Test
     void propfindShouldListUserEmptyAddressBooks() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\"><d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
             .ignoreChildNodesOrder()
@@ -410,40 +430,45 @@ public abstract class CardDavContract {
     void putShouldWork() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
-
-        assertThat(status).isEqualTo(201);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
     }
 
     @Test
     void putShouldStripInlinePhoto() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "PHOTO;ENCODING=b;TYPE=JPEG:" + BASE64_IMAGE + "\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        assertThat(status).isEqualTo(201);
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(response.status()).isEqualTo(200);
-        assertThat(response.body())
+        assertThat(responseBody)
             .doesNotContain("PHOTO")
             .contains("FN:John Doe");
     }
@@ -452,11 +477,10 @@ public abstract class CardDavContract {
     void putShouldStripInlinePhotoSpanningSeveralLines() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe\n" +
                 "EMAIL:john.doe@example.com\n" +
@@ -464,32 +488,37 @@ public abstract class CardDavContract {
                 " EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ\n" +
                 " EBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        assertThat(status).isEqualTo(201);
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(response).isEqualTo(new DavResponse(200, "BEGIN:VCARD\r\n" +
+        assertThat(responseBody).isEqualTo("BEGIN:VCARD\r\n" +
             "VERSION:3.0\r\n" +
             "FN:John Doe\r\n" +
             "EMAIL:john.doe@example.com\r\n" +
             "UID:123456789\r\n" +
-            "END:VCARD\r\n"));
+            "END:VCARD\r\n");
     }
 
     @Test
     void putShouldStripEveryInlinePhotoAndKeepTheOneReferencedByUri() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe\n" +
                 "EMAIL:john.doe@example.com\n" +
@@ -497,49 +526,59 @@ public abstract class CardDavContract {
                 "PHOTO;VALUE=URI:https://example.com/avatar.jpg\n" +
                 "PHOTO;VALUE=URI:data:image/jpeg;base64," + BASE64_IMAGE + "\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        assertThat(status).isEqualTo(201);
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(response).isEqualTo(new DavResponse(200, "BEGIN:VCARD\r\n" +
+        assertThat(responseBody).isEqualTo("BEGIN:VCARD\r\n" +
             "VERSION:3.0\r\n" +
             "FN:John Doe\r\n" +
             "EMAIL:john.doe@example.com\r\n" +
             "PHOTO;VALUE=URI:https://example.com/avatar.jpg\r\n" +
             "UID:123456789\r\n" +
-            "END:VCARD\r\n"));
+            "END:VCARD\r\n");
     }
 
     @Test
     void putShouldStripDataUriPhoto() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:4.0\n" +
                 "FN:John Doe\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "PHOTO:data:image/jpeg;base64," + BASE64_IMAGE + "\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        assertThat(status).isEqualTo(201);
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(response.status()).isEqualTo(200);
-        assertThat(response.body())
+        assertThat(responseBody)
             .doesNotContain("PHOTO")
             .contains("FN:John Doe");
     }
@@ -555,50 +594,65 @@ public abstract class CardDavContract {
             "UID:123456789\n" +
             "END:VCARD\n";
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(vcard)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(vcard.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response).isEqualTo(new DavResponse(200, vcard));
+        assertThat(responseBody).isEqualTo(vcard);
     }
 
     @Test
     void putShouldStripInlinePhotoWhenUpdatingAContact() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "PHOTO;ENCODING=b;TYPE=JPEG:" + BASE64_IMAGE + "\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
 
-        assertThat(status).isEqualTo(204);
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(response.body())
+        assertThat(responseBody)
             .doesNotContain("PHOTO")
             .contains("FN:John Doe");
     }
@@ -607,138 +661,171 @@ public abstract class CardDavContract {
     void getShouldSucceed() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response).isEqualTo(new DavResponse(200, STRING));
+        assertThat(responseBody).isEqualTo(STRING);
     }
 
     @Test
     void getShouldReturnNotFoundWhenMissing() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(response.status()).isEqualTo(404);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(404);
     }
 
     @Test
     void putShouldReplace() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body((("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n"))));
+                "END:VCARD\n")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response).isEqualTo(new DavResponse(200, "BEGIN:VCARD\n" +
+        assertThat(responseBody).isEqualTo("BEGIN:VCARD\n" +
             "VERSION:3.0\n" +
             "FN:John Doe-Riga\n" +
             "EMAIL:john.doe@example.com\n" +
             "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
             "UID:123456789\n" +
-            "END:VCARD\n"));
+            "END:VCARD\n");
     }
 
     @Test
     void putShouldReturn204WhenExist() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
-
-        assertThat(status).isEqualTo(204);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
     }
 
     @Test
     void deleteShouldWork() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isEqualTo(204);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
     }
 
     @Test
     void deleteShouldReturnNotFoundWhenMissing() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isEqualTo(404);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(404);
     }
 
     @Test
     void deleteShouldNotBeReturnedByPropfind() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
@@ -750,19 +837,25 @@ public abstract class CardDavContract {
     void putShouldBeListedByPropfind() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         List<String> actual = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );
@@ -774,19 +867,25 @@ public abstract class CardDavContract {
     void putShouldNotBeListedByPropfindWhenWrongDepth() throws Exception {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id()));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         List<String> actual = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );
@@ -798,24 +897,30 @@ public abstract class CardDavContract {
     void propfindShouldAllowRetrievingTheDisplayName() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id())
-            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "        <d:propfind xmlns:d=\"DAV:\">" +
                 "          <d:prop>" +
                 "            <d:displayname/>" +
                 "          </d:prop>" +
-                "        </d:propfind>")));
+                "        </d:propfind>")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>" +
@@ -830,57 +935,64 @@ public abstract class CardDavContract {
     void shouldAllowDuplicatedUid() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/other.vcf")
-            .send(body(STRING)));
-
-        assertThat(status).isEqualTo(201);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/other.vcf")
+        .then()
+            .statusCode(201);
     }
 
     @Test
     void proppatchShouldUpdateDisplayName() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<d:propertyupdate xmlns:d=\"DAV:\">" +
                 "          <d:set>" +
                 "            <d:prop>" +
                 "              <d:displayname>New Address Book Name</d:displayname>" +
                 "            </d:prop>" +
                 "          </d:set>" +
-                "        </d:propertyupdate>")));
-
-        assertThat(response.status()).isEqualTo(207);
+                "        </d:propertyupdate>")
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207);
     }
 
     @Test
     void proppatchShouldReturnOldValue() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<d:propertyupdate xmlns:d=\"DAV:\">" +
                 "          <d:set>" +
                 "            <d:prop>" +
                 "              <d:displayname>New Address Book Name</d:displayname>" +
                 "            </d:prop>" +
                 "          </d:set>" +
-                "        </d:propertyupdate>")));
+                "        </d:propertyupdate>")
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -894,30 +1006,35 @@ public abstract class CardDavContract {
     void propfindShouldRetrieveUpdatedDisplayName() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<d:propertyupdate xmlns:d=\"DAV:\">" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body(("<d:propertyupdate xmlns:d=\"DAV:\">" +
                 "          <d:set>" +
                 "            <d:prop>" +
                 "              <d:displayname>New Address Book Name</d:displayname>" +
                 "            </d:prop>" +
                 "          </d:set>" +
-                "        </d:propertyupdate>")));
+                "        </d:propertyupdate>").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id())
-            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "        <d:propfind xmlns:d=\"DAV:\">" +
                 "          <d:prop>" +
                 "            <d:displayname/>" +
                 "          </d:prop>" +
-                "        </d:propfind>")));
+                "        </d:propfind>")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>" +
@@ -935,11 +1052,9 @@ public abstract class CardDavContract {
         String originalDisplayName = "Original Address Book Name";
         String hackedDisplayName = "Hacked Address Book Name";
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("""
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
                 <d:propertyupdate xmlns:d="DAV:">
                   <d:set>
                     <d:prop>
@@ -947,15 +1062,16 @@ public abstract class CardDavContract {
                     </d:prop>
                   </d:set>
                 </d:propertyupdate>
-                """.formatted(originalDisplayName))));
+                """.formatted(originalDisplayName).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207);
 
         String beforeDisplayName = getContactsDisplayName(testUser);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("""
+        given()
+            .body("""
                 <d:propertyupdate xmlns:d="DAV:">
                   <d:set>
                     <d:prop>
@@ -963,34 +1079,38 @@ public abstract class CardDavContract {
                     </d:prop>
                   </d:set>
                 </d:propertyupdate>
-                """.formatted(hackedDisplayName))));
+                """.formatted(hackedDisplayName).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(401);
 
         String afterDisplayName = getContactsDisplayName(testUser);
 
-        assertThat(status)
-            .as("Unauthenticated PROPPATCH on /addressbooks/%s/contacts should return 401", testUser.id())
-            .isEqualTo(401);
         assertThat(afterDisplayName)
             .as("Unauthenticated PROPPATCH must not update contacts display name")
             .isEqualTo(beforeDisplayName);
     }
 
     private String getContactsDisplayName(OpenPaasUser testUser) throws Exception {
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id())
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="UTF-8"?>
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                     <d:displayname/>
                   </d:prop>
                 </d:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         return XMLUtil.extractByXPath(
-            response.body(),
+            responseBody,
             "//d:response[d:href='/addressbooks/" + testUser.id() + "/contacts/']/d:propstat/d:prop/d:displayname",
             Map.of("d", "DAV:"));
     }
@@ -999,102 +1119,125 @@ public abstract class CardDavContract {
     void canRecreatePreviouslyDeletedVCards() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
-
-        assertThat(status).isEqualTo(201);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
     }
 
     @Test
     public void headShouldReturnFound() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .head()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isEqualTo(200);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .head("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(200);
     }
 
     @Test
     void headShouldReturnNotFound() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .head()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isEqualTo(404);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .head("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(404);
     }
 
     @Test
     void shouldSupportExport() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + testUser.id() + "/contacts?export"));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + testUser.id() + "/contacts?export")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response).isEqualTo(new DavResponse(200, "BEGIN:VCARD\r\n" +
+        assertThat(responseBody).isEqualTo("BEGIN:VCARD\r\n" +
             "VERSION:3.0\r\n" +
             "FN:John Doe\r\n" +
             "N:Doe;John;;;\r\n" +
             "EMAIL:john.doe@example.com\r\n" +
             "UID:123456789\r\n" +
-            "END:VCARD\r\n"));
+            "END:VCARD\r\n");
     }
 
     @Test
     void canReportEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("<card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "    <d:prop>" +
                 "        <d:getetag />" +
                 "    </d:prop>" +
-                "</card:addressbook-query>")));
+                "</card:addressbook-query>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><d:getetag>&quot;b6cfbc684d6173513ed73f413e6b6cb4&quot;</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -1108,108 +1251,122 @@ public abstract class CardDavContract {
     void putShouldReturnEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        HttpClientResponse response = dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)).response()
-            .block();
-
-        assertThat(response.responseHeaders().contains("ETag")).isTrue();
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201)
+            .header("ETag", notNullValue());
     }
 
     @Test
     void putShouldFailCreateWhenBadEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", "bad"))
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
-
-        assertThat(status).isEqualTo(412);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("If-Match", "bad")
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(412);
     }
 
     @Test
     void putShouldFailUpdateWhenBadEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)).response()
-            .block();
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", "bad"))
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("If-Match", "bad")
+            .contentType("text/vcard; charset=utf-8")
+            .body((("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n"))));
-
-        assertThat(status).isEqualTo(412);
+                "END:VCARD\n")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(412);
     }
 
     @Test
     void putShouldSucceedWhenGoodETag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        HttpClientResponse response1 = dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)).response()
-            .block();
-        String etag = response1.responseHeaders().get("ETag");
+        String etag = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201)
+            .extract().header("ETag");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", etag))
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("If-Match", etag)
+            .contentType("text/vcard; charset=utf-8")
+            .body((("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n"))));
-
-        assertThat(status).isEqualTo(204);
+                "END:VCARD\n")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
     }
 
     @Test
     void putShouldChangeEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        HttpClientResponse response1 = dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)).response()
-            .block();
-        String etag1 = response1.responseHeaders().get("ETag");
+        String etag1 = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201)
+            .extract().header("ETag");
 
-        HttpClientResponse response2 = dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(("BEGIN:VCARD\n" +
+        String etag2 = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body((("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")))
-            .response()
-            .block();
-        String etag2 = response2.responseHeaders().get("ETag");
+                "END:VCARD\n")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204)
+            .extract().header("ETag");
 
         assertThat(etag1).isNotEqualTo(etag2);
     }
@@ -1218,55 +1375,66 @@ public abstract class CardDavContract {
     void deleteShouldShouldFailWhenBadEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-       executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", "bad"))
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isEqualTo(412);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("If-Match", "bad")
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(412);
     }
 
     @Test
     void deleteShouldShoulSucceedWhenGoodEtag() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        String etag = dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)).response().block().responseHeaders().get("ETag");
+        String etag = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201)
+            .extract().header("ETag");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("If-Match", etag))
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isEqualTo(204);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("If-Match", etag)
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
     }
 
     @Test
     void canReportSyncTokenInitialSync() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "0"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<d:propfind xmlns:d=\"DAV:\" xmlns:cs=\"http://calendarserver.org/ns/\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("<d:propfind xmlns:d=\"DAV:\" xmlns:cs=\"http://calendarserver.org/ns/\">" +
                 "  <d:prop>\n" +
                 "     <d:sync-token />" +
                 "  </d:prop>" +
-                "</d:propfind>")));
+                "</d:propfind>")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/</d:href><d:propstat><d:prop><d:sync-token>http://sabre.io/ns/sync/1</d:sync-token></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -1280,21 +1448,23 @@ public abstract class CardDavContract {
     void reportSyncTokenWhenNoUpdate() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
                 "<d:sync-collection xmlns:d=\"DAV:\">\n" +
                 "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>\n" +
                 "  <d:sync-level>1</d:sync-level>" +
                 "  <d:prop>" +
                 "    <d:getetag/>" +
                 "  </d:prop>" +
-                "</d:sync-collection>")));
+                "</d:sync-collection>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 " <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>\n" +
@@ -1308,27 +1478,32 @@ public abstract class CardDavContract {
     void reportSyncTokenWhenCreate() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
                 "<d:sync-collection xmlns:d=\"DAV:\">\n" +
                 "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>\n" +
                 "  <d:sync-level>1</d:sync-level>" +
                 "  <d:prop>" +
                 "    <d:getetag/>" +
                 "  </d:prop>" +
-                "</d:sync-collection>")));
+                "</d:sync-collection>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 " <d:response>\n" +
@@ -1351,32 +1526,39 @@ public abstract class CardDavContract {
     void reportSyncTokenWhenDelete() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .delete()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf"));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+        .when()
+            .delete("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
                 "<d:sync-collection xmlns:d=\"DAV:\">\n" +
                 "  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>\n" +
                 "  <d:sync-level>1</d:sync-level>" +
                 "  <d:prop>" +
                 "    <d:getetag/>" +
                 "  </d:prop>" +
-                "</d:sync-collection>")));
+                "</d:sync-collection>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 " <d:response>\n" +
@@ -1400,39 +1582,47 @@ public abstract class CardDavContract {
     void reportSyncTokenWhenUpdate() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body((("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:John Doe-Riga\n" +
                 "EMAIL:john.doe@example.com\n" +
                 "TEL;TYPE=WORK,VOICE:+1-555-123-4567\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n"))));
+                "END:VCARD\n")).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(204);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n" +
                 "<d:sync-collection xmlns:d=\"DAV:\">\n" +
                 "  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>\n" +
                 "  <d:sync-level>1</d:sync-level>" +
                 "  <d:prop>" +
                 "    <d:getetag/>" +
                 "  </d:prop>" +
-                "</d:sync-collection>")));
+                "</d:sync-collection>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
                 " <d:response>\n" +
@@ -1455,19 +1645,19 @@ public abstract class CardDavContract {
     void reportShouldAllowUidLookup() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "    <d:prop>" +
                 "      <card:address-data>" +
                 "        <card:prop name=\"UID\"/>" +
@@ -1478,9 +1668,14 @@ public abstract class CardDavContract {
                 "        <card:text-match collation=\"i;unicode-casemap\">123456789</card:text-match>" +
                 "      </card:prop-filter>" +
                 "    </card:filter>" +
-                "  </card:addressbook-query>")));
+                "  </card:addressbook-query>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><card:address-data>BEGIN:VCARD&#13;\n" +
@@ -1498,19 +1693,19 @@ public abstract class CardDavContract {
     void reportShouldNotIncludeUnrelatedDataWhenUidLookup() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "    <d:prop>" +
                 "      <card:address-data>" +
                 "        <card:prop name=\"UID\"/>" +
@@ -1521,9 +1716,14 @@ public abstract class CardDavContract {
                 "        <card:text-match collation=\"i;unicode-casemap\">notFound</card:text-match>" +
                 "      </card:prop-filter>" +
                 "    </card:filter>" +
-                "  </card:addressbook-query>")));
+                "  </card:addressbook-query>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "</d:multistatus>")
@@ -1536,19 +1736,19 @@ public abstract class CardDavContract {
     void reportShouldAllowEmailLookup() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "    <d:prop>" +
                 "      <card:address-data>" +
                 "        <card:prop name=\"UID\"/>" +
@@ -1559,9 +1759,14 @@ public abstract class CardDavContract {
                 "        <card:text-match collation=\"i;unicode-casemap\">john.doe@example.com</card:text-match>" +
                 "      </card:prop-filter>" +
                 "    </card:filter>" +
-                "  </card:addressbook-query>")));
+                "  </card:addressbook-query>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><card:address-data>BEGIN:VCARD&#13;\n" +
@@ -1579,19 +1784,19 @@ public abstract class CardDavContract {
     void reportShouldAllowAutoComplete() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "    <d:prop>" +
                 "      <card:address-data>" +
                 "        <card:prop name=\"UID\"/>" +
@@ -1603,9 +1808,14 @@ public abstract class CardDavContract {
                 "        <card:text-match collation=\"i;unicode-casemap\" match-type=\"contains\">joh</card:text-match>" +
                 "      </card:prop-filter>" +
                 "    </card:filter>" +
-                "  </card:addressbook-query>")));
+                "  </card:addressbook-query>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf</d:href><d:propstat><d:prop><card:address-data>BEGIN:VCARD&#13;\n" +
@@ -1624,19 +1834,19 @@ public abstract class CardDavContract {
     void reportShouldNotIncludeUnrelatedDataWhenEmailLookup() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body(" <card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "    <d:prop>" +
                 "      <card:address-data>" +
                 "        <card:prop name=\"UID\"/>" +
@@ -1647,9 +1857,14 @@ public abstract class CardDavContract {
                 "        <card:text-match collation=\"i;unicode-casemap\">unrelated@notfound.com</card:text-match>" +
                 "      </card:prop-filter>" +
                 "    </card:filter>" +
-                "  </card:addressbook-query>")));
+                "  </card:addressbook-query>")
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>\n" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "</d:multistatus>")

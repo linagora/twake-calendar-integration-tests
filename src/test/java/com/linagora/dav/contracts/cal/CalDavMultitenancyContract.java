@@ -19,13 +19,14 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
+import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.bson.Document;
@@ -35,13 +36,13 @@ import org.junit.jupiter.api.Test;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 
 public abstract class CalDavMultitenancyContract {
 
@@ -57,6 +58,11 @@ public abstract class CalDavMultitenancyContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType("application/xml")
+            .accept("application/xml");
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
         Document secondDomainDoc = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
         String secondDomainId = secondDomainDoc.getObjectId("_id").toString();
@@ -69,53 +75,52 @@ public abstract class CalDavMultitenancyContract {
 
     @Test
     void propfindOnCalendarsRootShouldNotExposeCrossDomainCalendarHome() {
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "1")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/")
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                     <d:current-user-principal/>
                   </d:prop>
-                </d:propfind>""")));
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/calendars/")
+        .then()
+            .extract().asString();
 
-        assertThat(response.body()).doesNotContain(john.id());
+        assertThat(responseBody).doesNotContain(john.id());
     }
 
     @Test
     void propfindShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + john.id()));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/calendars/" + john.id())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void propfindCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + john.id() + "/" + john.id()));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/calendars/" + john.id() + "/" + john.id())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void mkcolShouldReturnErrorStatusForCrossDomainUser() {
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/calendars/" + john.id() + "/newCalendar")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body("""
                 <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                  <D:set>
                    <D:prop>
@@ -127,18 +132,18 @@ public abstract class CalDavMultitenancyContract {
                    </D:prop>
                  </D:set>
                 </D:mkcol>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/calendars/" + john.id() + "/newCalendar")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void mkcalendarShouldReturnErrorStatusForCrossDomainUser() {
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCALENDAR"))
-            .uri("/calendars/" + john.id() + "/newCalendar")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body("""
                 <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                  <D:set>
                    <D:prop>
@@ -146,22 +151,25 @@ public abstract class CalDavMultitenancyContract {
                    </D:prop>
                  </D:set>
                 </C:mkcalendar>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCALENDAR", "/calendars/" + john.id() + "/newCalendar")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void putEventShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
-            .send(body(CalDavContract.ICS_1)));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(CalDavContract.ICS_1.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -169,12 +177,12 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
         calDavClient.upsertCalendarEvent(john, "abcd", CalDavContract.ICS_1);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .delete()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .delete("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -182,23 +190,22 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
         calDavClient.upsertCalendarEvent(john, "abcd", CalDavContract.ICS_1);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void proppatchShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/calendars/" + john.id() + "/" + john.id())
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body("""
                 <d:propertyupdate xmlns:d="DAV:">
                   <d:set>
                     <d:prop>
@@ -206,9 +213,11 @@ public abstract class CalDavMultitenancyContract {
                     </d:prop>
                   </d:set>
                 </d:propertyupdate>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/calendars/" + john.id() + "/" + john.id())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -216,44 +225,44 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
         calDavClient.upsertCalendarEvent(john, "abcd", CalDavContract.ICS_1);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("HEAD"))
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .head("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void exportShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "?export"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "?export")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void reportShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + john.id() + "/" + john.id())
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <C:free-busy-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                   <C:time-range start="20300401T000000Z" end="20300430T000000Z"/>
                 </C:free-busy-query>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -261,11 +270,9 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
         calDavClient.upsertCalendarEvent(john, "abcd", CalDavContract.ICS_1);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> john.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/calendars/" + john.id() + "/secondCalendar")
-            .send(body("""
+        given()
+            .header("Authorization", john.impersonatedBasicAuth())
+            .body("""
                 <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                  <D:set>
                    <D:prop>
@@ -276,15 +283,19 @@ public abstract class CalDavMultitenancyContract {
                    </D:prop>
                  </D:set>
                 </D:mkcol>
-                """)));
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/calendars/" + john.id() + "/secondCalendar")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Destination", "/calendars/" + john.id() + "/secondCalendar/abcd.ics"))
-            .request(HttpMethod.valueOf("COPY"))
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Destination", "/calendars/" + john.id() + "/secondCalendar/abcd.ics")
+        .when()
+            .request("COPY", "/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -292,11 +303,9 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
         calDavClient.upsertCalendarEvent(john, "abcd", CalDavContract.ICS_1);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> john.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/calendars/" + john.id() + "/secondCalendar")
-            .send(body("""
+        given()
+            .header("Authorization", john.impersonatedBasicAuth())
+            .body("""
                 <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                  <D:set>
                    <D:prop>
@@ -307,15 +316,19 @@ public abstract class CalDavMultitenancyContract {
                    </D:prop>
                  </D:set>
                 </D:mkcol>
-                """)));
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/calendars/" + john.id() + "/secondCalendar")
+        .then()
+            .statusCode(201);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Destination", "/calendars/" + john.id() + "/secondCalendar/abcd.ics"))
-            .request(HttpMethod.valueOf("MOVE"))
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/abcd.ics"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Destination", "/calendars/" + john.id() + "/secondCalendar/abcd.ics")
+        .when()
+            .request("MOVE", "/calendars/" + john.id() + "/" + john.id() + "/abcd.ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -331,12 +344,13 @@ public abstract class CalDavMultitenancyContract {
     void getJsonCalendarListShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
-            .get()
-            .uri("/calendars/" + john.id() + ".json"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+        .when()
+            .get("/calendars/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -405,41 +419,43 @@ public abstract class CalDavMultitenancyContract {
         String eventUid = "event-" + UUID.randomUUID();
         calDavClient.upsertCalendarEvent(john, eventUid, CalDavContract.ICS_1);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void exportJsonCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + ".json?export"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + ".json?export")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void postJsonNewCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        DavResponse destinationResponse = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json")
-                .add("Content-Type", "application/json"))
-            .post()
-            .uri("/calendars/" + john.id() + ".json")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+            .body("""
                 {"id":"newCal","dav:name":"New Calendar","apple:order":2}
-                """)));
-
-        assertThat(destinationResponse.status()).isIn(403, 404);
+                """)
+        .when()
+            .post("/calendars/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -464,17 +480,17 @@ public abstract class CalDavMultitenancyContract {
     void reportJsonCalendarShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json")
-                .add("Content-Type", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+            .contentType("application/json")
+            .body("""
                 {"match":{"start":"20300401T000000","end":"20300430T000000"}}
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -514,15 +530,15 @@ public abstract class CalDavMultitenancyContract {
     void freeBusyShouldReturnErrorStatusForCrossDomainUser() {
         calDavClient.updateCalendarAcl(john, "{DAV:}write");
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/json")
-                .add("Accept", "application/json"))
-            .post()
-            .uri("/calendars/freebusy")
-            .send(body("{\"start\":\"20300411T020000\",\"end\":\"20300411T050000\",\"users\":[\"" + john.id() + "\"]}")));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/json")
+            .accept("application/json")
+            .body(("{\"start\":\"20300411T020000\",\"end\":\"20300411T050000\",\"users\":[\"" + john.id() + "\"]}").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post("/calendars/freebusy")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -601,22 +617,22 @@ public abstract class CalDavMultitenancyContract {
     protected void shouldNotExposeUserCalendarsWhenUsingForeignTechnicalToken() {
         // GIVEN John owns a Domain B calendar
         // WHEN a Domain A technical token lists John's calendars
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Accept", "application/json"))
-            .get()
-            .uri("/calendars/" + john.id() + ".json"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .accept("application/json")
+        .when()
+            .get("/calendars/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN Domain B calendars are not exposed and remain reachable with a Domain B technical token
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Accept", "application/json"))
-            .get()
-            .uri("/calendars/" + john.id() + ".json")))
-            .isEqualTo(200);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept("application/json")
+        .when()
+            .get("/calendars/" + john.id() + ".json")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -625,21 +641,23 @@ public abstract class CalDavMultitenancyContract {
         String eventUid = "event-" + UUID.randomUUID();
 
         // WHEN a Domain A technical token writes an ICS event into John's calendar
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
-            .send(body(icsEvent(eventUid, "Forbidden ICS event"))));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .contentType("text/calendar; charset=utf-8")
+            .body(icsEvent(eventUid, "Forbidden ICS event").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN no event is created in Domain B
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")))
-            .isEqualTo(404);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(404);
     }
 
     @Test
@@ -649,18 +667,22 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.upsertCalendarEvent(john.id(), eventUid, icsEvent(eventUid, "Visible ICS event"), secondDomainToken);
 
         // WHEN a Domain A technical token reads that ICS event
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN the Domain B event is not exposed and remains readable by a Domain B technical token
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")))
-            .isEqualTo(200);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -670,18 +692,21 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.upsertCalendarEvent(john.id(), eventUid, icsEvent(eventUid, "Protected ICS event"), secondDomainToken);
 
         // WHEN a Domain A technical token deletes that ICS event
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken))
-            .delete()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+        .when()
+            .delete("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN the Domain B event remains available
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")))
-            .isEqualTo(200);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -690,13 +715,10 @@ public abstract class CalDavMultitenancyContract {
         String eventUid = "event-" + UUID.randomUUID();
 
         // WHEN a Domain A technical token writes a JSON event into John's calendar
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/calendar+json"))
-            .put()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .contentType("application/calendar+json")
+            .body("""
                 ["vcalendar",[],[["vevent",[
                     ["uid",{},"text","%s"],
                     ["dtstart",{"tzid":"Asia/Ho_Chi_Minh"},"date-time","3025-04-11T10:00:00"],
@@ -704,30 +726,30 @@ public abstract class CalDavMultitenancyContract {
                     ["summary",{},"text","Forbidden JSON event"],
                     ["dtstamp",{},"date-time","3025-04-11T02:00:00Z"]
                 ],[]]]]
-                """.formatted(eventUid))));
+                """.formatted(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN no event is created in Domain B
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Accept", "application/calendar+json"))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")))
-            .isEqualTo(404);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept("application/calendar+json")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+        .then()
+            .statusCode(404);
     }
 
     @Test
     protected void shouldNotExposeJsonEventInUserCalendarWhenUsingForeignTechnicalToken() {
         // GIVEN a JSON event exists in John's Domain B calendar
         String eventUid = "event-" + UUID.randomUUID();
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Content-Type", "application/calendar+json"))
-            .put()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .contentType("application/calendar+json")
+            .body("""
                 ["vcalendar",[],[["vevent",[
                     ["uid",{},"text","%s"],
                     ["dtstart",{"tzid":"Asia/Ho_Chi_Minh"},"date-time","3025-04-11T10:00:00"],
@@ -735,26 +757,29 @@ public abstract class CalDavMultitenancyContract {
                     ["summary",{},"text","Visible JSON event"],
                     ["dtstamp",{},"date-time","3025-04-11T02:00:00Z"]
                 ],[]]]]
-                """.formatted(eventUid)))))
-            .isEqualTo(201);
+                """.formatted(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+        .then()
+            .statusCode(201);
 
         // WHEN a Domain A technical token reads that event as JSON
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Accept", "application/calendar+json"))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .accept("application/calendar+json")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN the Domain B event is not exposed and remains readable by a Domain B technical token
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Accept", "application/calendar+json"))
-            .get()
-            .uri("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")))
-            .isEqualTo(200);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept("application/calendar+json")
+        .when()
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -764,30 +789,30 @@ public abstract class CalDavMultitenancyContract {
         calDavClient.upsertCalendarEvent(john.id(), eventUid, icsEvent(eventUid, "Reported event"), secondDomainToken);
 
         // WHEN a Domain A technical token searches John's calendar
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/json")
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .contentType("application/json")
+            .accept("application/json")
+            .body("""
                 {"match":{"start":"30250401T000000","end":"30250430T000000"}}
-                """)));
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN the report does not expose Domain B events and a Domain B technical token can still search the calendar
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Content-Type", "application/json")
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .contentType("application/json")
+            .accept("application/json")
+            .body("""
                 {"match":{"start":"30250401T000000","end":"30250430T000000"}}
-                """))))
-            .isEqualTo(200);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id() + ".json")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -797,14 +822,11 @@ public abstract class CalDavMultitenancyContract {
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
 
         // WHEN a Domain A technical token grants delegation on John's calendar
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json, text/plain, */*"))
-            .post()
-            .uri("/calendars/" + john.id() + "/" + john.id() + ".json")
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .contentType("application/json;charset=UTF-8")
+            .accept("application/json, text/plain, */*")
+            .body("""
                 {
                   "share": {
                     "set": [
@@ -816,10 +838,13 @@ public abstract class CalDavMultitenancyContract {
                     "remove": []
                   }
                 }
-                """.formatted(secondDomainDelegate.email()))));
+                """.formatted(secondDomainDelegate.email()).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post("/calendars/" + john.id() + "/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN no delegated calendar appears
-        assertThat(status).isIn(403, 404);
         assertThat(calDavClient.findUserCalendars(secondDomainDelegate).collectList().block())
             .noneMatch(calendarURL -> calendarURL.base().equals(john.id()));
     }

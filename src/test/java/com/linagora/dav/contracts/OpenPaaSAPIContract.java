@@ -19,7 +19,6 @@
 package com.linagora.dav.contracts;
 
 import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -29,21 +28,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.contracts.cal.CalDavContract;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.config.EncoderConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
 import net.javacrumbs.jsonunit.core.Option;
 import reactor.netty.http.client.HttpClient;
 
@@ -56,6 +53,8 @@ public abstract class OpenPaaSAPIContract {
 
     public abstract HttpClient davHttpClient();
 
+    public abstract RequestSpecification davRequestSpecification();
+
     public abstract String domainId();
 
     public abstract URI backendURI();
@@ -64,6 +63,7 @@ public abstract class OpenPaaSAPIContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
         RestAssured.requestSpecification = new RequestSpecBuilder()
             .setContentType(ContentType.JSON)
             .setAccept(ContentType.JSON)
@@ -74,11 +74,6 @@ public abstract class OpenPaaSAPIContract {
 
         davHttpClient = davHttpClient();
         domainId = domainId();
-    }
-
-    @AfterEach
-    void tearDown() {
-        RestAssured.reset();
     }
 
     @Test
@@ -404,7 +399,7 @@ public abstract class OpenPaaSAPIContract {
 
     @Test
     void jwtTokenGeneration() {
-        String string = given()
+        String jwtResponseBody = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .when()
             .post("/api/jwt/generate")
@@ -414,12 +409,12 @@ public abstract class OpenPaaSAPIContract {
             .body()
             .asString();
 
-        assertThat(string.startsWith("\"eyJ")).isTrue();
+        assertThat(jwtResponseBody.startsWith("\"eyJ")).isTrue();
     }
 
     @Test
     void jwtTokenCanBeUsedToCallAPI() {
-        String string = given()
+        String jwtResponseBody = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .when()
             .post("/api/jwt/generate")
@@ -430,8 +425,10 @@ public abstract class OpenPaaSAPIContract {
             .asString();
 
 
+        String jwtToken = jwtResponseBody.substring(1, jwtResponseBody.length() - 1);
+
         given()
-            .headers("Authorization", "Bearer " + string.substring(1, string.length() - 1))
+            .headers("Authorization", "Bearer " + jwtToken)
         .when()
             .get("api/domains/" + domainId)
         .then()
@@ -440,7 +437,7 @@ public abstract class OpenPaaSAPIContract {
 
     @Test
     void jwtTokenCanBeUsedToCallSabre() {
-        String string = given()
+        String jwtResponseBody = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
             .when()
             .post("/api/jwt/generate")
@@ -450,20 +447,21 @@ public abstract class OpenPaaSAPIContract {
             .body()
             .asString();
 
-        DavResponse response = execute(davHttpClient
-            .headers(headers -> headers.add("Authorization", "Bearer " + string.substring(1, string.length() - 1))
-                .add("Depth", 0)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/")
-            .send(body("""
+        String jwtToken = jwtResponseBody.substring(1, jwtResponseBody.length() - 1);
+
+        given(davRequestSpecification())
+            .header("Authorization", "Bearer " + jwtToken)
+            .header("Depth", "0")
+            .body("""
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                      <d:current-user-principal />
                   </d:prop>
-                </d:propfind>""")));
-
-        assertThat(response.status()).isEqualTo(207);
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/")
+        .then()
+            .statusCode(207);
     }
 
     @Test

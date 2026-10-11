@@ -18,14 +18,13 @@
 
 package com.linagora.dav.contracts.card;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.card.CardDavContract.STRING;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -36,16 +35,10 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 
 public abstract class CardJsonContract {
@@ -53,12 +46,10 @@ public abstract class CardJsonContract {
 
     @BeforeEach
     void setUp() {
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
@@ -151,15 +142,16 @@ public abstract class CardJsonContract {
     void shouldAllowAddressBookDiscoveryJson() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/users/" + testUser.id()));
+        String response = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "0")
+        .when()
+            .request("PROPFIND", "/principals/users/" + testUser.id())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
-        assertThatJson(response.body()).isEqualTo(String.format("""
+        assertThatJson(response).isEqualTo(String.format("""
             {
                 "alternate-URI-set": [
                     "mailto:%s"
@@ -223,11 +215,14 @@ public abstract class CardJsonContract {
                 UID:page-{index}
                 END:VCARD
                 """.replace("{index}", String.valueOf(i));
-            executeNoContent(dockerExtension().davHttpClient()
-                .headers(user::impersonatedBasicAuth)
-                .put()
-                .uri(addressBook + "/" + cardUri)
-                .send(body(vcard)));
+            given()
+                .header("Authorization", user.impersonatedBasicAuth())
+                .contentType("text/vcard; charset=utf-8")
+                .body(vcard.getBytes(StandardCharsets.UTF_8))
+            .when()
+                .put(addressBook + "/" + cardUri)
+            .then()
+                .statusCode(201);
         }
 
         // When listing every page by fn, with _id as a control.
@@ -261,11 +256,14 @@ public abstract class CardJsonContract {
     void shouldAListAddressBookContentWhenData() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -350,19 +348,19 @@ public abstract class CardJsonContract {
     void propfindOnAddressBooks() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts")
-            .send(body("""
+        String response = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 {
                     "properties": [
                         "{DAV:}displayname",
@@ -378,9 +376,13 @@ public abstract class CardJsonContract {
                         "{http://open-paas.org/contacts}numberOfContacts",
                         "acl"
                     ]
-                }""")));
+                }""")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/contacts")
+        .then()
+            .extract().asString();
 
-            assertThatJson(response.body())
+            assertThatJson(response)
                 .isEqualTo(String.format("""
                     {
                           "{DAV:}displayname": "",
@@ -417,11 +419,14 @@ public abstract class CardJsonContract {
     void getContactDetail() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1131,16 +1136,19 @@ public abstract class CardJsonContract {
         .then()
             .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/vcard+json"))
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
-            .send(body("""
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("application/vcard+json")
+            .body("""
                          {
                            "dav:name": "custom 3",
                            "carddav:description": "",
                            "state": ""
-                         }""")));
+                         }""".getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
+        .then()
+            .statusCode(204);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1370,11 +1378,14 @@ public abstract class CardJsonContract {
     void exportAddressBook() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body(STRING)));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1401,17 +1412,20 @@ public abstract class CardJsonContract {
     void searchWhenRelated() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1497,17 +1511,20 @@ public abstract class CardJsonContract {
     void searchWhenUnrelatedShouldReturnNoResults() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1542,33 +1559,36 @@ public abstract class CardJsonContract {
     public void move() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        int responseStatus = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
-            .request(HttpMethod.valueOf("MOVE"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
-        assertThat(responseStatus)
-            .as("Card MOVE should return a successful WebDAV status")
-            .isIn(201, 204);
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MOVE", "/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
 
         String response1 = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1602,30 +1622,36 @@ public abstract class CardJsonContract {
     void copy() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf"))
-            .request(HttpMethod.valueOf("COPY"))
-            .uri("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("COPY", "/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         String response1 = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -1673,18 +1699,21 @@ public abstract class CardJsonContract {
             .statusCode(204);
 
         // And alice has a contact
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         // THEN bob can read the contact
         given()
@@ -1696,12 +1725,14 @@ public abstract class CardJsonContract {
             .statusCode(200);
 
         // AND bob cannot update alice contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
-            .send(body(STRING)));
-        assertThat(status).isEqualTo(403);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+        .then()
+            .statusCode(403);
     }
 
     @Test
@@ -1722,18 +1753,21 @@ public abstract class CardJsonContract {
             .statusCode(204);
 
         // And alice has a contact
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         // THEN bob can read the contact
         given()
@@ -1745,12 +1779,14 @@ public abstract class CardJsonContract {
             .statusCode(200);
 
         // AND bob can update alice contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
-            .send(body(STRING)));
-        assertThat(status).isEqualTo(201);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+        .then()
+            .statusCode(201);
     }
 
     @Test
@@ -1775,18 +1811,21 @@ public abstract class CardJsonContract {
         OpenPaasUser bob = dockerExtension().newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -1822,12 +1861,14 @@ public abstract class CardJsonContract {
             .statusCode(200);
 
         // AND bob cannot update alice contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
-            .send(body(STRING)));
-        assertThat(status).isEqualTo(403);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+        .then()
+            .statusCode(403);
     }
 
     @Test
@@ -1837,18 +1878,21 @@ public abstract class CardJsonContract {
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -1884,12 +1928,14 @@ public abstract class CardJsonContract {
             .statusCode(200);
 
         // AND bob can update alice contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
-            .send(body(STRING)));
-        assertThat(status).isEqualTo(201);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+        .then()
+            .statusCode(201);
 
         // And bob cannot share
         given()
@@ -1928,18 +1974,21 @@ public abstract class CardJsonContract {
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -1975,12 +2024,14 @@ public abstract class CardJsonContract {
             .statusCode(200);
 
         // AND bob can update alice contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
-            .send(body(STRING)));
-        assertThat(status).isEqualTo(201);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/ghijklmno.vcf")
+        .then()
+            .statusCode(201);
 
         // And bob cannot share
         given()
@@ -2019,18 +2070,21 @@ public abstract class CardJsonContract {
         OpenPaasUser cedric = dockerExtension().newTestUser();
 
         // Alice has a contact
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf"))
-            .put()
-            .uri("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
+            .contentType("text/vcard; charset=utf-8")
+            .body(("BEGIN:VCARD\n" +
                 "VERSION:3.0\n" +
                 "FN:Alexandre ZAPOLSKY\n" +
                 "N:ZAPOLSKY;Alexandre;;;\n" +
                 "EMAIL:zapo@lina.com\n" +
                 "UID:123456789\n" +
-                "END:VCARD\n")));
+                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(201);
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())

@@ -18,30 +18,43 @@
 
 package com.linagora.dav.contracts.cal;
 
-import static com.linagora.dav.TestUtil.body;
+import static io.restassured.RestAssured.given;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_CREATED;
-import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.hamcrest.Matchers.containsString;
 
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
+
+import io.restassured.RestAssured;
 
 public abstract class RecurrenceValidationContract {
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
+    private OpenPaasUser user;
+
+    @BeforeEach
+    void setUp() {
+        RestAssured.reset();
+        user = dockerExtension().newTestUser();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType("application/calendar+json")
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Prefer", "handling=strict");
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
     @Test
     void shouldStoreValidStrictObject() {
         // Given RRULE UNTIL, EXDATE, and RECURRENCE-ID all match DTSTART as UTC date-time values
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -73,20 +86,24 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre stores the valid strict request
-        assertThat(response.status()).isEqualTo(SC_CREATED);
+        .then()
+            .statusCode(SC_CREATED);
     }
 
     @Test
     void shouldRejectOverrideWithoutMaster() {
         // Given a VEVENT with RECURRENCE-ID but no master VEVENT sharing its UID
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -107,22 +124,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the orphan override
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("RECURRENCE-ID override for UID " + uid + " has no matching recurring master VEVENT (same UID with RRULE or RDATE)");
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("RECURRENCE-ID override for UID " + uid + " has no matching recurring master VEVENT (same UID with RRULE or RDATE)"));
     }
 
     @Test
     void shouldRejectUntilWhenMismatchedValueType() {
         // Given RRULE UNTIL is DATE (2026-05-17) while DTSTART is DATE-TIME UTC
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -142,22 +162,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the UNTIL/DTSTART type mismatch
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("UNTIL value type (DATE) must match DTSTART value type (DATE-TIME)");
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("UNTIL value type (DATE) must match DTSTART value type (DATE-TIME)"));
     }
 
     @Test
     void shouldRejectRRuleWithCountAndUntil() {
         // Given RRULE defines both COUNT=3 and UNTIL=2026-05-17T09:00:00Z
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -177,22 +200,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the RFC 5545 rule conflict
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("COUNT and UNTIL MUST NOT both be present in the same RRULE");
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("COUNT and UNTIL MUST NOT both be present in the same RRULE"));
     }
 
     @Test
     void shouldRejectOverrideIdWhenMismatchedValueType() {
         // Given RECURRENCE-ID is DATE (2026-05-16) while master DTSTART is DATE-TIME UTC
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -223,22 +249,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the override id value type mismatch
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("RECURRENCE-ID value type (DATE) must match DTSTART value type (DATE-TIME)");
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("RECURRENCE-ID value type (DATE) must match DTSTART value type (DATE-TIME)"));
     }
 
     @Test
     void shouldRejectOverrideIdWhenMismatchedTimezone() {
         // Given RECURRENCE-ID is UTC date-time while master DTSTART is Europe/Paris local date-time
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -296,22 +325,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the override id timezone form mismatch
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("RECURRENCE-ID date-time form (UTC) must match DTSTART date-time form (TZID:Europe/Paris)");
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("RECURRENCE-ID date-time form (UTC) must match DTSTART date-time form (TZID:Europe/Paris)"));
     }
 
     @Test
     void shouldRejectDuplicateOverrideId() {
         // Given two override VEVENTs use the same RECURRENCE-ID date-time for one UID
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When the object is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -353,22 +385,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When the object is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the duplicate override id
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("Duplicate RECURRENCE-ID 2026-05-16T09:00:00Z for UID " + uid);
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("Duplicate RECURRENCE-ID 2026-05-16T09:00:00Z for UID " + uid));
     }
 
     @Test
     void shouldRejectExDateWhenMismatchedValueType() {
         // Given EXDATE is DATE (2026-05-16) while DTSTART is DATE-TIME UTC
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -389,22 +424,25 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the EXDATE/DTSTART type mismatch
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("EXDATE value type (DATE) must match DTSTART value type (DATE-TIME)");
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("EXDATE value type (DATE) must match DTSTART value type (DATE-TIME)"));
     }
 
     @Test
     void shouldRejectExDateWhenMismatchedTimezone() {
         // Given EXDATE is UTC date-time while DTSTART is Europe/Paris local date-time
-        OpenPaasUser user = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
 
-        // When it is PUT with strict handling
-        DavResponse response = putStrictCalendarObject(user, uid, """
+        String payload = """
             ["vcalendar",
               [
                 ["version", {}, "text", "2.0"],
@@ -452,27 +490,16 @@ public abstract class RecurrenceValidationContract {
                 ]
               ]
             ]
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid);
 
+        // When it is PUT with strict handling
+        given()
+            .body(payload)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
         // Then Sabre rejects the EXDATE timezone form mismatch
-        assertThat(response.status()).isEqualTo(SC_BAD_REQUEST);
-        assertThat(response.body())
-            .contains("EXDATE date-time form (UTC) must match DTSTART date-time form (TZID:Europe/Paris)");
-    }
-
-    private DavResponse putStrictCalendarObject(OpenPaasUser user, String uid, String payload) {
-        return dockerExtension().davHttpClient()
-            .headers(headers -> {
-                user.impersonatedBasicAuth(headers)
-                    .add("Content-Type", "application/calendar+json")
-                    .add("Prefer", "handling=strict");
-            })
-            .put()
-            .uri("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
-            .send(body(payload))
-            .responseSingle((response, content) -> content.asString()
-                .defaultIfEmpty("")
-                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
-            .block();
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("EXDATE date-time form (UTC) must match DTSTART date-time form (TZID:Europe/Paris)"));
     }
 }

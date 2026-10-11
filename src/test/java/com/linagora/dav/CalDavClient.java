@@ -20,6 +20,7 @@ package com.linagora.dav;
 
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static com.linagora.dav.TestUtil.body;
+import static io.restassured.RestAssured.given;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +48,9 @@ import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.config.HeaderConfig;
+import io.restassured.config.RestAssuredConfig;
+import io.restassured.response.Response;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
@@ -554,15 +558,15 @@ public class CalDavClient {
         sendDelegationRequest(uri, payload, token);
     }
 
-    public DavResponse findEventsByTime(OpenPaasUser user, String start, String end) {
+    public Response findEventsByTime(OpenPaasUser user, String start, String end) {
         return findEventsByTime(user, CalendarURL.from(user.id()), start, end);
     }
 
-    public DavResponse findEventsByTime(OpenPaasUser user, String baseId, String calendarId, String start, String end) {
+    public Response findEventsByTime(OpenPaasUser user, String baseId, String calendarId, String start, String end) {
         return findEventsByTime(user, new CalendarURL(baseId, calendarId), start, end);
     }
 
-    public DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL, String start, String end) {
+    public Response findEventsByTime(OpenPaasUser user, CalendarURL calendarURL, String start, String end) {
         String json = """
             {
                 "match": {
@@ -576,7 +580,7 @@ public class CalDavClient {
         return getCalendarEvents(user, calendarURL, json);
     }
 
-    public DavResponse findEventsBySyncToken(OpenPaasUser user, CalendarURL calendarURL, String syncToken) {
+    public Response findEventsBySyncToken(OpenPaasUser user, CalendarURL calendarURL, String syncToken) {
         String json = """
             {
                 "sync-token": "{syncToken}"
@@ -586,16 +590,22 @@ public class CalDavClient {
         return getCalendarEvents(user, calendarURL, json);
     }
 
-    private DavResponse getCalendarEvents(OpenPaasUser user, CalendarURL calendarURL, String json) {
-        return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(calendarURL.asUri() + ".json")
-            .send(body(json))
-            .responseSingle((response, content) -> content.asString()
-                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
-            .block();
+    private Response getCalendarEvents(OpenPaasUser user, CalendarURL calendarURL, String json) {
+        URI reportUri = URI.create(httpClient.configuration().baseUrl()).resolve(calendarURL.asUri() + ".json");
+        return given()
+            .config(RestAssuredConfig.newConfig()
+                .headerConfig(HeaderConfig.headerConfig()
+                    .overwriteHeadersWithName("Authorization", "Depth")))
+            .auth().none()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .contentType(CONTENT_TYPE_JSON + "; charset=utf-8")
+            .accept(CONTENT_TYPE_JSON)
+            .urlEncodingEnabled(false)
+            .redirects().follow(false)
+            .body(json.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", reportUri);
     }
 
     private void sendDelegationRequest(OpenPaasUser user, String uri, String payload) {

@@ -16,6 +16,7 @@
 
 package com.linagora.dav.contracts.card;
 
+import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,11 +29,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.linagora.dav.AddressBookURL;
 import com.linagora.dav.CardDavClient;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.VCardContact;
 
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CardReportContract {
@@ -51,6 +53,13 @@ public abstract class CardReportContract {
         cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
         alice = dockerExtension().newTestUser();
         addressBookURL = new AddressBookURL(alice.id(), CONTACTS);
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", 0);
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
     @Test
@@ -62,12 +71,21 @@ public abstract class CardReportContract {
         // WHEN another contact is created and changes are reported from the previous token
         String secondUid = createContact("Second");
         String currentSyncToken = currentSyncToken();
-        DavResponse response = cardDavClient.findContactsBySyncToken(alice, addressBookURL, previousSyncToken);
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "{syncToken}"
+                }
+                """.replace("{syncToken}", previousSyncToken))
+        .when()
+            .request("REPORT", addressBookURL.asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN the token advances and only the second contact is returned
         assertThat(currentSyncToken).isNotEqualTo(previousSyncToken);
-        assertThat(response.status()).isEqualTo(207);
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_FIELDS)
             .isEqualTo("""
                 {
@@ -86,12 +104,21 @@ public abstract class CardReportContract {
         String firstUid = createContact("First");
         String secondUid = createContact("Second");
         String currentSyncToken = currentSyncToken();
-        DavResponse response = cardDavClient.findContactsBySyncToken(alice, addressBookURL, initialSyncToken);
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "{syncToken}"
+                }
+                """.replace("{syncToken}", initialSyncToken))
+        .when()
+            .request("REPORT", addressBookURL.asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN both contacts are returned as existing resources
         assertThat(currentSyncToken).isNotEqualTo(initialSyncToken);
-        assertThat(response.status()).isEqualTo(207);
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_FIELDS, Option.IGNORING_ARRAY_ORDER)
             .isEqualTo("""
                 {
@@ -114,12 +141,21 @@ public abstract class CardReportContract {
         // WHEN the first contact is deleted and changes are reported from the previous token
         cardDavClient.deleteContact(alice, CONTACTS, firstUid);
         String currentSyncToken = currentSyncToken();
-        DavResponse response = cardDavClient.findContactsBySyncToken(alice, addressBookURL, previousSyncToken);
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "{syncToken}"
+                }
+                """.replace("{syncToken}", previousSyncToken))
+        .when()
+            .request("REPORT", addressBookURL.asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN the token advances and only the deleted contact is returned with status 404
         assertThat(currentSyncToken).isNotEqualTo(previousSyncToken);
-        assertThat(response.status()).isEqualTo(207);
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_FIELDS)
             .isEqualTo("""
                 {
@@ -143,12 +179,21 @@ public abstract class CardReportContract {
             .build()
             .toVCardPayload(firstUid));
         String currentSyncToken = currentSyncToken();
-        DavResponse response = cardDavClient.findContactsBySyncToken(alice, addressBookURL, previousSyncToken);
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "{syncToken}"
+                }
+                """.replace("{syncToken}", previousSyncToken))
+        .when()
+            .request("REPORT", addressBookURL.asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN the token advances and only the updated contact is returned with status 200
         assertThat(currentSyncToken).isNotEqualTo(previousSyncToken);
-        assertThat(response.status()).isEqualTo(207);
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_FIELDS)
             .isEqualTo("""
                 {
@@ -166,11 +211,20 @@ public abstract class CardReportContract {
         String currentSyncToken = currentSyncToken();
 
         // WHEN reporting from the current sync token
-        DavResponse response = cardDavClient.findContactsBySyncToken(alice, addressBookURL, currentSyncToken);
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "{syncToken}"
+                }
+                """.replace("{syncToken}", currentSyncToken))
+        .when()
+            .request("REPORT", addressBookURL.asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN no delta is returned and the token remains unchanged
-        assertThat(response.status()).isEqualTo(207);
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_FIELDS)
             .isEqualTo("""
                 {

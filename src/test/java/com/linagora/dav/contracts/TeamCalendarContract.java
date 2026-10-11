@@ -23,6 +23,8 @@ import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.net.URI;
 import java.util.Map;
@@ -39,16 +41,14 @@ import org.xmlunit.assertj3.XmlAssert;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 
 public abstract class TeamCalendarContract {
@@ -72,11 +72,7 @@ public abstract class TeamCalendarContract {
         RestAssured.reset();
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
-                .getServiceUri(DockerService.SABRE_DAV, "http")
-                .toString())
-            .build();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification();
     }
 
     @Test
@@ -351,11 +347,9 @@ public abstract class TeamCalendarContract {
             calendarData(eventUid, "Alice creates team event"));
 
         // Then Alice can read it from the delegated team calendar
-        DavResponse response = findEventsByTime(alice, delegatedCalendar);
-        assertThat(response.status())
-            .as("Alice should report events from the delegated team calendar")
-            .isEqualTo(200);
-        assertThat(response.body())
+        Response response = findEventsByTime(alice, delegatedCalendar);
+        response.then().statusCode(200);
+        assertThat(response.asString())
             .as("Alice should see the event she created in the team calendar")
             .contains(eventUid);
     }
@@ -650,8 +644,8 @@ public abstract class TeamCalendarContract {
             .isEqualTo(403);
 
         // Then the original event remains unchanged
-        DavResponse bobReadResponse = findEventsByTime(bob, bobDelegatedCalendar);
-        assertThat(bobReadResponse.body())
+        Response bobReadResponse = findEventsByTime(bob, bobDelegatedCalendar);
+        assertThat(bobReadResponse.asString())
             .as("Team calendar event should keep the original summary after viewer rejected update")
             .contains(eventUid, "Bob creates event readable by viewer")
             .doesNotContain("Viewer tries to update team event");
@@ -672,11 +666,9 @@ public abstract class TeamCalendarContract {
             calendarData(eventUid, "Alice creates event for Bob"));
 
         // Then Bob can read the event from his delegated team calendar
-        DavResponse response = findEventsByTime(bob, bobDelegatedCalendar);
-        assertThat(response.status())
-            .as("Bob should report team calendar events as a member")
-            .isEqualTo(200);
-        assertThat(response.body())
+        Response response = findEventsByTime(bob, bobDelegatedCalendar);
+        response.then().statusCode(200);
+        assertThat(response.asString())
             .as("Bob should see Alice's event because he is also a team calendar member")
             .contains(eventUid);
     }
@@ -699,11 +691,9 @@ public abstract class TeamCalendarContract {
             calendarData(eventUid, "Alice creates private team event"));
 
         // Then Bob cannot read it from the team calendar because he is not a member
-        DavResponse response = findEventsByTime(bob, teamCalendarCanonicalUrl);
-        assertThat(response.status())
-            .as("Non-member Bob should not report events from the team calendar")
-            .isIn(403, 404);
-        assertThat(response.body())
+        Response response = findEventsByTime(bob, teamCalendarCanonicalUrl);
+        response.then().statusCode(anyOf(is(403), is(404)));
+        assertThat(response.asString())
             .as("Non-member Bob should not see Alice's team calendar event")
             .doesNotContain(eventUid);
     }
@@ -755,13 +745,11 @@ public abstract class TeamCalendarContract {
             calendarData(eventUid, "Alice creates public team event"));
 
         // When Bob reports events from the public team calendar
-        DavResponse response = findEventsByTime(bob, teamCalendarCanonicalUrl);
+        Response response = findEventsByTime(bob, teamCalendarCanonicalUrl);
 
         // Then Bob can read the event because the team calendar is public
-        assertThat(response.status())
-            .as("Non-member Bob should report events from a publicly readable team calendar")
-            .isEqualTo(200);
-        assertThat(response.body())
+        response.then().statusCode(200);
+        assertThat(response.asString())
             .as("Non-member Bob should see Alice's event because the team calendar is public")
             .contains(eventUid);
     }
@@ -1024,11 +1012,9 @@ public abstract class TeamCalendarContract {
             .contains(subscribedCalendar.asUri() + "/");
 
         // And Alice can read team calendar events through the subscribed mirror
-        DavResponse eventsResponse = findEventsByTime(alice, subscribedCalendar);
-        assertThat(eventsResponse.status())
-            .as("Alice should report events from the subscribed public team calendar")
-            .isEqualTo(200);
-        assertThat(eventsResponse.body())
+        Response eventsResponse = findEventsByTime(alice, subscribedCalendar);
+        eventsResponse.then().statusCode(200);
+        assertThat(eventsResponse.asString())
             .as("Alice should see team calendar events through the subscribed mirror")
             .contains(eventUid);
     }
@@ -1230,15 +1216,12 @@ public abstract class TeamCalendarContract {
             .statusCode();
     }
 
-    private DavResponse findEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
-        return calDavClient.findEventsByTime(user, calendarURL, "20300110T000000", "20300110T235959");
-    }
-
-    private Response reportEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
+    private Response findEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
         return given()
             .header("Authorization", OpenPaasUser.impersonatedBasicAuth(user.email()))
             .header("Depth", 0)
-            .header("Accept", "application/json")
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
             .body("""
                 {
                     "match": {
@@ -1250,9 +1233,15 @@ public abstract class TeamCalendarContract {
         .when()
             .request("REPORT", calendarURL.asUri() + ".json")
         .then()
-            .statusCode(200)
             .extract()
             .response();
+    }
+
+    private Response reportEventsByTime(OpenPaasUser user, CalendarURL calendarURL) {
+        return findEventsByTime(user, calendarURL)
+            .then()
+            .statusCode(200)
+            .extract().response();
     }
 
 }

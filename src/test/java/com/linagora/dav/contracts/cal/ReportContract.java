@@ -18,10 +18,10 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.assertj.core.api.SoftAssertions;
@@ -31,17 +31,12 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.JsonCalendarData;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 
 public abstract class ReportContract {
@@ -54,16 +49,14 @@ public abstract class ReportContract {
     @BeforeEach
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
-
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
-        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
-
         alice = dockerExtension().newTestUser();
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", 0);
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
     @Test
@@ -94,10 +87,18 @@ public abstract class ReportContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, eventUid2, calendarData2);
 
-        DavResponse response = calDavClient.findEventsBySyncToken(alice,
-            CalendarURL.from(alice.id()),
-            "http://sabre.io/ns/sync/2");
-        JsonCalendarData result = JsonCalendarData.from(response.body());
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "http://sabre.io/ns/sync/2"
+                }
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        JsonCalendarData result = JsonCalendarData.from(responseBody);
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(1);
@@ -134,10 +135,18 @@ public abstract class ReportContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, eventUid2, calendarData2);
 
-        DavResponse response = calDavClient.findEventsBySyncToken(alice,
-            CalendarURL.from(alice.id()),
-            "http://sabre.io/ns/sync/1");
-        JsonCalendarData result = JsonCalendarData.from(response.body());
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "http://sabre.io/ns/sync/1"
+                }
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        JsonCalendarData result = JsonCalendarData.from(responseBody);
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(2);
@@ -180,10 +189,18 @@ public abstract class ReportContract {
 
         calDavClient.deleteCalendarEvent(alice, eventUid1);
 
-        DavResponse response = calDavClient.findEventsBySyncToken(alice,
-            CalendarURL.from(alice.id()),
-            "http://sabre.io/ns/sync/3");
-        JsonCalendarData result = JsonCalendarData.from(response.body());
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "http://sabre.io/ns/sync/3"
+                }
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        JsonCalendarData result = JsonCalendarData.from(responseBody);
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(1);
@@ -234,10 +251,18 @@ public abstract class ReportContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, eventUid, updatedCalendarData);
 
-        DavResponse response = calDavClient.findEventsBySyncToken(alice,
-            CalendarURL.from(alice.id()),
-            "http://sabre.io/ns/sync/3");
-        JsonCalendarData result = JsonCalendarData.from(response.body());
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "http://sabre.io/ns/sync/3"
+                }
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        JsonCalendarData result = JsonCalendarData.from(responseBody);
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.items()).hasSize(1);
@@ -275,10 +300,18 @@ public abstract class ReportContract {
         calDavClient.upsertCalendarEvent(alice, eventUid2, calendarData2);
 
         // Sync with token after no changes
-        DavResponse response = calDavClient.findEventsBySyncToken(alice,
-            CalendarURL.from(alice.id()),
-            "http://sabre.io/ns/sync/3");
-        JsonCalendarData result = JsonCalendarData.from(response.body());
+        String responseBody = given()
+            .body("""
+                {
+                    "sync-token": "http://sabre.io/ns/sync/3"
+                }
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        JsonCalendarData result = JsonCalendarData.from(responseBody);
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result.syncToken()).isEqualTo("http://sabre.io/ns/sync/3");
@@ -318,10 +351,22 @@ public abstract class ReportContract {
         assertThat(calDavClient.getCalendarEvent(alice, eventUri)).contains(uid);
 
         // When querying the UTC interval containing the actual 13:00-14:00 event.
-        DavResponse response = calDavClient.findEventsByTime(alice, "20260322T130000", "20260322T150000");
+        String responseBody = given()
+            .body("""
+                {
+                    "match": {
+                        "start": "20260322T130000",
+                        "end": "20260322T150000"
+                    }
+                }
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
         // Then the report finds the stored event at the time given by its VTIMEZONE.
-        assertThat(response.status()).as(response.body()).isEqualTo(200);
-        assertThat(response.body()).contains(uid);
+        assertThat(responseBody).contains(uid);
     }
 }

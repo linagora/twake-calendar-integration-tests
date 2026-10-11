@@ -18,15 +18,13 @@
 
 package com.linagora.dav.contracts.cal;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.cal.CalDavContract.ICS_1;
 import static com.linagora.dav.contracts.cal.CalDavContract.ICS_2;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
@@ -42,20 +40,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Streams;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.TwakeCalendarProvisioningService.TeamCalendarRole;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import net.javacrumbs.jsonunit.core.Option;
 
@@ -143,12 +135,10 @@ public abstract class CalJsonContract {
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
 
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
@@ -285,11 +275,8 @@ public abstract class CalJsonContract {
     void shouldListEvents() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(testUser,
+            URI.create("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics"), ICS_1);
 
         String response = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
@@ -384,22 +371,21 @@ public abstract class CalJsonContract {
     void reportShouldListEvents() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/json, text/plain, */*"))
-            .put()
-            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(testUser,
+            URI.create("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics"), ICS_1);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .whenIgnoringPaths("_embedded.dav:item[0].data[1][0][3]", "_embedded.sync-token")  // ignore prodid
             .isEqualTo(String.format("""
                 {
@@ -610,16 +596,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
 
@@ -662,16 +650,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -713,16 +703,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-            {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+            {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -764,16 +756,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -815,16 +809,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -866,16 +862,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -917,16 +915,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -968,16 +968,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
@@ -1027,16 +1029,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1078,16 +1082,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
@@ -1138,16 +1144,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0)).isEqualTo(
@@ -1199,16 +1207,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1250,16 +1260,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1302,16 +1314,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).isEqualTo(
@@ -1345,16 +1359,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        List<EventData> result = EventData.from(response.body());
+        List<EventData> result = EventData.from(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -1388,16 +1404,18 @@ public abstract class CalJsonContract {
         .then()
             .statusCode(201);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20250224T000000","end":"20250315T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20250224T000000","end":"20250315T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
             .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]",
                 "_embedded.sync-token")   // ignore etag, prodid
@@ -1537,16 +1555,18 @@ public abstract class CalJsonContract {
         .then()
             .statusCode(204);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20250224T000000","end":"20250315T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20250224T000000","end":"20250315T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
             .whenIgnoringPaths("_embedded.dav:item[0].etag", "_embedded.dav:item[0].data[1][0][3]", "_embedded.sync-token")   // ignore etag, prodid
             .isEqualTo(String.format("""
@@ -2265,16 +2285,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser3.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode root = OBJECT_MAPPER.readTree(responseBody);
         JsonNode freebusy = root.at("/data/2/0");
 
         assertThatJson(freebusy)
@@ -2337,16 +2359,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser3.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode root = OBJECT_MAPPER.readTree(responseBody);
         JsonNode freebusy = root.at("/data/2/0");
 
         assertThatJson(freebusy)
@@ -2400,16 +2424,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser3.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode root = OBJECT_MAPPER.readTree(responseBody);
         JsonNode freebusy = root.at("/data/2/0");
 
         assertThatJson(freebusy)
@@ -2473,16 +2499,18 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser3.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser3.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        JsonNode root = OBJECT_MAPPER.readTree(responseBody);
         JsonNode freebusy = root.at("/data/2/0");
 
         assertThatJson(freebusy)
@@ -2713,15 +2741,17 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("ACL"))
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
-            .send(body("""
-                {"public_right":""}""")));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"public_right":""}""")
+        .when()
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .isEqualTo(String.format("""
                 [
                     {
@@ -2789,12 +2819,10 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
-            .send(body(String.format("""
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("application/json")
+            .body(String.format("""
                 {
                     "id": "b5dd8eee-7ae3-45f5-834a-356025b1e877",
                     "acl": [
@@ -2864,7 +2892,11 @@ public abstract class CalJsonContract {
                     "caldav:description": ""
                 }""", alice.id(), alice.id(), alice.id(), alice.id(), alice.id(),
                 alice.id(), alice.id(), alice.id(), alice.id(), alice.id(),
-                alice.id()))));
+                alice.id()).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+        .then()
+            .statusCode(204);
 
         String response = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -3055,19 +3087,17 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("ACL"))
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
-            .send(body("""
-                {"public_right":"{DAV:}read"}""")));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"public_right":"{DAV:}read"}""")
+        .when()
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+        .then()
+            .statusCode(200);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(alice,
+            URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
 
         String response2 = given()
             .headers("Authorization", bob.impersonatedBasicAuth())
@@ -3079,14 +3109,16 @@ public abstract class CalJsonContract {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
-            .send(body(ICS_2)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(ICS_2.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+        .then()
+            .statusCode(403);
 
         assertThat(response2).isEqualTo(ICS_1);
-        assertThat(status).isEqualTo(403);
     }
 
     @Test
@@ -3100,19 +3132,17 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("ACL"))
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
-            .send(body("""
-                {"public_right":"{DAV:}write"}""")));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"public_right":"{DAV:}write"}""")
+        .when()
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+        .then()
+            .statusCode(200);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(alice,
+            URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
 
         String response2 = given()
             .headers("Authorization", bob.impersonatedBasicAuth())
@@ -3124,14 +3154,16 @@ public abstract class CalJsonContract {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
-            .send(body(ICS_2)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(ICS_2.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+        .then()
+            .statusCode(201);
 
         assertThat(response2).isEqualTo(ICS_1);
-        assertThat(status).isEqualTo(201);
     }
 
     @Test
@@ -3145,27 +3177,26 @@ public abstract class CalJsonContract {
         .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("ACL"))
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
-            .send(body("""
-                {"public_right":"{DAV:}write"}""")));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"public_right":"{DAV:}write"}""")
+        .when()
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+        .then()
+            .statusCode(200);
 
-        execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("ACL"))
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
-            .send(body("""
-                {"public_right":""}""")));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"public_right":""}""")
+        .when()
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+        .then()
+            .statusCode(200);
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(alice,
+            URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
 
         given()
             .headers("Authorization", bob.impersonatedBasicAuth())
@@ -3175,13 +3206,15 @@ public abstract class CalJsonContract {
         .then()
             .statusCode(403);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
-            .send(body(ICS_2)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(ICS_2.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+        .then()
+            .statusCode(403);
 
-        assertThat(status).isEqualTo(403);
     }
 
     @Disabled("Somehow failing")
@@ -3196,11 +3229,8 @@ public abstract class CalJsonContract {
             .when()
             .post("/calendars/" + alice.id() + ".json");
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(alice,
+            URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -3224,14 +3254,16 @@ public abstract class CalJsonContract {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
-            .send(body(ICS_2)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(ICS_2.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+        .then()
+            .statusCode(403);
 
         assertThat(response2).isEqualTo(ICS_1);
-        assertThat(status).isEqualTo(403);
     }
 
     @Disabled("Somehow failing")
@@ -3252,11 +3284,8 @@ public abstract class CalJsonContract {
             .when()
             .post("/calendars/" + bob.id() + ".json");
 
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(alice,
+            URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
 
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -3280,14 +3309,16 @@ public abstract class CalJsonContract {
             .body()
             .asString();
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
-            .send(body(ICS_2)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(ICS_2.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
+        .then()
+            .statusCode(201);
 
         assertThat(response2).isEqualTo(ICS_1);
-        assertThat(status).isEqualTo(201);
     }
 
     @Test
@@ -3295,26 +3326,25 @@ public abstract class CalJsonContract {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         // Create an event
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers).add("Accept", "application/json, text/plain, */*"))
-            .put()
-            .uri("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics")
-            .send(body(ICS_1)));
+        calDavClient.upsertCalendarEvent(testUser,
+            URI.create("/calendars/" + testUser.id()  + "/" + testUser.id() + "/abcd.ics"), ICS_1);
 
         // Execute REPORT request
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
-            .send(body("""
-                {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
         // Check for sync-token in _embedded
         // The sync-token should have the namespace http://sabre.io/ns/sync/
         ObjectMapper mapper = new ObjectMapper();
-        JsonNode root = mapper.readTree(response.body());
+        JsonNode root = mapper.readTree(responseBody);
         assertThat(root.at("/_embedded").at("/sync-token").asText()).isEqualTo("http://sabre.io/ns/sync/2");
     }
 
@@ -3335,18 +3365,19 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300412T000000","end":"20300414T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300412T000000","end":"20300414T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
-        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+        List<EventData> result = EventData.fromReportSingleEvent(responseBody);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0)).isEqualTo(
@@ -3382,16 +3413,17 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"end":"20300430T000000"}}""")));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .accept("application/json")
+            .body("""
+                {"match":{"end":"20300430T000000"}}""".getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(400);
 
-        assertThat(status).isEqualTo(400);
     }
 
     @Test
@@ -3409,16 +3441,17 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300401T000000"}}""")));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .accept("application/json")
+            .body("""
+                {"match":{"start":"20300401T000000"}}""".getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(400);
 
-        assertThat(status).isEqualTo(400);
     }
 
     @Test
@@ -3436,16 +3469,17 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{}}""")));
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .accept("application/json")
+            .body("""
+                {"match":{}}""".getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(400);
 
-        assertThat(status).isEqualTo(400);
     }
 
     @Test
@@ -3463,18 +3497,19 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300501T000000","end":"20300530T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300501T000000","end":"20300530T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
-        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+        List<EventData> result = EventData.fromReportSingleEvent(responseBody);
         assertThat(result).isEmpty();
     }
 
@@ -3493,19 +3528,20 @@ public abstract class CalJsonContract {
             .toString();
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300401T000000","end":"20300430T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", 0)
+            .body("""
+                {"match":{"start":"20300401T000000","end":"20300430T000000"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
         ObjectMapper mapper = new ObjectMapper();
-        JsonNode jsonResponse = mapper.readTree(response.body());
+        JsonNode jsonResponse = mapper.readTree(responseBody);
 
         assertThat(jsonResponse.has("etag")).isTrue();
         assertThat(jsonResponse.get("etag").asText()).isNotEmpty();
@@ -3558,19 +3594,20 @@ public abstract class CalJsonContract {
         // THEN: Alice queries the event via REPORT - the event should be sanitized
         String eventURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics";
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(eventURI)
-            .send(body("""
-                {"match":{"start":"20250901T000000","end":"20251101T000000"}}""")));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
+                {"match":{"start":"20250901T000000","end":"20251101T000000"}}""")
+        .when()
+            .request("REPORT", eventURI)
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
         // Verify the event is sanitized: summary should be "Busy" and description should be absent
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains(eventUid)
             .contains("[\"summary\",{},\"text\",\"Busy\"]")
             .doesNotContain(description)
@@ -3626,24 +3663,25 @@ public abstract class CalJsonContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice reports Bob's private event through the subscribed calendar.
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
+                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
         // THEN: private details are hidden from Alice.
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("[\"summary\",{},\"text\",\"Busy\"]")
             .doesNotContain(summary)
             .doesNotContain(description);
 
-        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+        List<EventData> result = EventData.fromReportSingleEvent(responseBody);
 
         // THEN: recurrence timing is still preserved after sanitization.
         assertThat(result).containsExactly(
@@ -3709,24 +3747,25 @@ public abstract class CalJsonContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice reports Bob's private event through the subscribed calendar.
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
+                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
         // THEN: private details are hidden from Alice.
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("[\"summary\",{},\"text\",\"Busy\"]")
             .doesNotContain(summary)
             .doesNotContain(description);
 
-        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+        List<EventData> result = EventData.fromReportSingleEvent(responseBody);
 
         // THEN: the additional recurrence date is still preserved after sanitization.
         assertThat(result).containsExactly(
@@ -3803,25 +3842,26 @@ public abstract class CalJsonContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice reports Bob's private event through the subscribed calendar.
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
-            .send(body("""
-                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
+                {"match":{"start":"20300601T000000Z","end":"20300604T000000Z"}}""")
+        .when()
+            .request("REPORT", "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
         // THEN: private details are hidden from Alice.
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("[\"summary\",{},\"text\",\"Busy\"]")
             .doesNotContain(summary)
             .doesNotContain(overrideSummary)
             .doesNotContain(description);
 
-        List<EventData> result = EventData.fromReportSingleEvent(response.body());
+        List<EventData> result = EventData.fromReportSingleEvent(responseBody);
 
         // THEN: the moved occurrence keeps its original RECURRENCE-ID after sanitization.
         assertThat(result).containsExactly(

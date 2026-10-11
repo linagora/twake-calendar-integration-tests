@@ -19,14 +19,11 @@
 package com.linagora.dav.contracts.card;
 
 import static com.linagora.dav.CardDavClient.*;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -41,18 +38,11 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.google.common.collect.ImmutableSet;
 import com.linagora.dav.AddressBookURL;
 import com.linagora.dav.CardDavClient;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 
 import com.linagora.dav.XMLUtil;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import net.javacrumbs.jsonunit.core.Option;
 import io.restassured.http.ContentType;
 
@@ -66,18 +56,16 @@ public abstract class CardDavDelegationContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
         cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
 
         alice = dockerExtension().newTestUser();
         bob = dockerExtension().newTestUser();
         cedric = dockerExtension().newTestUser();
 
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
@@ -634,13 +622,17 @@ public abstract class CardDavDelegationContract {
             .findAny().get();
 
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + alice.id()));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + alice.id())
+        .then()
+            .extract().asString();
 
         List<String> actual = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );
@@ -662,18 +654,22 @@ public abstract class CardDavDelegationContract {
             .findAny().get();
 
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + alice.id())
-            .send(body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "        <d:propfind xmlns:d=\"DAV:\">" +
                 "          <d:prop>" +
                 "            <d:displayname/>" +
                 "          </d:prop>" +
-                "        </d:propfind>")));
+                "        </d:propfind>")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + alice.id())
+        .then()
+            .extract().asString();
 
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("<d:response><d:href>/addressbooks/ALICE_ID/BOOK_ID/</d:href><d:propstat><d:prop><d:displayname></d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
                 .replace("ALICE_ID", alice.id())
                 .replace("BOOK_ID", addressBookURL.addressBookId()));
@@ -891,18 +887,17 @@ public abstract class CardDavDelegationContract {
             }
             """.formatted(bob.email(), DelegationRight.READ.getValue(), bob.id());
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
-                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
-            .request(HttpMethod.POST)
-            .uri(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
-            .send(body(payload)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/json;charset=UTF-8")
+            .accept("application/json, text/plain, */*")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
+        .then()
+            .statusCode(SC_BAD_REQUEST);
 
-        // THEN the self delegation is rejected
-        assertThat(status)
-            .as("Self delegation by owner should be rejected")
-            .isEqualTo(SC_BAD_REQUEST);
+        // THEN the self delegation is rejected without mutating the address book lists
         assertThat(getAddressBooksJson(bob))
             .as("Self delegation by owner must not mutate Bob's address book list")
             .isEqualTo(bobAddressBooksBeforeSelfDelegation);
@@ -936,18 +931,17 @@ public abstract class CardDavDelegationContract {
             }
             """.formatted(alice.email(), DelegationRight.READ.getValue(), alice.id());
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
-                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
-            .request(HttpMethod.POST)
-            .uri(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
-            .send(body(payload)));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/json;charset=UTF-8")
+            .accept("application/json, text/plain, */*")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
+        .then()
+            .statusCode(SC_BAD_REQUEST);
 
-        // THEN the self delegation by delegated admin is rejected
-        assertThat(status)
-            .as("Self delegation by delegated admin should be rejected")
-            .isEqualTo(SC_BAD_REQUEST);
+        // THEN the self delegation by delegated admin is rejected without mutating the address book lists
         assertThat(getAddressBooksJson(bob))
             .as("Self delegation by delegated admin must not mutate Bob's source address book list")
             .isEqualTo(bobAddressBooksBeforeSelfDelegation);
@@ -1254,19 +1248,20 @@ public abstract class CardDavDelegationContract {
             .findAny().get();
 
         // WHEN Cedric reads the sharees of the copied address book (clone)
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> cedric.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Accept", "application/json"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + cedric.id() + "/" + addressBookURL.addressBookId())
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", cedric.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 {
                     "properties": ["{DAV:}invite"]
-                }""")));
+                }""")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + cedric.id() + "/" + addressBookURL.addressBookId())
+        .then()
+            .extract().asString();
 
         // THEN he sees every sharee of Bob's original address book, Bob included, in no particular order
-        assertThatJson(response.body())
+        assertThatJson(responseBody)
             .when(Option.IGNORING_ARRAY_ORDER)
             .isEqualTo("""
                 {
