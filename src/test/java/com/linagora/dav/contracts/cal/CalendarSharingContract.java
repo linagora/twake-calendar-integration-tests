@@ -80,7 +80,6 @@ public abstract class CalendarSharingContract {
     private OpenPaasUser bob;
     private OpenPaasUser alice;
     private OpenPaasUser cedric;
-    private Channel channel;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -98,7 +97,6 @@ public abstract class CalendarSharingContract {
         bob = extension().newTestUser();
         alice = extension().newTestUser();
         cedric = extension().newTestUser();
-        channel = extension().getChannel();
     }
 
     @Test
@@ -1221,6 +1219,7 @@ public abstract class CalendarSharingContract {
     @Test
     void amqpMessagesEmittedForSubscribedCopy() throws Exception {
         String queueName = "sharing-test" + alice.id();
+        Channel channel = extension().getChannel();
         channel.queueDeclare(queueName, false, true, true, null);
         channel.queueBind(queueName, "calendar:event:created", "");
         channel.queueBind(queueName, "calendar:event:updated", "");
@@ -1274,6 +1273,7 @@ public abstract class CalendarSharingContract {
     @Test
     void noAmqpAlarmMessagesEmittedForSubscribedCopy() throws Exception {
         String queueName = "sharing-test-alarms-" + alice.id();
+        Channel channel = extension().getChannel();
         channel.queueDeclare(queueName, false, false, true, null);
         channel.queueBind(queueName, "calendar:event:alarm:created", "");
         channel.queueBind(queueName, "calendar:event:alarm:updated", "");
@@ -2509,6 +2509,7 @@ public abstract class CalendarSharingContract {
     void amqpMessagesEmittedForSubscribedCopyOfResourceCalendarInEventRequestExchange() throws IOException, InterruptedException {
         // GIVEN: an AMQP channel listening to calendar event request
         String queueName = "sharing-test" + alice.id();
+        Channel channel = extension().getChannel();
         channel.queueDeclare(queueName, false, true, true, null);
         channel.queueBind(queueName, "calendar:event:request", "");
 
@@ -2579,6 +2580,7 @@ public abstract class CalendarSharingContract {
     void amqpMessagesEmittedForSubscribedCopyOfResourceCalendarInEventCancelExchange() throws IOException, InterruptedException {
         // GIVEN: an AMQP channel listening to calendar event request
         String queueName = "sharing-test" + alice.id();
+        Channel channel = extension().getChannel();
         channel.queueDeclare(queueName, false, true, true, null);
         channel.queueBind(queueName, "calendar:event:cancel", "");
 
@@ -2652,6 +2654,7 @@ public abstract class CalendarSharingContract {
     void amqpMessagesEmittedForSubscribedCopyOfResourceCalendarWhenResourceIsAccepted() throws IOException, InterruptedException {
         // GIVEN: an AMQP channel listening to calendar event request
         String queueName = "sharing-test" + alice.id();
+        Channel channel = extension().getChannel();
         channel.queueDeclare(queueName, false, true, true, null);
         channel.queueBind(queueName, "calendar:event:updated", "");
 
