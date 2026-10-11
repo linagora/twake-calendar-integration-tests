@@ -1960,7 +1960,19 @@ public abstract class CalJsonContract {
 
         String body = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .body("{\"start\":\"20250228T230000\",\"end\":\"20250301T230000\",\"users\":[\"" + alice.id() + "\"],\"uids\":[\"1111632f-9917-4efc-b78f-243be5403074\"]}")
+            .body("""
+                {
+                  "start": "20250228T230000",
+                  "end": "20250301T230000",
+                  "users": [
+                    "{aliceId}"
+                  ],
+                  "uids": [
+                    "1111632f-9917-4efc-b78f-243be5403074"
+                  ]
+                }
+                """
+                .replace("{aliceId}", alice.id()))
         .when()
             .post("/calendars/freebusy")
         .then()
@@ -1998,7 +2010,16 @@ public abstract class CalJsonContract {
 
         String body = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .body("{\"start\":\"20300412T000000\",\"end\":\"20300415T000000\",\"users\":[\"" + alice.id() + "\"]}")
+            .body("""
+                {
+                  "start": "20300412T000000",
+                  "end": "20300415T000000",
+                  "users": [
+                    "{aliceId}"
+                  ]
+                }
+                """
+                .replace("{aliceId}", alice.id()))
         .when()
             .post("/calendars/freebusy")
         .then()
@@ -2229,7 +2250,16 @@ public abstract class CalJsonContract {
 
         String body = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
-            .body("{\"start\":\"20300411T000000\",\"end\":\"20300414T000000\",\"users\":[\"" + alice.id() + "\"]}")
+            .body("""
+                {
+                  "start": "20300411T000000",
+                  "end": "20300414T000000",
+                  "users": [
+                    "{aliceId}"
+                  ]
+                }
+                """
+                .replace("{aliceId}", alice.id()))
         .when()
             .post("/calendars/freebusy")
         .then()
@@ -2249,7 +2279,16 @@ public abstract class CalJsonContract {
     private String postFreeBusy(OpenPaasUser requester, String userId) {
         return given()
             .headers("Authorization", requester.impersonatedBasicAuth())
-            .body("{\"start\":\"20300411T000000\",\"end\":\"20300412T000000\",\"users\":[\"" + userId + "\"]}")
+            .body("""
+                {
+                  "start": "20300411T000000",
+                  "end": "20300412T000000",
+                  "users": [
+                    "{userId}"
+                  ]
+                }
+                """
+                .replace("{userId}", userId))
         .when()
             .post("/calendars/freebusy")
         .then()
@@ -3236,7 +3275,20 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .header("Accept", "application/json, text/plain, */*")
             .header("Content-Type", "text/html; charset=UTF-8")
-            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read\":true}],\"remove\":[]}}")
+            .body("""
+                {
+                  "share": {
+                    "set": [
+                      {
+                        "dav:href": "mailto:{bobEmail}",
+                        "dav:read": true
+                      }
+                    ],
+                    "remove": []
+                  }
+                }
+                """
+                .replace("{bobEmail}", bob.email()))
         .when()
             .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
         .then()
@@ -3291,7 +3343,20 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .header("Accept", "application/json, text/plain, */*")
             .header("Content-Type", "text/html; charset=UTF-8")
-            .body("{\"share\":{\"set\":[{\"dav:href\":\"mailto:" + bob.email() + "\",\"dav:read-write\":true}],\"remove\":[]}}")
+            .body("""
+                {
+                  "share": {
+                    "set": [
+                      {
+                        "dav:href": "mailto:{bobEmail}",
+                        "dav:read-write": true
+                      }
+                    ],
+                    "remove": []
+                  }
+                }
+                """
+                .replace("{bobEmail}", bob.email()))
         .when()
             .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
         .then()
