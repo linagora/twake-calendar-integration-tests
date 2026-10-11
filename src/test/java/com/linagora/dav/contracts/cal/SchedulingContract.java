@@ -19,6 +19,8 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
+import static com.linagora.dav.TestUtil.awaitPresent;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -27,7 +29,6 @@ import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,7 +43,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
@@ -77,12 +77,7 @@ public abstract class SchedulingContract {
         Property.DTSTAMP
     };
 
-    private final ConditionFactory calmlyAwait = Awaitility.with()
-        .pollInterval(Duration.ofMillis(500))
-        .and()
-        .with()
-        .pollDelay(Duration.ofMillis(500))
-        .await();
+    private final ConditionFactory calmlyAwait = awaitEvery500Millis();
     private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     public abstract DockerTwakeCalendarExtension extension();
@@ -4969,15 +4964,11 @@ public abstract class SchedulingContract {
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
-        return awaitAtMost.until(() -> calDavClient.findFirstEventId(user),
-                Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected event id to be present"));
+        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstEventId(user));
     }
 
     private URI awaitCalendarObjectUriByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
-        return awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(user, calendarURL, eventUid),
-                Optional::isPresent)
-            .orElseThrow(() -> new AssertionError("Expected calendar object URI to be present for UID " + eventUid));
+        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstUserCalendarObjectUriByEventUid(user, calendarURL, eventUid));
     }
 
     private List<URI> calendarObjectUrisByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {

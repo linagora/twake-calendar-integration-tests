@@ -18,17 +18,16 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
@@ -40,12 +39,7 @@ import com.linagora.dav.OpenPaasUser;
 
 public abstract class CalDavResourceParticipationContract {
 
-    private final ConditionFactory awaitAtMost = Awaitility.with()
-        .pollInterval(Duration.ofMillis(500))
-        .and()
-        .with()
-        .pollDelay(Duration.ofMillis(500))
-        .await()
+    private final ConditionFactory awaitAtMost = awaitEvery500Millis()
         .atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;

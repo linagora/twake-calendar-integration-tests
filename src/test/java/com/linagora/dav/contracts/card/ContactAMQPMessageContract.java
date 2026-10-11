@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts.card;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 
 import java.io.IOException;
@@ -30,7 +31,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CardDavClient;
@@ -41,13 +41,7 @@ import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class ContactAMQPMessageContract {
 
-    private final ConditionFactory calmlyAwait = Awaitility.with()
-        .pollInterval(Duration.ofMillis(500))
-        .and()
-        .with()
-        .pollDelay(Duration.ofMillis(500))
-        .await();
-    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
+    private final ConditionFactory awaitAtMost = awaitEvery500Millis().atMost(30, TimeUnit.SECONDS);
 
     private CardDavClient cardDavClient;
 
