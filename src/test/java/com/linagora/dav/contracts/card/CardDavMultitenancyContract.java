@@ -49,12 +49,14 @@ import io.restassured.http.ContentType;
 public abstract class CardDavMultitenancyContract {
 
     private static final String SECOND_DOMAIN = "second-domain.org";
-    private static final byte[] VCARD = ("BEGIN:VCARD\n" +
-        "VERSION:3.0\n" +
-        "FN:Test Contact\n" +
-        "N:Contact;Test;;;\n" +
-        "UID:abcdef\n" +
-        "END:VCARD\n").getBytes(StandardCharsets.UTF_8);
+    private static final byte[] VCARD = """
+        BEGIN:VCARD
+        VERSION:3.0
+        FN:Test Contact
+        N:Contact;Test;;;
+        UID:abcdef
+        END:VCARD
+        """.getBytes(StandardCharsets.UTF_8);
     public static final String DOMAIN_ADDRESS_BOOK = "dab";
     public static final String DOMAIN_MEMBERS_BOOK = "domain-members";
     public static final String CONTACTS_BOOK = "contacts";

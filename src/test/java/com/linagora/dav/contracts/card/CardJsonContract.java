@@ -1399,13 +1399,15 @@ public abstract class CardJsonContract {
             .asString();
 
         assertThat(response)
-            .isEqualToNormalizingNewlines("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:John Doe\n" +
-                "N:Doe;John;;;\n" +
-                "EMAIL:john.doe@example.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n");
+            .isEqualToNormalizingNewlines("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:John Doe
+                N:Doe;John;;;
+                EMAIL:john.doe@example.com
+                UID:123456789
+                END:VCARD
+                """);
     }
 
     @Test
@@ -1415,13 +1417,15 @@ public abstract class CardJsonContract {
         given()
             .header("Authorization", testUser.impersonatedBasicAuth())
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1514,13 +1518,15 @@ public abstract class CardJsonContract {
         given()
             .header("Authorization", testUser.impersonatedBasicAuth())
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1562,13 +1568,15 @@ public abstract class CardJsonContract {
         given()
             .header("Authorization", testUser.impersonatedBasicAuth())
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1578,13 +1586,15 @@ public abstract class CardJsonContract {
             .header("Authorization", testUser.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .request("MOVE", "/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1625,13 +1635,15 @@ public abstract class CardJsonContract {
         given()
             .header("Authorization", testUser.impersonatedBasicAuth())
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1641,13 +1653,15 @@ public abstract class CardJsonContract {
             .header("Authorization", testUser.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + testUser.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .request("COPY", "/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1703,13 +1717,15 @@ public abstract class CardJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1757,13 +1773,15 @@ public abstract class CardJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1815,13 +1833,15 @@ public abstract class CardJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1882,13 +1902,15 @@ public abstract class CardJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
         .then()
@@ -1978,13 +2000,15 @@ public abstract class CardJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
         .then()
@@ -2074,13 +2098,15 @@ public abstract class CardJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .header("Destination", "/addressbooks/" + alice.id() + "/collected/abcdef.vcf")
             .contentType("text/vcard; charset=utf-8")
-            .body(("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Alexandre ZAPOLSKY\n" +
-                "N:ZAPOLSKY;Alexandre;;;\n" +
-                "EMAIL:zapo@lina.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Alexandre ZAPOLSKY
+                N:ZAPOLSKY;Alexandre;;;
+                EMAIL:zapo@lina.com
+                UID:123456789
+                END:VCARD
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/addressbooks/" + alice.id() + "/contacts/abcdef.vcf")
         .then()

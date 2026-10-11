@@ -576,7 +576,18 @@ public abstract class OpenPaaSAPIContract {
 
         String response = given()
             .headers("Authorization", "Basic YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=")
-            .body("{\"calendars\":[{\"userId\":\"" + adminId + "\",\"calendarId\":\"" + adminId + "\"}],\"query\":\"irrelevant\"}")
+            .body("""
+                {
+                  "calendars": [
+                    {
+                      "userId": "{adminId}",
+                      "calendarId": "{adminId}"
+                    }
+                  ],
+                  "query": "irrelevant"
+                }
+                """
+                .replace("{adminId}", adminId))
             .queryParam("limit", 30)
             .queryParam("offset", 0)
         .when()
@@ -615,13 +626,15 @@ public abstract class OpenPaaSAPIContract {
             .headers(headers -> headers.add("Authorization", OpenPaasUser.impersonatedBasicAuth("admin@open-paas.org")))
             .put()
             .uri("/addressbooks/" + adminId + "/contacts/abcdef.vcf")
-            .send(body("BEGIN:VCARD\n" +
-                "VERSION:3.0\n" +
-                "FN:Oliver Werk\n" +
-                "N:Oliver;Derk;;;\n" +
-                "EMAIL:oliver.derk@example.com\n" +
-                "UID:123456789\n" +
-                "END:VCARD\n"))
+            .send(body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Oliver Werk
+                N:Oliver;Derk;;;
+                EMAIL:oliver.derk@example.com
+                UID:123456789
+                END:VCARD
+                """))
             .response()
             .block()
             .status()

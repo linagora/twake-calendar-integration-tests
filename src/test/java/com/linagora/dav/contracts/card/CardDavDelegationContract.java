@@ -658,12 +658,14 @@ public abstract class CardDavDelegationContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .contentType("application/xml")
             .accept("application/xml")
-            .body("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
-                "        <d:propfind xmlns:d=\"DAV:\">" +
-                "          <d:prop>" +
-                "            <d:displayname/>" +
-                "          </d:prop>" +
-                "        </d:propfind>")
+            .body("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>
+                """)
         .when()
             .request("PROPFIND", "/addressbooks/" + alice.id())
         .then()

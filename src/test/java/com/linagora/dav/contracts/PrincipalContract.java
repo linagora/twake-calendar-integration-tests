@@ -61,10 +61,24 @@ public abstract class PrincipalContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>/principals/users/" + testUser.id() + "/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:current-user-principal>
+                          <d:href>/principals/users/{testUserId}/</d:href>
+                        </d:current-user-principal>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areSimilar();
     }
@@ -87,10 +101,30 @@ public abstract class PrincipalContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>/principals/users/" + testUser.id() + "/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:current-user-principal>
+                          <d:href>/principals/users/{testUserId}/</d:href>
+                        </d:current-user-principal>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                    <d:propstat>
+                      <d:prop>
+                        <d:displayname/>
+                      </d:prop>
+                      <d:status>HTTP/1.1 404 Not Found</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areSimilar();
     }
@@ -112,10 +146,24 @@ public abstract class PrincipalContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/principals/users/" + testUser.id() + "/</d:href><d:propstat><d:prop><card:addressbook-home-set><d:href>/addressbooks/" + testUser.id() + "/</d:href></card:addressbook-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/principals/users/{testUserId}/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <card:addressbook-home-set>
+                          <d:href>/addressbooks/{testUserId}/</d:href>
+                        </card:addressbook-home-set>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areSimilar();
     }
@@ -137,10 +185,24 @@ public abstract class PrincipalContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/principals/users/" + testUser.id() + "/</d:href><d:propstat><d:prop><cal:calendar-home-set><d:href>/calendars/" + testUser.id() + "/</d:href></cal:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/principals/users/{testUserId}/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <cal:calendar-home-set>
+                          <d:href>/calendars/{testUserId}/</d:href>
+                        </cal:calendar-home-set>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areSimilar();
     }

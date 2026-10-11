@@ -100,174 +100,182 @@ public abstract class CalDavContract {
         return outcome;
     };
 
-    public static final String ICS_1 = "BEGIN:VCALENDAR\r\n" +
-        "VERSION:2.0\r\n" +
-        "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
-        "CALSCALE:GREGORIAN\r\n" +
-        "BEGIN:VTIMEZONE\r\n" +
-        "TZID:Europe/Paris\r\n" +
-        "BEGIN:DAYLIGHT\r\n" +
-        "TZOFFSETFROM:+0100\r\n" +
-        "TZOFFSETTO:+0200\r\n" +
-        "TZNAME:CEST\r\n" +
-        "DTSTART:19700329T020000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
-        "END:DAYLIGHT\r\n" +
-        "BEGIN:STANDARD\r\n" +
-        "TZOFFSETFROM:+0200\r\n" +
-        "TZOFFSETTO:+0100\r\n" +
-        "TZNAME:CET\r\n" +
-        "DTSTART:19701025T030000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
-        "END:STANDARD\r\n" +
-        "END:VTIMEZONE\r\n" +
-        "BEGIN:VEVENT\r\n" +
-        "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
-        "TRANSP:OPAQUE\r\n" +
-        "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
-        "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
-        "CLASS:PUBLIC\r\n" +
-        "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
-        "SUMMARY:OW2con'25\r\n" +
-        "DESCRIPTION:Avoir un draft de prêt\r\n" +
-        "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
-        "ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j\r\n" +
-        " verrier@linagora.com\r\n" +
-        "DTSTAMP:20250205T170516Z\r\n" +
-        "SEQUENCE:0\r\n" +
-        "END:VEVENT\r\n" +
-        "END:VCALENDAR\r\n";
+    public static final String ICS_1 = """
+        BEGIN:VCALENDAR
+        VERSION:2.0
+        PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+        CALSCALE:GREGORIAN
+        BEGIN:VTIMEZONE
+        TZID:Europe/Paris
+        BEGIN:DAYLIGHT
+        TZOFFSETFROM:+0100
+        TZOFFSETTO:+0200
+        TZNAME:CEST
+        DTSTART:19700329T020000
+        RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+        END:DAYLIGHT
+        BEGIN:STANDARD
+        TZOFFSETFROM:+0200
+        TZOFFSETTO:+0100
+        TZNAME:CET
+        DTSTART:19701025T030000
+        RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+        END:STANDARD
+        END:VTIMEZONE
+        BEGIN:VEVENT
+        UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b
+        TRANSP:OPAQUE
+        DTSTART;TZID=Europe/Paris:20250214T110000
+        DTEND;TZID=Europe/Paris:20250214T114500
+        CLASS:PUBLIC
+        X-OPENPAAS-VIDEOCONFERENCE:
+        SUMMARY:OW2con'25
+        DESCRIPTION:Avoir un draft de prêt
+        LOCATION:https://jitsi.linagora.com/ow2
+        ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com
+        ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j
+         verrier@linagora.com
+        DTSTAMP:20250205T170516Z
+        SEQUENCE:0
+        END:VEVENT
+        END:VCALENDAR
+        """.replace("\n", "\r\n");
 
-    public static final String ICS_3_A = "BEGIN:VCALENDAR\r\n" +
-        "VERSION:2.0\r\n" +
-        "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
-        "CALSCALE:GREGORIAN\r\n" +
-        "BEGIN:VTIMEZONE\r\n" +
-        "TZID:Europe/Paris\r\n" +
-        "BEGIN:DAYLIGHT\r\n" +
-        "TZOFFSETFROM:+0100\r\n" +
-        "TZOFFSETTO:+0200\r\n" +
-        "TZNAME:CEST\r\n" +
-        "DTSTART:19700329T020000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
-        "END:DAYLIGHT\r\n" +
-        "BEGIN:STANDARD\r\n" +
-        "TZOFFSETFROM:+0200\r\n" +
-        "TZOFFSETTO:+0100\r\n" +
-        "TZNAME:CET\r\n" +
-        "DTSTART:19701025T030000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
-        "END:STANDARD\r\n" +
-        "END:VTIMEZONE\r\n" +
-        "BEGIN:VEVENT\r\n" +
-        "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
-        "TRANSP:OPAQUE\r\n" +
-        "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
-        "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
-        "CLASS:PUBLIC\r\n" +
-        "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
-        "SUMMARY:OW2con'25\r\n" +
-        "DESCRIPTION:Avoir un draft de prêt\r\n" +
-        "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
-        "DTSTAMP:20250205T170516Z\r\n" +
-        "SEQUENCE:0\r\n" +
-        "END:VEVENT\r\n" +
-        "END:VCALENDAR\r\n";
+    public static final String ICS_3_A = """
+        BEGIN:VCALENDAR
+        VERSION:2.0
+        PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+        CALSCALE:GREGORIAN
+        BEGIN:VTIMEZONE
+        TZID:Europe/Paris
+        BEGIN:DAYLIGHT
+        TZOFFSETFROM:+0100
+        TZOFFSETTO:+0200
+        TZNAME:CEST
+        DTSTART:19700329T020000
+        RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+        END:DAYLIGHT
+        BEGIN:STANDARD
+        TZOFFSETFROM:+0200
+        TZOFFSETTO:+0100
+        TZNAME:CET
+        DTSTART:19701025T030000
+        RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+        END:STANDARD
+        END:VTIMEZONE
+        BEGIN:VEVENT
+        UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b
+        TRANSP:OPAQUE
+        DTSTART;TZID=Europe/Paris:20250214T110000
+        DTEND;TZID=Europe/Paris:20250214T114500
+        CLASS:PUBLIC
+        X-OPENPAAS-VIDEOCONFERENCE:
+        SUMMARY:OW2con'25
+        DESCRIPTION:Avoir un draft de prêt
+        LOCATION:https://jitsi.linagora.com/ow2
+        DTSTAMP:20250205T170516Z
+        SEQUENCE:0
+        END:VEVENT
+        END:VCALENDAR
+        """.replace("\n", "\r\n");
 
-    public static final String ICS_3_B = "BEGIN:VCALENDAR\r\n" +
-        "VERSION:2.0\r\n" +
-        "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
-        "CALSCALE:GREGORIAN\r\n" +
-        "BEGIN:VTIMEZONE\r\n" +
-        "TZID:Europe/Paris\r\n" +
-        "BEGIN:DAYLIGHT\r\n" +
-        "TZOFFSETFROM:+0100\r\n" +
-        "TZOFFSETTO:+0200\r\n" +
-        "TZNAME:CEST\r\n" +
-        "DTSTART:19700329T020000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
-        "END:DAYLIGHT\r\n" +
-        "BEGIN:STANDARD\r\n" +
-        "TZOFFSETFROM:+0200\r\n" +
-        "TZOFFSETTO:+0100\r\n" +
-        "TZNAME:CET\r\n" +
-        "DTSTART:19701025T030000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
-        "END:STANDARD\r\n" +
-        "END:VTIMEZONE\r\n" +
-        "BEGIN:VEVENT\r\n" +
-        "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
-        "TRANSP:OPAQUE\r\n" +
-        "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
-        "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
-        "CLASS:PUBLIC\r\n" +
-        "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
-        "SUMMARY:OW2con'25\r\n" +
-        "DESCRIPTION:Avoir un draft de prêt\r\n" +
-        "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
-        "ORGANIZER;CN=Julie VERRIER:mailto:[REPLACE]\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com\r\n" +
-        "DTSTAMP:20250205T170516Z\r\n" +
-        "SEQUENCE:0\r\n" +
-        "END:VEVENT\r\n" +
-        "END:VCALENDAR\r\n";
+    public static final String ICS_3_B = """
+        BEGIN:VCALENDAR
+        VERSION:2.0
+        PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+        CALSCALE:GREGORIAN
+        BEGIN:VTIMEZONE
+        TZID:Europe/Paris
+        BEGIN:DAYLIGHT
+        TZOFFSETFROM:+0100
+        TZOFFSETTO:+0200
+        TZNAME:CEST
+        DTSTART:19700329T020000
+        RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+        END:DAYLIGHT
+        BEGIN:STANDARD
+        TZOFFSETFROM:+0200
+        TZOFFSETTO:+0100
+        TZNAME:CET
+        DTSTART:19701025T030000
+        RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+        END:STANDARD
+        END:VTIMEZONE
+        BEGIN:VEVENT
+        UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b
+        TRANSP:OPAQUE
+        DTSTART;TZID=Europe/Paris:20250214T110000
+        DTEND;TZID=Europe/Paris:20250214T114500
+        CLASS:PUBLIC
+        X-OPENPAAS-VIDEOCONFERENCE:
+        SUMMARY:OW2con'25
+        DESCRIPTION:Avoir un draft de prêt
+        LOCATION:https://jitsi.linagora.com/ow2
+        ORGANIZER;CN=Julie VERRIER:mailto:[REPLACE]
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com
+        DTSTAMP:20250205T170516Z
+        SEQUENCE:0
+        END:VEVENT
+        END:VCALENDAR
+        """.replace("\n", "\r\n");
 
-    public static final String ICS_2 = "BEGIN:VCALENDAR\r\n" +
-        "VERSION:2.0\r\n" +
-        "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
-        "CALSCALE:GREGORIAN\r\n" +
-        "BEGIN:VTIMEZONE\r\n" +
-        "TZID:Europe/Paris\r\n" +
-        "BEGIN:DAYLIGHT\r\n" +
-        "TZOFFSETFROM:+0100\r\n" +
-        "TZOFFSETTO:+0200\r\n" +
-        "TZNAME:CEST\r\n" +
-        "DTSTART:19700329T020000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
-        "END:DAYLIGHT\r\n" +
-        "BEGIN:STANDARD\r\n" +
-        "TZOFFSETFROM:+0200\r\n" +
-        "TZOFFSETTO:+0100\r\n" +
-        "TZNAME:CET\r\n" +
-        "DTSTART:19701025T030000\r\n" +
-        "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
-        "END:STANDARD\r\n" +
-        "END:VTIMEZONE\r\n" +
-        "BEGIN:VEVENT\r\n" +
-        "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
-        "TRANSP:OPAQUE\r\n" +
-        "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
-        "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
-        "CLASS:PUBLIC\r\n" +
-        "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
-        "SUMMARY:OW2con'25\r\n" +
-        "DESCRIPTION:Avoir un draft de prêt\r\n" +
-        "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
-        "ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL\r\n" +
-        " ;CN=Benoît TELLIER:mailto:btellier@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-        " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com\r\n" +
-        "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j\r\n" +
-        " verrier@linagora.com\r\n" +
-        "DTSTAMP:20250205T170516Z\r\n" +
-        "SEQUENCE:0\r\n" +
-        "END:VEVENT\r\n" +
-        "END:VCALENDAR\r\n";
+    public static final String ICS_2 = """
+        BEGIN:VCALENDAR
+        VERSION:2.0
+        PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+        CALSCALE:GREGORIAN
+        BEGIN:VTIMEZONE
+        TZID:Europe/Paris
+        BEGIN:DAYLIGHT
+        TZOFFSETFROM:+0100
+        TZOFFSETTO:+0200
+        TZNAME:CEST
+        DTSTART:19700329T020000
+        RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+        END:DAYLIGHT
+        BEGIN:STANDARD
+        TZOFFSETFROM:+0200
+        TZOFFSETTO:+0100
+        TZNAME:CET
+        DTSTART:19701025T030000
+        RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+        END:STANDARD
+        END:VTIMEZONE
+        BEGIN:VEVENT
+        UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b
+        TRANSP:OPAQUE
+        DTSTART;TZID=Europe/Paris:20250214T110000
+        DTEND;TZID=Europe/Paris:20250214T114500
+        CLASS:PUBLIC
+        X-OPENPAAS-VIDEOCONFERENCE:
+        SUMMARY:OW2con'25
+        DESCRIPTION:Avoir un draft de prêt
+        LOCATION:https://jitsi.linagora.com/ow2
+        ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com
+        ATTENDEE;PARTSTAT=ACCEPTED;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL
+         ;CN=Benoît TELLIER:mailto:btellier@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com
+        ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+         DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com
+        ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j
+         verrier@linagora.com
+        DTSTAMP:20250205T170516Z
+        SEQUENCE:0
+        END:VEVENT
+        END:VCALENDAR
+        """.replace("\n", "\r\n");
 
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
@@ -321,13 +329,15 @@ public abstract class CalDavContract {
     @Test
     void proppatchShouldUpdateDisplayName() throws Exception {
         given(authenticatedRequest)
-            .body(("<d:propertyupdate xmlns:d=\"DAV:\">" +
-                "          <d:set>" +
-                "            <d:prop>" +
-                "              <d:displayname>New Calendar Name</d:displayname>" +
-                "            </d:prop>" +
-                "          </d:set>" +
-                "        </d:propertyupdate>").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>New Calendar Name</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:propertyupdate>
+                """.getBytes(StandardCharsets.UTF_8))
         .when()
             .request("PROPPATCH", "/calendars/" + testUser.id())
         .then()
@@ -362,10 +372,35 @@ public abstract class CalDavContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><cal:calendar/></d:resourcetype><cs:getctag>http://sabre.io/ns/sync/1</cs:getctag><s:sync-token>1</s:sync-token><cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set><cal:schedule-calendar-transp><cal:opaque/></cal:schedule-calendar-transp><d:displayname>#default</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/calendars/{testUserId}/{testUserId}/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:resourcetype>
+                          <d:collection/>
+                          <cal:calendar/>
+                        </d:resourcetype>
+                        <cs:getctag>http://sabre.io/ns/sync/1</cs:getctag>
+                        <s:sync-token>1</s:sync-token>
+                        <cal:supported-calendar-component-set>
+                          <cal:comp name="VEVENT"/>
+                          <cal:comp name="VTODO"/>
+                        </cal:supported-calendar-component-set>
+                        <cal:schedule-calendar-transp>
+                          <cal:opaque/>
+                        </cal:schedule-calendar-transp>
+                        <d:displayname>#default</d:displayname>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areIdentical();
     }
@@ -535,10 +570,35 @@ public abstract class CalDavContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><cal:calendar/></d:resourcetype><cs:getctag>http://sabre.io/ns/sync/3</cs:getctag><s:sync-token>3</s:sync-token><cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set><cal:schedule-calendar-transp><cal:opaque/></cal:schedule-calendar-transp><d:displayname>#default</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/calendars/{testUserId}/{testUserId}/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:resourcetype>
+                          <d:collection/>
+                          <cal:calendar/>
+                        </d:resourcetype>
+                        <cs:getctag>http://sabre.io/ns/sync/3</cs:getctag>
+                        <s:sync-token>3</s:sync-token>
+                        <cal:supported-calendar-component-set>
+                          <cal:comp name="VEVENT"/>
+                          <cal:comp name="VTODO"/>
+                        </cal:supported-calendar-component-set>
+                        <cal:schedule-calendar-transp>
+                          <cal:opaque/>
+                        </cal:schedule-calendar-transp>
+                        <d:displayname>#default</d:displayname>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(DIFFERENCE_EVALUATOR)
             .areSimilar();
@@ -890,11 +950,13 @@ public abstract class CalDavContract {
     void canReportSyncTokenInitialSync() {
         String responseBody = given(authenticatedRequest)
             .header("Depth", "0")
-            .body("<d:propfind xmlns:d=\"DAV:\" xmlns:cs=\"http://calendarserver.org/ns/\">" +
-                "  <d:prop>\n" +
-                "     <d:sync-token />" +
-                "  </d:prop>" +
-                "</d:propfind>")
+            .body("""
+                <d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+                  <d:prop>
+                    <d:sync-token/>
+                  </d:prop>
+                </d:propfind>
+                """)
         .when()
             .request("PROPFIND", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
@@ -902,10 +964,22 @@ public abstract class CalDavContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
-                "<d:response><d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/</d:href><d:propstat><d:prop><d:sync-token>http://sabre.io/ns/sync/1</d:sync-token></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/calendars/{testUserId}/{testUserId}/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areSimilar();
     }
@@ -922,14 +996,16 @@ public abstract class CalDavContract {
 
         String responseBody = given(authenticatedRequest)
             .header("Depth", "0")
-            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
-                "<d:sync-collection xmlns:d=\"DAV:\">" +
-                "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>" +
-                "  <d:sync-level>1</d:sync-level>" +
-                "  <d:prop>" +
-                "    <d:getetag/>" +
-                "  </d:prop>" +
-                "</d:sync-collection>")
+            .body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)
         .when()
             .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
@@ -937,19 +1013,23 @@ public abstract class CalDavContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>\n" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                " <d:response>\n" +
-                "  <d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics</d:href>\n" +
-                "  <d:propstat>\n" +
-                "   <d:prop>\n" +
-                "    <d:getetag>&quot;8c97fb06c60212c47d46a9c8c0f625ef&quot;</d:getetag>\n" +
-                "   </d:prop>\n" +
-                "   <d:status>HTTP/1.1 200 OK</d:status>\n" +
-                "  </d:propstat>\n" +
-                " </d:response>\n" +
-                " <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>\n" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/calendars/{testUserId}/{testUserId}/abcd.ics</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:getetag>"8c97fb06c60212c47d46a9c8c0f625ef"</d:getetag>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                  <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .areSimilar();
     }
@@ -1003,14 +1083,16 @@ public abstract class CalDavContract {
 
         String responseBody = given(authenticatedRequest)
             .header("Depth", "0")
-            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
-                "<d:sync-collection xmlns:d=\"DAV:\">" +
-                "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>" +
-                "  <d:sync-level>1</d:sync-level>" +
-                "  <d:prop>" +
-                "    <d:getetag/>" +
-                "  </d:prop>" +
-                "</d:sync-collection>")
+            .body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)
         .when()
             .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
@@ -1018,18 +1100,21 @@ public abstract class CalDavContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>\n" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                " <d:response>\n" +
-                "  <d:status>HTTP/1.1 404 Not Found</d:status>\n" +
-                "  <d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics</d:href>\n" +
-                "  <d:propstat>\n" +
-                "   <d:prop/>\n" +
-                "   <d:status>HTTP/1.1 418 I'm a teapot</d:status>\n" +
-                "  </d:propstat>\n" +
-                " </d:response>\n" +
-                " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:status>HTTP/1.1 404 Not Found</d:status>
+                    <d:href>/calendars/{testUserId}/{testUserId}/abcd.ics</d:href>
+                    <d:propstat>
+                      <d:prop/>
+                      <d:status>HTTP/1.1 418 I'm a teapot</d:status>
+                    </d:propstat>
+                  </d:response>
+                  <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
             .ignoreChildNodesOrder()
             .ignoreWhitespace()
             .withNodeMatcher(new DefaultNodeMatcher(ElementSelectors.byNameAndAllAttributes))
@@ -1057,14 +1142,16 @@ public abstract class CalDavContract {
 
         String responseBody = given(authenticatedRequest)
             .header("Depth", "0")
-            .body("<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
-                "<d:sync-collection xmlns:d=\"DAV:\">" +
-                "  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>" +
-                "  <d:sync-level>1</d:sync-level>" +
-                "  <d:prop>" +
-                "    <d:getetag/>" +
-                "  </d:prop>" +
-                "</d:sync-collection>")
+            .body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """)
         .when()
             .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
@@ -1072,19 +1159,23 @@ public abstract class CalDavContract {
             .extract().asString();
 
         XmlAssert.assertThat(responseBody)
-            .and("<?xml version=\"1.0\"?>\n" +
-                "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n" +
-                " <d:response>\n" +
-                "  <d:href>/calendars/" + testUser.id() + "/" + testUser.id() + "/abcd.ics</d:href>\n" +
-                "  <d:propstat>\n" +
-                "   <d:prop>\n" +
-                "    <d:getetag>&quot;7ad7ef37853526213d24cb72d76bea6d&quot;</d:getetag>\n" +
-                "   </d:prop>\n" +
-                "   <d:status>HTTP/1.1 200 OK</d:status>\n" +
-                "  </d:propstat>\n" +
-                " </d:response>\n" +
-                " <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>\n" +
-                "</d:multistatus>")
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/calendars/{testUserId}/{testUserId}/abcd.ics</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:getetag>"7ad7ef37853526213d24cb72d76bea6d"</d:getetag>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                  <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>
+                </d:multistatus>
+                """
+                .replace("{testUserId}", testUser.id()))
+            .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(DIFFERENCE_EVALUATOR)
             .areSimilar();
@@ -1108,52 +1199,54 @@ public abstract class CalDavContract {
             .statusCode(200)
             .extract().asString();
 
-        assertThatCalendar(responseBody).isEqualTo("BEGIN:VCALENDAR\n" +
-            "VERSION:2.0\n" +
-            "CALSCALE:GREGORIAN\n" +
-            "X-WR-CALNAME:#default\n" +
-            "BEGIN:VTIMEZONE\n" +
-            "TZID:Europe/Paris\n" +
-            "BEGIN:DAYLIGHT\n" +
-            "TZOFFSETFROM:+0100\n" +
-            "TZOFFSETTO:+0200\n" +
-            "TZNAME:CEST\n" +
-            "DTSTART:19700329T020000\n" +
-            "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\n" +
-            "END:DAYLIGHT\n" +
-            "BEGIN:STANDARD\n" +
-            "TZOFFSETFROM:+0200\n" +
-            "TZOFFSETTO:+0100\n" +
-            "TZNAME:CET\n" +
-            "DTSTART:19701025T030000\n" +
-            "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\n" +
-            "END:STANDARD\n" +
-            "END:VTIMEZONE\n" +
-            "BEGIN:VEVENT\n" +
-            "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\n" +
-            "TRANSP:OPAQUE\n" +
-            "DTSTART;TZID=Europe/Paris:20250214T110000\n" +
-            "DTEND;TZID=Europe/Paris:20250214T114500\n" +
-            "CLASS:PUBLIC\n" +
-            "X-OPENPAAS-VIDEOCONFERENCE:\n" +
-            "SUMMARY:OW2con'25\n" +
-            "DESCRIPTION:Avoir un draft de prêt\n" +
-            "LOCATION:https://jitsi.linagora.com/ow2\n" +
-            "ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com\n" +
-            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
-            " DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com\n" +
-            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
-            " DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com\n" +
-            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
-            " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com\n" +
-            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\n" +
-            " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com\n" +
-            "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j\n" +
-            " verrier@linagora.com\n" +
-            "DTSTAMP:20250205T170516Z\n" +
-            "SEQUENCE:0\n" +
-            "END:VEVENT\n" +
-            "END:VCALENDAR\n");
+        assertThatCalendar(responseBody).isEqualTo("""
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            CALSCALE:GREGORIAN
+            X-WR-CALNAME:#default
+            BEGIN:VTIMEZONE
+            TZID:Europe/Paris
+            BEGIN:DAYLIGHT
+            TZOFFSETFROM:+0100
+            TZOFFSETTO:+0200
+            TZNAME:CEST
+            DTSTART:19700329T020000
+            RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+            END:DAYLIGHT
+            BEGIN:STANDARD
+            TZOFFSETFROM:+0200
+            TZOFFSETTO:+0100
+            TZNAME:CET
+            DTSTART:19701025T030000
+            RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+            END:STANDARD
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b
+            TRANSP:OPAQUE
+            DTSTART;TZID=Europe/Paris:20250214T110000
+            DTEND;TZID=Europe/Paris:20250214T114500
+            CLASS:PUBLIC
+            X-OPENPAAS-VIDEOCONFERENCE:
+            SUMMARY:OW2con'25
+            DESCRIPTION:Avoir un draft de prêt
+            LOCATION:https://jitsi.linagora.com/ow2
+            ORGANIZER;CN=Julie VERRIER:mailto:jverrier@linagora.com
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+             DUAL;CN=Alexandre PUJOL:mailto:apujol@linagora.com
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+             DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+             DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+             DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com
+            ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j
+             verrier@linagora.com
+            DTSTAMP:20250205T170516Z
+            SEQUENCE:0
+            END:VEVENT
+            END:VCALENDAR
+            """);
     }
 
     @Test
@@ -1165,52 +1258,56 @@ public abstract class CalDavContract {
         given()
             .header("Authorization", testUser1.impersonatedBasicAuth())
             .contentType("text/calendar; charset=utf-8")
-            .body(("BEGIN:VCALENDAR\r\n" +
-                "VERSION:2.0\r\n" +
-                "PRODID:-//Sabre//Sabre VObject 4.1.3//EN\r\n" +
-                "CALSCALE:GREGORIAN\r\n" +
-                "BEGIN:VTIMEZONE\r\n" +
-                "TZID:Europe/Paris\r\n" +
-                "BEGIN:DAYLIGHT\r\n" +
-                "TZOFFSETFROM:+0100\r\n" +
-                "TZOFFSETTO:+0200\r\n" +
-                "TZNAME:CEST\r\n" +
-                "DTSTART:19700329T020000\r\n" +
-                "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n" +
-                "END:DAYLIGHT\r\n" +
-                "BEGIN:STANDARD\r\n" +
-                "TZOFFSETFROM:+0200\r\n" +
-                "TZOFFSETTO:+0100\r\n" +
-                "TZNAME:CET\r\n" +
-                "DTSTART:19701025T030000\r\n" +
-                "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n" +
-                "END:STANDARD\r\n" +
-                "END:VTIMEZONE\r\n" +
-                "BEGIN:VEVENT\r\n" +
-                "UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b\r\n" +
-                "TRANSP:OPAQUE\r\n" +
-                "DTSTART;TZID=Europe/Paris:20250214T110000\r\n" +
-                "DTEND;TZID=Europe/Paris:20250214T114500\r\n" +
-                "CLASS:PUBLIC\r\n" +
-                "X-OPENPAAS-VIDEOCONFERENCE:\r\n" +
-                "SUMMARY:OW2con'25\r\n" +
-                "DESCRIPTION:Avoir un draft de prêt\r\n" +
-                "LOCATION:https://jitsi.linagora.com/ow2\r\n" +
-                "ORGANIZER;CN=Julie VERRIER:mailto:" + testUser1.email() + "\r\n" +
-                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-                " DUAL;CN=AP:mailto:" + testUser2.email() + "\r\n" +
-                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-                " DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com\r\n" +
-                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-                " DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com\r\n" +
-                "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI\r\n" +
-                " DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com\r\n" +
-                "ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j\r\n" +
-                " verrier@linagora.com\r\n" +
-                "DTSTAMP:20250205T170516Z\r\n" +
-                "SEQUENCE:0\r\n" +
-                "END:VEVENT\r\n" +
-                "END:VCALENDAR\r\n").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+                CALSCALE:GREGORIAN
+                BEGIN:VTIMEZONE
+                TZID:Europe/Paris
+                BEGIN:DAYLIGHT
+                TZOFFSETFROM:+0100
+                TZOFFSETTO:+0200
+                TZNAME:CEST
+                DTSTART:19700329T020000
+                RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+                END:DAYLIGHT
+                BEGIN:STANDARD
+                TZOFFSETFROM:+0200
+                TZOFFSETTO:+0100
+                TZNAME:CET
+                DTSTART:19701025T030000
+                RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+                END:STANDARD
+                END:VTIMEZONE
+                BEGIN:VEVENT
+                UID:47d90176-b477-4fe1-91b3-a36ec0cfc67b
+                TRANSP:OPAQUE
+                DTSTART;TZID=Europe/Paris:20250214T110000
+                DTEND;TZID=Europe/Paris:20250214T114500
+                CLASS:PUBLIC
+                X-OPENPAAS-VIDEOCONFERENCE:
+                SUMMARY:OW2con'25
+                DESCRIPTION:Avoir un draft de prêt
+                LOCATION:https://jitsi.linagora.com/ow2
+                ORGANIZER;CN=Julie VERRIER:mailto:{testUser1Email}
+                ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+                 DUAL;CN=AP:mailto:{testUser2Email}
+                ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+                 DUAL;CN=Benoît TELLIER:mailto:btellier@linagora.com
+                ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+                 DUAL;CN=Xavier GUIMARD:mailto:xguimard@linagora.com
+                ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVI
+                 DUAL;CN=Frédéric HERMELIN:mailto:fhermelin@linagora.com
+                ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:j
+                 verrier@linagora.com
+                DTSTAMP:20250205T170516Z
+                SEQUENCE:0
+                END:VEVENT
+                END:VCALENDAR
+                """.replace("\n", "\r\n")
+                .replace("{testUser1Email}", testUser1.email())
+                .replace("{testUser2Email}", testUser2.email()).getBytes(StandardCharsets.UTF_8))
         .when()
             .put("/calendars/" + testUser1.id()  + "/" + testUser1.id() + "/abcd.ics")
         .then()
@@ -1853,21 +1950,23 @@ public abstract class CalDavContract {
 
         String responseBody = given(authenticatedRequest)
             .header("Depth", "1")
-            .body("<c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">" +
-                "    <d:prop>" +
-                "        <d:getetag />" +
-                "    <c:calendar-data>\n" +
-                "      <c:expand start=\"20250201T000000Z\" end=\"20250215T235959Z\"/>\n" +
-                "    </c:calendar-data>" +
-                "    </d:prop>" +
-                "    <c:filter>" +
-                "    <c:comp-filter name=\"VCALENDAR\">" +
-                "      <c:comp-filter name=\"VEVENT\">" +
-                "        <c:time-range start=\"20250201T000000Z\" end=\"20250215T235959Z\"/>" +
-                "      </c:comp-filter>" +
-                "    </c:comp-filter>" +
-                "    </c:filter>" +
-                "</c:calendar-query>")
+            .body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:prop>
+                    <d:getetag/>
+                    <c:calendar-data>
+                      <c:expand start="20250201T000000Z" end="20250215T235959Z"/>
+                    </c:calendar-data>
+                  </d:prop>
+                  <c:filter>
+                    <c:comp-filter name="VCALENDAR">
+                      <c:comp-filter name="VEVENT">
+                        <c:time-range start="20250201T000000Z" end="20250215T235959Z"/>
+                      </c:comp-filter>
+                    </c:comp-filter>
+                  </c:filter>
+                </c:calendar-query>
+                """)
         .when()
             .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()

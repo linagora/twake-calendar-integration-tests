@@ -534,7 +534,16 @@ public abstract class CalDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .contentType("application/json")
             .accept("application/json")
-            .body(("{\"start\":\"20300411T020000\",\"end\":\"20300411T050000\",\"users\":[\"" + john.id() + "\"]}").getBytes(StandardCharsets.UTF_8))
+            .body("""
+                {
+                  "start": "20300411T020000",
+                  "end": "20300411T050000",
+                  "users": [
+                    "{johnId}"
+                  ]
+                }
+                """
+                .replace("{johnId}", john.id()).getBytes(StandardCharsets.UTF_8))
         .when()
             .post("/calendars/freebusy")
         .then()
