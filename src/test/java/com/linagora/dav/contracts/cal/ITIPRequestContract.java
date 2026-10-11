@@ -19,15 +19,14 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.cal.CalendarSharingContract.MAPPER;
+import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -36,7 +35,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +51,6 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarEventData;
@@ -61,8 +58,8 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
 import com.linagora.dav.XMLUtil;
 
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.RestAssured;
+import io.restassured.response.Response;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Parameter;
 import net.fortuna.ical4j.model.Property;
@@ -89,6 +86,12 @@ public abstract class ITIPRequestContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
+        RestAssured.requestSpecification = extension().davRequestSpecification()
+            .contentType("application/xml")
+            .accept("application/xml");
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+
         calDavClient = new CalDavClient(extension().davHttpClient());
         extension().getDockerTwakeCalendarSetupSingleton()
             .getTwakeCalendarProvisioningService()
@@ -1294,17 +1297,14 @@ public abstract class ITIPRequestContract {
 
         String ownerDefaultCalendarPath = "/calendars/" + owner.id() + "/" + owner.id();
 
-        int status = executeNoContent(extension().davHttpClient()
-            .headers(headers -> headers
-                .add(HttpHeaderNames.ACCEPT, "application/json")
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
-            .request(HttpMethod.valueOf("POST"))
-            .uri("/itip")
-            .send(body(payload)));
-
-        assertThat(status)
-            .as("Unauthenticated ITIP request to owner calendar should be rejected")
-            .isEqualTo(401);
+        given()
+            .contentType("application/json")
+            .accept("application/json")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post("/itip")
+        .then()
+            .statusCode(401);
         Instant windowStart = Instant.parse("2030-01-01T00:00:00Z");
         Instant windowEnd = Instant.parse("2031-01-01T00:00:00Z");
 
@@ -1353,11 +1353,11 @@ public abstract class ITIPRequestContract {
         calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, initialIcs);
 
         // Ensure event is present initially
-        DavResponse response = calDavClient.findEventsByTime(bob,
+        Response response = calDavClient.findEventsByTime(bob,
             CalendarURL.from(bob.id()),
             "20250110T000000",
             "20251210T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -1405,11 +1405,11 @@ public abstract class ITIPRequestContract {
 
         // THEN Bob’s default calendar should reflect cancellation of the specific instance and keep the others
         awaitAtMost.untilAsserted(() -> {
-            DavResponse response2 = calDavClient.findEventsByTime(bob,
+            Response response2 = calDavClient.findEventsByTime(bob,
                 CalendarURL.from(bob.id()),
                 "20250110T000000",
                 "20251210T000000");
-            List<JsonCalendarEventData> result2 = JsonCalendarEventData.from(response2.body());
+            List<JsonCalendarEventData> result2 = JsonCalendarEventData.from(response2.asString());
 
             assertThat(result2).hasSize(2);
             assertThat(result2.get(0).uid()).isEqualTo(eventUid);
@@ -1458,11 +1458,11 @@ public abstract class ITIPRequestContract {
         calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, initialIcs);
 
         // Ensure event is present initially
-        DavResponse response = calDavClient.findEventsByTime(bob,
+        Response response = calDavClient.findEventsByTime(bob,
             CalendarURL.from(bob.id()),
             "20250110T000000",
             "20251210T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(4);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -1527,11 +1527,11 @@ public abstract class ITIPRequestContract {
 
         // THEN Bob’s default calendar should reflect cancellation of the specific instances and keep the others
         awaitAtMost.untilAsserted(() -> {
-            DavResponse response2 = calDavClient.findEventsByTime(bob,
+            Response response2 = calDavClient.findEventsByTime(bob,
                 CalendarURL.from(bob.id()),
                 "20250110T000000",
                 "20251210T000000");
-            List<JsonCalendarEventData> result2 = JsonCalendarEventData.from(response2.body());
+            List<JsonCalendarEventData> result2 = JsonCalendarEventData.from(response2.asString());
 
             assertThat(result2).hasSize(2);
             assertThat(result2.get(0).uid()).isEqualTo(eventUid);
@@ -1929,11 +1929,14 @@ public abstract class ITIPRequestContract {
         // WHEN: Cedric checks inbox again after Bob’s modification
         // THEN Cedric should not receive any new iTIP messages
         Thread.sleep(1000);
-        Supplier<DavResponse> cedricInboxPropfind = () -> execute(extension().davHttpClient()
-            .headers(cedric::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(cedricInbox));
-        List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(cedricInboxPropfind.get().body());
+        String cedricInboxResponseBody = given()
+            .header("Authorization", cedric.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", cedricInbox)
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(cedricInboxResponseBody);
         assertThat(hrefs)
             .as("No new ITIP should be received by uninvited attendee when organizer edits unrelated instance")
             .hasSize(1);
@@ -2469,7 +2472,7 @@ public abstract class ITIPRequestContract {
     }
 
     private List<String> awaitCalendarEntries(OpenPaasUser attendee, String collectionPath, int expectedCount) {
-        return TestUtil.awaitCalendarEntries(extension().davHttpClient(), attendee, collectionPath, expectedCount);
+        return TestUtil.awaitCalendarEntries(extension().davRequestSpecification(), attendee, collectionPath, expectedCount);
     }
 
     @Test
@@ -2537,11 +2540,11 @@ public abstract class ITIPRequestContract {
             .contains("SUMMARY:Test from yahoo calendar");
 
         // AND verify that REPORT API can still list the event normally
-        DavResponse reportResponse = calDavClient.findEventsByTime(bob,
+        Response reportResponse = calDavClient.findEventsByTime(bob,
             CalendarURL.from(bob.id()),
             "20250101T000000",
             "20251231T000000");
-        List<JsonCalendarEventData> reportEvents = JsonCalendarEventData.from(reportResponse.body());
+        List<JsonCalendarEventData> reportEvents = JsonCalendarEventData.from(reportResponse.asString());
 
         assertThat(reportEvents)
             .as("REPORT API should return the event even when ICS has duplicated STATUS")

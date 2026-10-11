@@ -37,13 +37,11 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
@@ -251,12 +249,8 @@ public abstract class TeamCalendarRawCalDavContract {
     void setUp() {
         RestAssured.reset();
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification();
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
-                .getServiceUri(DockerService.SABRE_DAV, "http")
-                .toString())
-            .build();
 
         // Alice (read-write) and Bob (read-only) are team calendar members, Charlie is not
         alice = dockerExtension().newTestUser();

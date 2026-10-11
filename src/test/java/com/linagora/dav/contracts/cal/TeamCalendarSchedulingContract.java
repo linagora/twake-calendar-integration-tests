@@ -47,7 +47,6 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
@@ -55,7 +54,6 @@ import com.linagora.dav.TestUtil;
 import com.linagora.dav.TwakeCalendarProvisioningService.TeamCalendarRole;
 
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.ComponentContainer;
 import net.fortuna.ical4j.model.Property;
@@ -85,12 +83,8 @@ public abstract class TeamCalendarSchedulingContract {
     void setUp() {
         RestAssured.reset();
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification();
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
-                .getServiceUri(DockerService.SABRE_DAV, "http")
-                .toString())
-            .build();
         bobMember = dockerExtension().newTestUser();
         aliceMember = dockerExtension().newTestUser();
         nonMember = dockerExtension().newTestUser();

@@ -18,11 +18,11 @@
 
 package com.linagora.dav.contracts;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.util.List;
 import java.util.Map;
@@ -32,14 +32,12 @@ import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.XMLUtil;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
 
 public abstract class PrincipalMultitenancyContract {
@@ -54,12 +52,15 @@ public abstract class PrincipalMultitenancyContract {
 
     @BeforeEach
     void setUp() {
-        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+        RestAssured.reset();
         dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
         bob = dockerExtension().newTestUser();
         alice = dockerExtension().newTestUser();
         john = dockerExtension().twakeCalendarProvisioningService()
             .createUser(UUID.randomUUID().toString(), SECOND_DOMAIN).block();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType("application/xml");
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
     @Test
@@ -67,13 +68,7 @@ public abstract class PrincipalMultitenancyContract {
         // Given Bob is authenticated in the default domain, Alice is in the same domain, and John is in another domain
         record PrincipalSearch(String property, String match) { }
 
-        Function<PrincipalSearch, DavResponse> principalPropertySearch = search -> execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/principals/users")
-            .send(body("""
+        Function<PrincipalSearch, String> principalPropertySearchBody = search -> """
                 <d:principal-property-search xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
                   <d:property-search>
                     <d:prop>
@@ -85,32 +80,53 @@ public abstract class PrincipalMultitenancyContract {
                     <d:displayname/>
                     <s:email-address/>
                   </d:prop>
-                </d:principal-property-search>""".formatted(search.property(), search.match()))));
+                </d:principal-property-search>""".formatted(search.property(), search.match());
 
         // When Bob searches users principals by Alice's same-domain email
-        DavResponse aliceEmailSearchResponse = principalPropertySearch.apply(new PrincipalSearch("<s:email-address/>", alice.email()));
+        String aliceEmailSearchResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body(principalPropertySearchBody.apply(new PrincipalSearch("<s:email-address/>", alice.email())))
+        .when()
+            .request("REPORT", "/principals/users")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // Then Alice's principal URI is visible
-        assertThat(aliceEmailSearchResponse.status()).isEqualTo(207);
-        List<String> aliceEmailSearchHrefs = extractPrincipalHrefs(aliceEmailSearchResponse);
+        List<String> aliceEmailSearchHrefs = extractPrincipalHrefs(aliceEmailSearchResponseBody);
         assertThat(aliceEmailSearchHrefs).anySatisfy(href -> assertThat(href).contains(alice.id()));
 
         // When Bob searches users principals by John's cross-domain email
-        DavResponse johnEmailSearchResponse = principalPropertySearch.apply(new PrincipalSearch("<s:email-address/>", john.email()));
+        String johnEmailSearchResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body(principalPropertySearchBody.apply(new PrincipalSearch("<s:email-address/>", john.email())))
+        .when()
+            .request("REPORT", "/principals/users")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // Then John's principal URI is not leaked
-        assertThat(johnEmailSearchResponse.status()).isEqualTo(207);
-        List<String> johnEmailSearchHrefs = extractPrincipalHrefs(johnEmailSearchResponse);
+        List<String> johnEmailSearchHrefs = extractPrincipalHrefs(johnEmailSearchResponseBody);
         assertThat(johnEmailSearchHrefs)
             .as("Bob must not discover John's cross-domain principal by email")
             .isEmpty();
 
         // When Bob searches users principals by John's cross-domain display name
-        DavResponse johnDisplayNameSearchResponse = principalPropertySearch.apply(new PrincipalSearch("<d:displayname/>", john.firstname()));
+        String johnDisplayNameSearchResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body(principalPropertySearchBody.apply(new PrincipalSearch("<d:displayname/>", john.firstname())))
+        .when()
+            .request("REPORT", "/principals/users")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // Then John's principal URI is not leaked
-        assertThat(johnDisplayNameSearchResponse.status()).isEqualTo(207);
-        List<String> johnDisplayNameSearchHrefs = extractPrincipalHrefs(johnDisplayNameSearchResponse);
+        List<String> johnDisplayNameSearchHrefs = extractPrincipalHrefs(johnDisplayNameSearchResponseBody);
         assertThat(johnDisplayNameSearchHrefs)
             .as("Bob must not discover John's cross-domain principal by display name")
             .isEmpty();
@@ -124,13 +140,10 @@ public abstract class PrincipalMultitenancyContract {
             .block();
 
         // When Bob searches resource principals by the exact cross-domain resource email address
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/principals/resources")
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 <d:principal-property-search xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
                   <d:property-search>
                     <d:prop>
@@ -142,14 +155,18 @@ public abstract class PrincipalMultitenancyContract {
                     <d:displayname/>
                     <s:email-address/>
                   </d:prop>
-                </d:principal-property-search>""".formatted(secondDomainResource.id() + "@" + SECOND_DOMAIN))));
+                </d:principal-property-search>""".formatted(secondDomainResource.id() + "@" + SECOND_DOMAIN))
+        .when()
+            .request("REPORT", "/principals/resources")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // Then the cross-domain resource principal must not be disclosed
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(extractPrincipalHrefs(response))
+        assertThat(extractPrincipalHrefs(responseBody))
             .as("Bob must not discover a cross-domain resource principal by email")
             .noneSatisfy(href -> assertThat(href).contains("/principals/resources/" + secondDomainResource.id()));
-        assertThat(response.body())
+        assertThat(responseBody)
             .doesNotContain(secondDomainResource.id())
             .doesNotContain(SECOND_DOMAIN);
     }
@@ -164,22 +181,23 @@ public abstract class PrincipalMultitenancyContract {
         String resourceEmail = secondDomainResource.id() + "@" + SECOND_DOMAIN;
 
         // When Bob directly PROPFINDs the cross-domain resource principal URI
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/resources/" + secondDomainResource.id())
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 <d:propfind xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
                   <d:prop>
                     <d:displayname/>
                     <s:email-address/>
                   </d:prop>
-                </d:propfind>""")));
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/resources/" + secondDomainResource.id())
+        .then()
+            .extract().asString();
 
         // Then cross-domain resource principal data is not disclosed
-        assertThat(response.body())
+        assertThat(responseBody)
             .doesNotContain(resourceName)
             .doesNotContain(resourceEmail);
     }
@@ -188,84 +206,85 @@ public abstract class PrincipalMultitenancyContract {
     void jwtAuthenticatedBobCannotPropfindCrossDomainPrincipal() {
         // Given Bob is authenticated with a JWT token
         String jwt = generateJwtFor(bob);
-        Function<OpenPaasUser, DavResponse> propfindPrincipal = user -> execute(dockerExtension().davHttpClient()
-                .headers(headers -> headers.add("Authorization", "Bearer " + jwt)
-                    .add("Depth", "0")
-                    .add("Content-Type", "application/xml"))
-                .request(HttpMethod.valueOf("PROPFIND"))
-                .uri("/principals/users/" + user.id())
-                .send(body("""
+        String principalPropfindBody = """
                     <d:propfind xmlns:d="DAV:">
                       <d:prop>
                         <d:current-user-principal/>
                       </d:prop>
-                    </d:propfind>""")));
+                    </d:propfind>""";
 
         // When Bob does PROPFIND on his own principal
-        DavResponse bobPrincipalResponse = propfindPrincipal.apply(bob);
-
+        given()
+            .header("Authorization", "Bearer " + jwt)
+            .header("Depth", "0")
+            .body(principalPropfindBody)
+        .when()
+            .request("PROPFIND", "/principals/users/" + bob.id())
         // Then JWT authentication succeeds
-        assertThat(bobPrincipalResponse.status()).isEqualTo(207);
+        .then()
+            .statusCode(207);
 
         // When Bob does PROPFIND on John's cross-domain principal
-        DavResponse johnPrincipalResponse = propfindPrincipal.apply(john);
-
+        given()
+            .header("Authorization", "Bearer " + jwt)
+            .header("Depth", "0")
+            .body(principalPropfindBody)
+        .when()
+            .request("PROPFIND", "/principals/users/" + john.id())
         // Then cross-domain principal access is rejected
-        assertThat(johnPrincipalResponse.status()).isIn(403, 404);
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void propfindOnCrossDomainPrincipalShouldReturn403() {
-        int status = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/users/" + john.id())
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                     <d:current-user-principal/>
                   </d:prop>
-                </d:propfind>"""))).status();
-
-        assertThat(status).isEqualTo(403);
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/users/" + john.id())
+        .then()
+            .statusCode(403);
     }
 
     @Test
     void calendarHomeSetDiscoveryShouldReturn403ForCrossDomainPrincipal() {
-        int status = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/users/" + john.id())
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                   <d:prop>
                     <c:calendar-home-set/>
                   </d:prop>
-                </d:propfind>"""))).status();
-
-        assertThat(status).isEqualTo(403);
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/users/" + john.id())
+        .then()
+            .statusCode(403);
     }
 
     @Test
     void addressBookHomeSetDiscoveryShouldReturn403ForCrossDomainPrincipal() {
-        int status = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Depth", "0")
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/users/" + john.id())
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
                 <d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
                   <d:prop>
                     <card:addressbook-home-set/>
                   </d:prop>
-                </d:propfind>"""))).status();
-
-        assertThat(status).isEqualTo(403);
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/users/" + john.id())
+        .then()
+            .statusCode(403);
     }
 
     private String generateJwtFor(OpenPaasUser user) {
@@ -285,8 +304,8 @@ public abstract class PrincipalMultitenancyContract {
         return quotedJwt.substring(1, quotedJwt.length() - 1);
     }
 
-    private List<String> extractPrincipalHrefs(DavResponse response) throws Exception {
-        return XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+    private List<String> extractPrincipalHrefs(String responseBody) throws Exception {
+        return XMLUtil.extractMultipleValueByXPath(responseBody, "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
     }
 
 }

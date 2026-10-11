@@ -18,7 +18,6 @@
 
 package com.linagora.dav.contracts.card;
 
-import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -36,17 +35,11 @@ import com.google.common.collect.ImmutableSet;
 import com.linagora.dav.AddressBookURL;
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.CardDavClient.PublicRight;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.XMLUtil;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 
 public abstract class CardDavSharingContract {
@@ -60,18 +53,16 @@ public abstract class CardDavSharingContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
         cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
 
         alice = dockerExtension().newTestUser();
         bob = dockerExtension().newTestUser();
         cedric = dockerExtension().newTestUser();
 
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
@@ -681,13 +672,16 @@ public abstract class CardDavSharingContract {
             .findAny().get();
 
         // THEN: Alice can GET the contact using native CardDAV
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.GET)
-            .uri("/addressbooks/" + alice.id() + "/" + addressBookURL.addressBookId() + "/" + vcardUid + ".vcf"));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/vcard")
+        .when()
+            .get("/addressbooks/" + alice.id() + "/" + addressBookURL.addressBookId() + "/" + vcardUid + ".vcf")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
-        assertThat(response.body()).contains("John Doe");
+        assertThat(responseBody).contains("John Doe");
     }
 
     @Test
@@ -702,13 +696,17 @@ public abstract class CardDavSharingContract {
         cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
 
         // THEN Alice can list her addressbooks including the subscription using native PROPFIND
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + alice.id()));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + alice.id())
+        .then()
+            .extract().asString();
 
         List<String> addressBookHrefs = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );

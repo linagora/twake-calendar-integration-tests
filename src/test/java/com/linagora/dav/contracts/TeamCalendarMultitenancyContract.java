@@ -30,12 +30,10 @@ import org.junit.jupiter.api.Test;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.response.Response;
 
 public abstract class TeamCalendarMultitenancyContract {
@@ -48,12 +46,9 @@ public abstract class TeamCalendarMultitenancyContract {
     @BeforeEach
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification();
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
-                .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
-                .toString())
-            .build();
     }
 
     @Test

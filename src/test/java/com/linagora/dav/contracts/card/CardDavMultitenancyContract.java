@@ -19,14 +19,13 @@
 package com.linagora.dav.contracts.card;
 
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.TwakeCalendarProvisioningService.DEFAULT_DOMAIN;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -40,12 +39,12 @@ import org.junit.jupiter.params.provider.ValueSource;
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.CardDavClient.DelegationRight;
 import com.linagora.dav.CardDavClient.PublicRight;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 
 public abstract class CardDavMultitenancyContract {
 
@@ -71,6 +70,11 @@ public abstract class CardDavMultitenancyContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType("application/json;charset=UTF-8")
+            .accept("application/json, text/plain, */*");
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
         Document secondDomainDoc = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(SECOND_DOMAIN);
         secondDomainId = secondDomainDoc.getObjectId("_id").toString();
@@ -83,47 +87,51 @@ public abstract class CardDavMultitenancyContract {
 
     @Test
     void propfindOnAddressBooksRootShouldNotExposeCrossDomainAddressBookHome() {
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/"));
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+        .when()
+            .request("PROPFIND", "/addressbooks/")
+        .then()
+            .extract().asString();
 
-        assertThat(response.body()).doesNotContain(john.id());
+        assertThat(responseBody).doesNotContain(john.id());
     }
 
     @Test
     void propfindShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + john.id()));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + john.id())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void propfindAddressBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/addressbooks/" + john.id() + "/contacts"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/addressbooks/" + john.id() + "/contacts")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void mkcolShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("MKCOL"))
-            .uri("/addressbooks/" + john.id() + "/newBook")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .body("""
                 <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
                  <D:set>
                    <D:prop>
@@ -135,9 +143,11 @@ public abstract class CardDavMultitenancyContract {
                    </D:prop>
                  </D:set>
                 </D:mkcol>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", "/addressbooks/" + john.id() + "/newBook")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -173,23 +183,24 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void proppatchShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + john.id() + "/contacts")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .body("""
                 <d:propertyupdate xmlns:d="DAV:">
                   <d:set>
                     <d:prop>
@@ -197,9 +208,11 @@ public abstract class CardDavMultitenancyContract {
                     </d:prop>
                   </d:set>
                 </d:propertyupdate>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + john.id() + "/contacts")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -207,37 +220,37 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("HEAD"))
-            .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .head("/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void exportShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri("/addressbooks/" + john.id() + "/contacts?export=true"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/addressbooks/" + john.id() + "/contacts?export=true")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void reportShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + john.id() + "/contacts")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .header("Depth", "1")
+            .accept("application/xml")
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
                   <D:prop>
@@ -245,9 +258,11 @@ public abstract class CardDavMultitenancyContract {
                     <C:address-data/>
                   </D:prop>
                 </C:addressbook-query>
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/addressbooks/" + john.id() + "/contacts")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -255,13 +270,13 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + john.id() + "/collected/abcdef.vcf"))
-            .request(HttpMethod.valueOf("COPY"))
-            .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + john.id() + "/collected/abcdef.vcf")
+        .when()
+            .request("COPY", "/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -269,25 +284,26 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Destination", "/addressbooks/" + john.id() + "/collected/abcdef.vcf"))
-            .request(HttpMethod.valueOf("MOVE"))
-            .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + john.id() + "/collected/abcdef.vcf")
+        .when()
+            .request("MOVE", "/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void getJsonAddressBooksShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
-            .get()
-            .uri("/addressbooks/" + john.id() + ".json"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+        .when()
+            .get("/addressbooks/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -296,13 +312,13 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
         // WHEN Bob requests John's aggregated contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
-            .get()
-            .uri("/contacts/" + john.id() + ".json?sort=email"));
-
-        // THEN cross-tenant access is denied
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+        .when()
+            .get("/contacts/" + john.id() + ".json?sort=email")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -311,21 +327,24 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
         // WHEN the first tenant's technical token requests John's aggregated contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Accept", "application/json"))
-            .get()
-            .uri("/contacts/" + john.id() + ".json?sort=email"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .accept("application/json")
+        .when()
+            .get("/contacts/" + john.id() + ".json?sort=email")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN access is denied, while the second tenant's token can read the contact
-        assertThat(status).isIn(403, 404);
-        DavResponse ownTenantResponse = execute(dockerExtension().davHttpClient()
-            .headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Accept", "application/json"))
-            .get()
-            .uri("/contacts/" + john.id() + ".json?sort=email"));
-        assertThat(ownTenantResponse.status()).isEqualTo(200);
-        assertThatJson(ownTenantResponse.body()).inPath("_embedded.dav:item[0]._links.self.href")
+        String ownTenantResponseBody = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+            .accept(ContentType.JSON)
+        .when()
+            .get("/contacts/" + john.id() + ".json?sort=email")
+        .then()
+            .statusCode(200)
+            .extract().asString();
+        assertThatJson(ownTenantResponseBody).inPath("_embedded.dav:item[0]._links.self.href")
             .isEqualTo("/addressbooks/" + john.id() + "/contacts/abcdef.vcf");
     }
 
@@ -336,15 +355,18 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "foreign", VCARD);
 
         // WHEN Bob lists his aggregated contacts sorted by email
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/json"))
-            .get()
-            .uri("/contacts/" + bob.id() + ".json?sort=email"));
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept(ContentType.JSON)
+        .when()
+            .get("/contacts/" + bob.id() + ".json?sort=email")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
         // THEN only Bob's contact is returned
-        assertThat(response.status()).isEqualTo(200);
-        assertThatJson(response.body()).inPath("_embedded.dav:item").isArray().hasSize(1);
-        assertThatJson(response.body()).inPath("_embedded.dav:item[0]._links.self.href")
+        assertThatJson(responseBody).inPath("_embedded.dav:item").isArray().hasSize(1);
+        assertThatJson(responseBody).inPath("_embedded.dav:item[0]._links.self.href")
             .isEqualTo("/addressbooks/" + bob.id() + "/contacts/own.vcf");
     }
 
@@ -352,19 +374,19 @@ public abstract class CardDavMultitenancyContract {
     void putJsonContactShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/vcard+json"))
-            .put()
-            .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/vcard+json")
+            .body("""
                 ["vcard", [
                     ["version", {}, "text", "4.0"],
                     ["fn", {}, "text", "Test Contact"]
                 ]]
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -372,63 +394,64 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
         cardDavClient.upsertContact(john, CONTACTS_BOOK, "abcdef", VCARD);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers).add("Accept", "application/vcard+json"))
-            .get()
-            .uri("/addressbooks/" + john.id() + "/contacts/abcdef.vcf"));
-
-        assertThat(status).isIn(403, 404);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/vcard+json")
+        .when()
+            .get("/addressbooks/" + john.id() + "/contacts/abcdef.vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void postJsonAddressBookShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json")
-                .add("Content-Type", "application/json"))
-            .post()
-            .uri("/addressbooks/" + john.id() + ".json")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+            .contentType("application/json")
+            .body("""
                 {"id":"newbook","dav:name":"New Book","dav:acl":["dav:read","dav:write"],"type":"addressbook"}
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post("/addressbooks/" + john.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void updateJsonAddressBookMetadataShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json")
-                .add("Content-Type", "application/json"))
-            .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + john.id() + "/contacts.json")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+            .contentType("application/json")
+            .body("""
                 {"dav:name":"Hacked Name","carddav:description":"Hacked"}
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + john.id() + "/contacts.json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
     void reportJsonShouldReturnErrorStatusForCrossDomainUser() {
         cardDavClient.setPublicRight(john, john.id(), CONTACTS_BOOK, PublicRight.READ_WRITE);
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json")
-                .add("Content-Type", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + john.id() + "/contacts.json")
-            .send(body("""
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/json")
+            .contentType("application/json")
+            .body("""
                 {"match":{"field":"fn","value":"Test"}}
-                """)));
-
-        assertThat(status).isIn(403, 404);
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/addressbooks/" + john.id() + "/contacts.json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @Test
@@ -591,26 +614,24 @@ public abstract class CardDavMultitenancyContract {
             """;
 
         // WHEN a Domain A technical token tries to create the Domain B address book
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json"))
-            .post()
-            .uri("/addressbooks/" + targetDomainId + ".json")
-            .send(body(payload)));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .accept("application/json")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post("/addressbooks/" + targetDomainId + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN no address book is created in Domain B and a Domain B technical token can still create it
-        assertThat(status).isIn(403, 404);
-        assertThat(executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, targetDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json"))
-            .post()
-            .uri("/addressbooks/" + targetDomainId + ".json")
-            .send(body(payload))))
-            .isEqualTo(201);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, targetDomainToken)
+            .accept("application/json")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post("/addressbooks/" + targetDomainId + ".json")
+        .then()
+            .statusCode(201);
     }
 
     @Test
@@ -619,15 +640,13 @@ public abstract class CardDavMultitenancyContract {
         cardDavClient.createDomainAddressBook(secondDomainId, secondDomainToken);
 
         // WHEN a Domain A technical token lists Domain B address books
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Accept", "application/json"))
-            .get()
-            .uri("/addressbooks/" + secondDomainId + ".json"));
-
-        // THEN Domain B address books are not exposed
-        assertThat(status).isIn(403, 404);
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .accept("application/json")
+        .when()
+            .get("/addressbooks/" + secondDomainId + ".json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
     }
 
     @ParameterizedTest
@@ -655,24 +674,22 @@ public abstract class CardDavMultitenancyContract {
         }
 
         // WHEN a Domain A technical token reads Domain B contacts as JSON
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json, text/plain, */*"))
-            .get()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+        .when()
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN Domain B contacts are not exposed and remain readable by a Domain B technical token
-        assertThat(status).isIn(403, 404);
-        assertThat(execute(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json, text/plain, */*"))
-            .get()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
-            .body()).contains("Visible Contact");
+        String ownTenantResponseBody = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+        .when()
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+        .then()
+            .extract().asString();
+
+        assertThat(ownTenantResponseBody).contains("Visible Contact");
     }
 
     @ParameterizedTest
@@ -700,14 +717,12 @@ public abstract class CardDavMultitenancyContract {
         }
 
         // WHEN a Domain A technical token runs a CardDAV REPORT on Domain B contacts
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId)
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .contentType("application/xml")
+            .header("Depth", "1")
+            .accept("application/xml")
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
                   <D:prop>
@@ -715,18 +730,21 @@ public abstract class CardDavMultitenancyContract {
                     <C:address-data/>
                   </D:prop>
                 </C:addressbook-query>
-                """)));
+                """.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("REPORT", "/addressbooks/" + secondDomainId + "/" + addressBookId)
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN the report does not expose Domain B contacts and they remain readable by a Domain B technical token
-        assertThat(status).isIn(403, 404);
-        assertThat(execute(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json, text/plain, */*"))
-            .get()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
-            .body()).contains("Reported Contact");
+        String ownTenantResponseBody = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+        .when()
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+        .then()
+            .extract().asString();
+
+        assertThat(ownTenantResponseBody).contains("Reported Contact");
     }
 
     @ParameterizedTest
@@ -741,32 +759,31 @@ public abstract class CardDavMultitenancyContract {
         String vcardUid = "contact-" + UUID.randomUUID();
 
         // WHEN a Domain A technical token writes a contact into the Domain B address book
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Content-Type", "application/vcard+json")
-                .add("Accept", "application/json, text/plain, */*"))
-            .put()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + "/" + vcardUid + ".vcf")
-            .send(body("""
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+            .contentType("application/vcard+json")
+            .body("""
                 BEGIN:VCARD
                 VERSION:3.0
                 FN:Forbidden Contact
                 N:Forbidden Contact;;;;
                 UID:%s
                 END:VCARD
-                """.formatted(vcardUid))));
+                """.formatted(vcardUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/addressbooks/" + secondDomainId + "/" + addressBookId + "/" + vcardUid + ".vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN no contact is created in Domain B
-        assertThat(status).isIn(403, 404);
-        assertThat(execute(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json, text/plain, */*"))
-            .get()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
-            .body())
+        String ownTenantResponseBody = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+        .when()
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+        .then()
+            .extract().asString();
+
+        assertThat(ownTenantResponseBody)
             .doesNotContain(vcardUid)
             .doesNotContain("Forbidden Contact");
     }
@@ -796,23 +813,22 @@ public abstract class CardDavMultitenancyContract {
         }
 
         // WHEN a Domain A technical token deletes the Domain B contact
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
-                .add("Accept", "application/json, text/plain, */*"))
-            .delete()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + "/" + vcardUid + ".vcf"));
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
+        .when()
+            .delete("/addressbooks/" + secondDomainId + "/" + addressBookId + "/" + vcardUid + ".vcf")
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
 
         // THEN the Domain B contact remains available
-        assertThat(status).isIn(403, 404);
-        assertThat(execute(dockerExtension().davHttpClient()
-            .headers(headers -> headers
-                .add(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
-                .add("Content-Type", "application/json;charset=UTF-8")
-                .add("Accept", "application/json, text/plain, */*"))
-            .get()
-            .uri("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn"))
-            .body()).contains("Contact To Keep");
+        String ownTenantResponseBody = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
+        .when()
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+        .then()
+            .extract().asString();
+
+        assertThat(ownTenantResponseBody).contains("Contact To Keep");
     }
 
 }

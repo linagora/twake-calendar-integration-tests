@@ -18,6 +18,7 @@
 
 package com.linagora.dav;
 
+import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.nio.charset.StandardCharsets;
@@ -31,9 +32,8 @@ import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.specification.RequestSpecification;
 import reactor.core.publisher.Mono;
-import reactor.netty.http.client.HttpClient;
 
 public class TestUtil {
     private static final ConditionFactory calmlyAwait = Awaitility.with()
@@ -43,44 +43,26 @@ public class TestUtil {
 
     public static final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
-    public static final boolean DEBUG = Boolean.getBoolean("dav.http.debug");
     public static final String TWAKE_CALENDAR_TOKEN_HEADER = "TwakeCalendarToken";
 
     public static Mono<ByteBuf> body(String body) {
         return Mono.just(Unpooled.wrappedBuffer(body.getBytes(StandardCharsets.UTF_8)));
     }
 
-    public static DavResponse execute(HttpClient.ResponseReceiver<?> client) {
-        DavResponse block = client.responseSingle((response, content) -> content.asString()
-                .map(stringContent -> new DavResponse(response.status().code(), stringContent)))
-            .block();
-
-        if (DEBUG) {
-            System.out.println("============");
-            System.out.println("Code: " + block.status());
-            System.out.println(block.body());
-            System.out.println("============");
-        }
-
-        return block;
-    }
-
-    public static int executeNoContent(HttpClient.ResponseReceiver<?> client) {
-        return client.response()
-            .block()
-            .status()
-            .code();
-    }
-
-    public static List<String> awaitCalendarEntries(HttpClient client, OpenPaasUser attendee, String collectionPath, int expectedCount) {
+    public static List<String> awaitCalendarEntries(RequestSpecification davSpecification, OpenPaasUser attendee, String collectionPath, int expectedCount) {
         List<String> hrefsFromPropfind = new ArrayList<>();
         awaitAtMost.untilAsserted(() -> {
-            List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(
-                execute(client
-                    .headers(attendee::impersonatedBasicAuth)
-                    .request(HttpMethod.valueOf("PROPFIND"))
-                    .uri(collectionPath))
-                    .body());
+            String responseBody = given(davSpecification)
+                .header("Authorization", attendee.impersonatedBasicAuth())
+                .contentType("application/xml")
+                .accept("application/xml")
+            .when()
+                .request("PROPFIND", collectionPath)
+            .then()
+                .statusCode(207)
+                .extract().asString();
+
+            List<String> hrefs = XMLUtil.extractCalendarHrefsFromPropfind(responseBody);
             assertThat(hrefs)
                 .as("Expected number of messages in " + collectionPath + " for " + attendee.email())
                 .hasSize(expectedCount);

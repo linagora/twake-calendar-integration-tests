@@ -18,13 +18,10 @@
 
 package com.linagora.dav.contracts.card;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -36,17 +33,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.linagora.dav.CardDavClient;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.VCardContact;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 
 public abstract class DomainAddressBookContract {
@@ -77,17 +69,10 @@ public abstract class DomainAddressBookContract {
             domainName = StringUtils.substringAfterLast(openPaasUser.email(), "@");
             technicalToken = extension().twakeCalendarProvisioningService().generateToken();
         }
-
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig()
-                .encoderConfig(EncoderConfig.encoderConfig()
-                    .defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(extension().getDockerTwakeCalendarSetupSingleton()
-                .getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http")
-                .toString())
-            .build();
+        RestAssured.reset();
+        RestAssured.requestSpecification = extension().davRequestSpecification()
+            .contentType("application/xml")
+            .accept("application/xml");
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
     }
 
@@ -264,12 +249,9 @@ public abstract class DomainAddressBookContract {
         // WHEN a domain member contact is created by the technical token
         cardDavClient.upsertDomainMemberContact(domainId, vcardUid, contact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
         // THEN the next sync report exposes the created contact and advances the sync token
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
-            .send(body("""
+        String createdSyncReportBody = given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <d:sync-collection xmlns:d="DAV:">
                   <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
@@ -278,10 +260,14 @@ public abstract class DomainAddressBookContract {
                     <d:getetag/>
                   </d:prop>
                 </d:sync-collection>
-                """)));
+                """)
+        .when()
+            .request("REPORT", "/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body())
+        assertThat(createdSyncReportBody)
             .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
             .contains("<d:status>HTTP/1.1 200 OK</d:status>")
             .contains("<d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>");
@@ -295,12 +281,9 @@ public abstract class DomainAddressBookContract {
         // WHEN the same domain member contact is updated by the technical token
         cardDavClient.upsertDomainMemberContact(domainId, vcardUid, updatedContact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
         // THEN the next sync report exposes the updated contact and advances the sync token again
-        response = execute(extension().davHttpClient()
-            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
-            .send(body("""
+        String updatedSyncReportBody = given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <d:sync-collection xmlns:d="DAV:">
                   <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>
@@ -309,10 +292,14 @@ public abstract class DomainAddressBookContract {
                     <d:getetag/>
                   </d:prop>
                 </d:sync-collection>
-                """)));
+                """)
+        .when()
+            .request("REPORT", "/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body())
+        assertThat(updatedSyncReportBody)
             .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
             .contains("<d:status>HTTP/1.1 200 OK</d:status>")
             .contains("<d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>");
@@ -320,12 +307,9 @@ public abstract class DomainAddressBookContract {
         // WHEN the domain member contact is deleted by the technical token
         cardDavClient.deleteContactDomainMembers(domainId, vcardUid, technicalToken);
         // THEN the next sync report exposes the deleted contact as 404 and advances the sync token
-        response = execute(extension().davHttpClient()
-            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
-            .send(body("""
+        String deletedSyncReportBody = given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <d:sync-collection xmlns:d="DAV:">
                   <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>
@@ -334,10 +318,14 @@ public abstract class DomainAddressBookContract {
                     <d:getetag/>
                   </d:prop>
                 </d:sync-collection>
-                """)));
+                """)
+        .when()
+            .request("REPORT", "/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body())
+        assertThat(deletedSyncReportBody)
             .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_MEMBERS_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
             .contains("<d:status>HTTP/1.1 404 Not Found</d:status>")
             .contains("<d:sync-token>http://sabre.io/ns/sync/4</d:sync-token>");
@@ -371,12 +359,9 @@ public abstract class DomainAddressBookContract {
         // WHEN a domain contact is created in the domain address book by the technical token
         cardDavClient.upsertDomainContact(domainId, vcardUid, contact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
         // THEN the next sync report exposes the created contact and advances the sync token
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
-            .send(body("""
+        String createdSyncReportBody = given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <d:sync-collection xmlns:d="DAV:">
                   <d:sync-token>http://sabre.io/ns/sync/1</d:sync-token>
@@ -385,10 +370,14 @@ public abstract class DomainAddressBookContract {
                     <d:getetag/>
                   </d:prop>
                 </d:sync-collection>
-                """)));
+                """)
+        .when()
+            .request("REPORT", "/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body())
+        assertThat(createdSyncReportBody)
             .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
             .contains("<d:status>HTTP/1.1 200 OK</d:status>")
             .contains("<d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>");
@@ -402,12 +391,9 @@ public abstract class DomainAddressBookContract {
         // WHEN the same domain contact is updated by the technical token
         cardDavClient.upsertDomainContact(domainId, vcardUid, updatedContact.toBytes(VCardContact.Format.JSON, vcardUid), technicalToken);
         // THEN the next sync report exposes the updated contact and advances the sync token again
-        response = execute(extension().davHttpClient()
-            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
-            .send(body("""
+        String updatedSyncReportBody = given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <d:sync-collection xmlns:d="DAV:">
                   <d:sync-token>http://sabre.io/ns/sync/2</d:sync-token>
@@ -416,10 +402,14 @@ public abstract class DomainAddressBookContract {
                     <d:getetag/>
                   </d:prop>
                 </d:sync-collection>
-                """)));
+                """)
+        .when()
+            .request("REPORT", "/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body())
+        assertThat(updatedSyncReportBody)
             .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
             .contains("<d:status>HTTP/1.1 200 OK</d:status>")
             .contains("<d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>");
@@ -427,12 +417,9 @@ public abstract class DomainAddressBookContract {
         // WHEN the domain contact is deleted by a domain admin
         cardDavClient.deleteContact(adminUser, domainId, DOMAIN_ADDRESS_BOOK, vcardUid);
         // THEN the next sync report exposes the deleted contact as 404 and advances the sync token
-        response = execute(extension().davHttpClient()
-            .headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
-            .send(body("""
+        String deletedSyncReportBody = given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <d:sync-collection xmlns:d="DAV:">
                   <d:sync-token>http://sabre.io/ns/sync/3</d:sync-token>
@@ -441,10 +428,14 @@ public abstract class DomainAddressBookContract {
                     <d:getetag/>
                   </d:prop>
                 </d:sync-collection>
-                """)));
+                """)
+        .when()
+            .request("REPORT", "/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body())
+        assertThat(deletedSyncReportBody)
             .contains("<d:href>/addressbooks/" + domainId + "/" + DOMAIN_ADDRESS_BOOK + "/" + vcardUid + ".vcf</d:href>")
             .contains("<d:status>HTTP/1.1 404 Not Found</d:status>")
             .contains("<d:sync-token>http://sabre.io/ns/sync/4</d:sync-token>");
@@ -910,6 +901,8 @@ public abstract class DomainAddressBookContract {
 
     private String getAddressBookMetadata(String domainId) {
         return given()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
             .headers("TwakeCalendarToken", technicalToken)
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)

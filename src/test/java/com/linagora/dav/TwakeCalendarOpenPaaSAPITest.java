@@ -18,12 +18,9 @@
 
 package com.linagora.dav;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_OK;
-import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +32,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linagora.dav.contracts.OpenPaaSAPIContract;
 
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.specification.RequestSpecification;
 import reactor.netty.http.client.HttpClient;
 
 public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
@@ -49,6 +46,13 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
     @Override
     public HttpClient davHttpClient() {
         return extension.davHttpClient();
+    }
+
+    @Override
+    public RequestSpecification davRequestSpecification() {
+        return extension.davRequestSpecification()
+            .contentType("application/xml")
+            .accept("application/xml");
     }
 
     @Override
@@ -335,7 +339,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
     void jwtTokenCanBeUsedToCallSabre() {
         OpenPaasUser user = createUser();
 
-        String string = given()
+        String jwtResponseBody = given()
             .headers("Authorization", basicAuth(user.email()))
             .when()
             .post("/api/jwt/generate")
@@ -345,20 +349,21 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
             .body()
             .asString();
 
-        DavResponse response = execute(extension.davHttpClient()
-            .headers(headers -> headers.add("Authorization", "Bearer " + string.substring(1, string.length() - 1))
-                .add("Depth", 0)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/")
-            .send(body("""
+        String jwtToken = jwtResponseBody.substring(1, jwtResponseBody.length() - 1);
+
+        given(davRequestSpecification())
+            .header("Authorization", "Bearer " + jwtToken)
+            .header("Depth", "0")
+            .body("""
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                      <d:current-user-principal />
                   </d:prop>
-                </d:propfind>""")));
-
-        assertThat(response.status()).isEqualTo(207);
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/")
+        .then()
+            .statusCode(207);
     }
 
     @Test

@@ -47,6 +47,8 @@ import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 
+import io.restassured.RestAssured;
+
 @Execution(ExecutionMode.SAME_THREAD)
 class SabreV4TrustedUrlsTest {
     private static final String TRUSTED_VIDEO_BASE_URL = "https://meet.linagora.com";
@@ -171,6 +173,7 @@ class SabreV4TrustedUrlsTest {
 
     @BeforeEach
     void createUser() {
+        RestAssured.reset();
         if (extension == null) {
             extension = configuredExtension();
         }

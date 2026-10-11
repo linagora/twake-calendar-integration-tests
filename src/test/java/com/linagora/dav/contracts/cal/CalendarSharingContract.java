@@ -19,14 +19,13 @@
 package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 
 import java.io.IOException;
 import java.net.URI;
@@ -56,9 +55,7 @@ import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarProvisioningService;
@@ -66,14 +63,10 @@ import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 import com.rabbitmq.client.Channel;
 
-import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import net.fortuna.ical4j.model.parameter.PartStat;
-import reactor.core.publisher.Mono;
 
 public abstract class CalendarSharingContract {
 
@@ -104,12 +97,10 @@ public abstract class CalendarSharingContract {
             .enableSharedCalendarModule()
             .block();
 
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(extension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
+        RestAssured.reset();
+        RestAssured.requestSpecification = extension().davRequestSpecification()
+            .contentType("application/xml")
+            .accept("application/xml");
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 
         bob = extension().newTestUser();
@@ -142,15 +133,15 @@ public abstract class CalendarSharingContract {
         String eventUid = createEventInBobPrivateCalendar();
 
         // When: Alice reports Bob's private calendar directly
-        DavResponse response = calDavClient.findEventsByTime(alice, CalendarURL.from(bob.id()), "20300110T000000", "20300110T235959");
+        Response response = calDavClient.findEventsByTime(alice, CalendarURL.from(bob.id()), "20300110T000000", "20300110T235959");
 
         // Then: Alice cannot read Bob's private calendar events
-        assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain(eventUid);
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
-        });
+        response.then().statusCode(anyOf(is(403), is(404)));
+        String responseBody = response.asString();
+        assertThat(responseBody)
+            .doesNotContain(eventUid)
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     @Test
@@ -159,13 +150,10 @@ public abstract class CalendarSharingContract {
         createEventInBobPrivateCalendar();
 
         // The filter-less XML calendar-query is the fast path used by the reindex task.
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(CalendarURL.from(bob.id()).asUri().toString())
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag/>
@@ -175,13 +163,17 @@ public abstract class CalendarSharingContract {
                         <c:comp-filter name="VCALENDAR"/>
                     </c:filter>
                 </c:calendar-query>
-                """)));
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(bob.id()).asUri().toString())
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain("BEGIN:VCALENDAR");
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+            softly.assertThat(responseBody).doesNotContain("BEGIN:VCALENDAR");
+            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
+            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
         });
     }
 
@@ -189,21 +181,18 @@ public abstract class CalendarSharingContract {
     public void cannotPropfindPrivateCalendar() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(CalendarURL.from(bob.id()).asUri().toString())
-            .responseSingle((httpResponse, content) -> content.asString()
-                .switchIfEmpty(Mono.just(""))
-                .map(body -> new DavResponse(httpResponse.status().code(), body)))
-            .block();
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", CalendarURL.from(bob.id()).asUri().toString())
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain(eventUid);
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+            softly.assertThat(responseBody).doesNotContain(eventUid);
+            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
+            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
         });
     }
 
@@ -211,20 +200,18 @@ public abstract class CalendarSharingContract {
     public void cannotGetPrivateCalendarEvent() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "text/calendar"))
-            .get()
-            .uri(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
-            .responseSingle((httpResponse, content) -> content.asString()
-                .switchIfEmpty(Mono.just(""))
-                .map(body -> new DavResponse(httpResponse.status().code(), body)))
-            .block();
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
+            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
         });
     }
 
@@ -232,20 +219,19 @@ public abstract class CalendarSharingContract {
     public void cannotExportPrivateCalendar() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .get()
-            .uri(CalendarURL.from(bob.id()).asUri() + "?export")
-            .responseSingle((httpResponse, content) -> content.asString()
-                .switchIfEmpty(Mono.just(""))
-                .map(body -> new DavResponse(httpResponse.status().code(), body)))
-            .block();
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get(CalendarURL.from(bob.id()).asUri() + "?export")
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain(eventUid);
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+            softly.assertThat(responseBody).doesNotContain(eventUid);
+            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
+            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
         });
     }
 
@@ -253,21 +239,20 @@ public abstract class CalendarSharingContract {
     public void cannotExportJsonPrivateCalendar() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .get()
-            .uri(CalendarURL.from(bob.id()).asUri() + ".json?export")
-            .responseSingle((httpResponse, content) -> content.asString()
-                .switchIfEmpty(Mono.just(""))
-                .map(body -> new DavResponse(httpResponse.status().code(), body)))
-            .block();
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/json")
+            .accept("application/json")
+        .when()
+            .get(CalendarURL.from(bob.id()).asUri() + ".json?export")
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain(eventUid);
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
+            softly.assertThat(responseBody).doesNotContain(eventUid);
+            softly.assertThat(responseBody).doesNotContain("Bob private calendar event");
+            softly.assertThat(responseBody).doesNotContain("ABCXYZ111");
         });
     }
 
@@ -275,55 +260,61 @@ public abstract class CalendarSharingContract {
     public void cannotReadPrivateCalendarDataWithJsonEventPathsReport() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json")
-                .add("Content-Type", "application/json"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri("/calendars.json")
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("application/json")
+            .contentType("application/json")
+            .body("""
                 {
                   "eventPaths": [
                     "/calendars/{bobId}/{bobId}/{eventUid}.ics"
                   ]
                 }
                 """.replace("{bobId}", bob.id())
-                .replace("{eventUid}", eventUid))));
+                .replace("{eventUid}", eventUid))
+        .when()
+            .request("REPORT", "/calendars.json")
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
-        assertPrivateCalendarNotExposed(response, eventUid);
+        assertPrivateCalendarNotExposed(responseBody, eventUid);
     }
 
     @Test
     public void cannotSyncTokenReportPrivateCalendar() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = calDavClient.findEventsBySyncToken(alice,
+        Response response = calDavClient.findEventsBySyncToken(alice,
             CalendarURL.from(bob.id()),
             "http://sabre.io/ns/sync/1");
 
-        assertPrivateCalendarNotExposed(response, eventUid);
+        response.then().statusCode(anyOf(is(403), is(404)));
+        assertPrivateCalendarNotExposed(response.asString(), eventUid);
     }
 
     @Test
     public void cannotReadPrivateCalendarWithAllEventsJsonShortcut() {
         String eventUid = createEventInBobPrivateCalendar();
 
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Accept", "application/json"))
-            .get()
-            .uri(CalendarURL.from(bob.id()).asUri() + ".json?allEvents=true"));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/json")
+            .accept("application/json")
+        .when()
+            .get(CalendarURL.from(bob.id()).asUri() + ".json?allEvents=true")
+        .then()
+            .statusCode(anyOf(is(403), is(404)))
+            .extract().asString();
 
-        assertPrivateCalendarNotExposed(response, eventUid);
+        assertPrivateCalendarNotExposed(responseBody, eventUid);
     }
 
-    private void assertPrivateCalendarNotExposed(DavResponse response, String eventUid) {
-        assertSoftly(softly -> {
-            softly.assertThat(response.status()).isIn(403, 404);
-            softly.assertThat(response.body()).doesNotContain(eventUid);
-            softly.assertThat(response.body()).doesNotContain("Bob private calendar event");
-            softly.assertThat(response.body()).doesNotContain("ABCXYZ111");
-        });
+    private void assertPrivateCalendarNotExposed(String responseBody, String eventUid) {
+        assertThat(responseBody)
+            .doesNotContain(eventUid)
+            .doesNotContain("Bob private calendar event")
+            .doesNotContain("ABCXYZ111");
     }
 
     private String createEventInBobPrivateCalendar() {
@@ -397,13 +388,15 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: Alice see the subscription in her calendars
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + alice.id()));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/calendars/" + alice.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(responseBody, "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
 
         assertThat(actual).containsExactlyInAnyOrder("/calendars/" + alice.id() + "/",
             "/calendars/" + alice.id() + "/" + alice.id() + "/",
@@ -430,13 +423,15 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: the subscription do not contain event
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(sharedCalendarPath));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", sharedCalendarPath)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body()).contains("<cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set>");
+        assertThat(responseBody).contains("<cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set>");
     }
 
     @Test
@@ -457,13 +452,15 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: the subscription is listed
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + alice.id()));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/calendars/" + alice.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(responseBody, "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
         assertThat(actual).containsExactlyInAnyOrder("/calendars/" + alice.id() + "/",
             "/calendars/" + alice.id() + "/" + alice.id() + "/",
             "/calendars/" + alice.id() + "/inbox/",
@@ -509,13 +506,10 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // THEN: Alice can report the event in her subscription
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(sharedCalendarPath)
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -531,10 +525,15 @@ public abstract class CalendarSharingContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.replace("{eventUid}", eventUid))));
+                """.replace("{eventUid}", eventUid))
+        .when()
+            .request("REPORT", sharedCalendarPath)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         String actual = XMLUtil.extractByXPath(
-            response.body(),
+            responseBody,
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
@@ -581,13 +580,10 @@ public abstract class CalendarSharingContract {
         calDavClient.updateCalendarAcl(bob, "");
 
         // THEN: Alice can report the event in her subscription
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(sharedCalendarPath)
-            .send(body("""
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -603,9 +599,11 @@ public abstract class CalendarSharingContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.replace("{eventUid}", eventUid))));
-
-        assertThat(response.status()).isEqualTo(404);
+                """.replace("{eventUid}", eventUid))
+        .when()
+            .request("REPORT", sharedCalendarPath)
+        .then()
+            .statusCode(404);
     }
 
     @Test
@@ -862,12 +860,14 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Subscribed calendar can be exported
-        DavResponse response2 = execute(extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .get()
-            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "?export"));
-
-        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
+        // Accept text/calendar would select the subscription text shortcut instead of export.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "?export")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -907,12 +907,13 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Subscribed calendar can be exported
-        DavResponse response2 = execute(extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .get()
-            .uri("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "?export"));
-
-        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + "?export")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -1414,10 +1415,16 @@ public abstract class CalendarSharingContract {
         URI subscribedEventUri = subscribeAliceToBobWritableCalendar().eventHref(eventUid);
 
         // WHEN: Alice modifies the private event via her subscription
-        int status = putIcsEvent(alice, subscribedEventUri, tamperedPrivateIcsEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(tamperedPrivateIcsEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(subscribedEventUri.toString())
+        .then()
+            .statusCode(403);
 
-        // THEN: The modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(403);
+        // THEN: Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -1429,10 +1436,16 @@ public abstract class CalendarSharingContract {
         URI subscribedEventUri = subscribeAliceToBobWritableCalendar().eventHref(eventUid);
 
         // WHEN: Alice modifies the private event via her subscription using the JSON API
-        int status = putJsonEvent(alice, subscribedEventUri, tamperedPrivateJsonEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/calendar+json")
+            .body(tamperedPrivateJsonEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(subscribedEventUri.toString())
+        .then()
+            .statusCode(403);
 
-        // THEN: The modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(403);
+        // THEN: Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -1442,10 +1455,16 @@ public abstract class CalendarSharingContract {
         String eventUid = givenBobPrivateEventInPubliclyWritableCalendar();
 
         // WHEN: Alice modifies the private event directly in Bob's calendar
-        int status = putIcsEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateIcsEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(tamperedPrivateIcsEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
+        .then()
+            .statusCode(403);
 
-        // THEN: The modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(403);
+        // THEN: Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -1455,10 +1474,16 @@ public abstract class CalendarSharingContract {
         String eventUid = givenBobPrivateEventInPubliclyWritableCalendar();
 
         // WHEN: Alice modifies the private event directly in Bob's calendar using the JSON API
-        int status = putJsonEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateJsonEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/calendar+json")
+            .body(tamperedPrivateJsonEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
+        .then()
+            .statusCode(403);
 
-        // THEN: The modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(403);
+        // THEN: Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -1526,23 +1551,6 @@ public abstract class CalendarSharingContract {
                 ["class",{},"text","PRIVATE"]
             ],[]]]]
             """.formatted(eventUid);
-    }
-
-    private int putIcsEvent(OpenPaasUser user, URI eventUri, String calendarData) {
-        return putEvent(user, eventUri, "text/calendar ; charset=utf-8", calendarData);
-    }
-
-    private int putJsonEvent(OpenPaasUser user, URI eventUri, String calendarData) {
-        return putEvent(user, eventUri, "application/calendar+json", calendarData);
-    }
-
-    private int putEvent(OpenPaasUser user, URI eventUri, String contentType, String calendarData) {
-        return executeNoContent(extension().davHttpClient()
-            .headers(headers -> user.impersonatedBasicAuth(headers)
-                .add("Content-Type", contentType))
-            .put()
-            .uri(eventUri.toString())
-            .send(body(calendarData)));
     }
 
     private void assertThatBobPrivateEventIsUnchanged(String eventUid) {
@@ -2162,6 +2170,8 @@ public abstract class CalendarSharingContract {
         calDavClient.updateCalendarSetting(alice, calendarURL, "new name", "#009688");
 
         String response = given()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
             .headers("Authorization", bob.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", true)
@@ -2196,6 +2206,8 @@ public abstract class CalendarSharingContract {
         calDavClient.updateCalendarSetting(bob, CalendarURL.from(bob.id()), "new name", "#009688");
 
         String response = given()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
             .headers("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedDelegationStatus", "accepted")
             .queryParam("sharedPublicSubscription", true)
@@ -2894,25 +2906,22 @@ public abstract class CalendarSharingContract {
             .as("Alice PARTSTAT on David's subscribed mirror calendar before update")
             .isEqualTo(PartStat.NEEDS_ACTION);
         String acceptedMirrorEventIcs = CalendarUtil.withAttendeePartStat(mirrorEventIcs, alice.email(), PartStat.ACCEPTED);
-        int mirrorUpdateStatus = executeNoContent(extension().davHttpClient()
-            .headers(headers -> david.impersonatedBasicAuth(headers)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri(mirrorEventUri.toASCIIString())
-            .send(body(acceptedMirrorEventIcs)));
+        given()
+            .header("Authorization", david.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(acceptedMirrorEventIcs.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(mirrorEventUri.toASCIIString())
+        .then()
+            .statusCode(403);
 
         // THEN: Bob's organizer calendar keeps Alice participation untouched
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
-            .untilAsserted(() -> assertSoftly(softly -> {
-                softly.assertThat(mirrorUpdateStatus)
-                    .as("Read-only mirror PARTSTAT update should be rejected")
-                    .isEqualTo(403);
-                softly.assertThat(CalendarUtil.getAttendeePartStat(
-                        calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
-                    .as("Alice PARTSTAT on Bob organizer calendar after David mirror update")
-                    .isEqualTo(PartStat.NEEDS_ACTION);
-            }));
+            .untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
+                .as("Alice PARTSTAT on Bob organizer calendar after David mirror update")
+                .isEqualTo(PartStat.NEEDS_ACTION));
     }
 
     @Test
@@ -3128,31 +3137,29 @@ public abstract class CalendarSharingContract {
         assertThat(mirrorEventUri.toASCIIString()).startsWith(mirrorCalendarURL.asUri().toASCIIString() + "/");
 
         // WHEN: Alice deletes the event via the mirror calendar
-        int mirrorDeleteStatus = executeNoContent(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .delete()
-            .uri(mirrorEventUri.toASCIIString()));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+        .when()
+            .delete(mirrorEventUri.toASCIIString())
+        .then()
+            .statusCode(403);
 
         // AND: Bob's origin calendar object must remain
         URI originEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
-        DavResponse originEventResponse = execute(extension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .get()
-            .uri(originEventUri.toASCIIString()));
+        String originEventResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .accept("text/calendar")
+        .when()
+            .get(originEventUri.toASCIIString())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(mirrorDeleteStatus)
-                .as("Read-only mirror DELETE should be rejected")
-                .isEqualTo(403);
-            softly.assertThat(originEventResponse.status())
-                .as("Origin calendar event must remain when mirror DELETE returned " + mirrorDeleteStatus)
-                .isEqualTo(200);
-            softly.assertThat(originEventResponse.body())
-                .contains(eventUid)
-                .contains("SUMMARY:Bob's origin event");
-        });
+        assertThat(originEventResponseBody)
+            .contains(eventUid)
+            .contains("SUMMARY:Bob's origin event");
     }
 
     @Test
@@ -3308,23 +3315,26 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice does PROPFIND on the subscribed calendar
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(sharedCalendarPath)
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:">
                   <D:prop>
                     <D:resourcetype/>
                   </D:prop>
                 </D:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", sharedCalendarPath)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN the resourcetype exposes <cal:calendar/>, making the calendar discoverable by any CalDAV client
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body()).contains(sharedCalendarPath);
-        assertThat(response.body()).contains("<d:collection/>", "<cal:calendar/>");
+        assertThat(responseBody)
+            .contains(sharedCalendarPath)
+            .contains("<d:collection/>", "<cal:calendar/>");
     }
 
     @Test
@@ -3346,25 +3356,27 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(sharedCalendarPath)
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:">
                   <D:prop>
                     <D:current-user-privilege-set/>
                   </D:prop>
                 </D:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", sharedCalendarPath)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN only read privileges are advertised, no write
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body()).contains(sharedCalendarPath);
-        assertThat(response.body()).contains("<d:read/>");
-        assertThat(response.body()).doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+        assertThat(responseBody)
+            .contains(sharedCalendarPath)
+            .contains("<d:read/>")
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
     }
 
     @Test
@@ -3389,25 +3401,27 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(sharedCalendarPath)
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:">
                   <D:prop>
                     <D:current-user-privilege-set/>
                   </D:prop>
                 </D:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", sharedCalendarPath)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN only read privileges are advertised, no write
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body()).contains(sharedCalendarPath);
-        assertThat(response.body()).contains("<d:read/>");
-        assertThat(response.body()).doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+        assertThat(responseBody)
+            .contains(sharedCalendarPath)
+            .contains("<d:read/>")
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
     }
 
     @Test
@@ -3429,23 +3443,25 @@ public abstract class CalendarSharingContract {
         String sharedCalendarPath = subscribedCalendar.asUri().toString();
 
         // WHEN Alice requests current-user-privilege-set via PROPFIND on the subscribed calendar
-        DavResponse response = execute(extension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(sharedCalendarPath)
-            .send(body("""
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:">
                   <D:prop>
                     <D:current-user-privilege-set/>
                   </D:prop>
                 </D:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", sharedCalendarPath)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN write privileges are advertised
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(response.body()).contains(sharedCalendarPath);
-        assertThat(response.body()).contains("<d:write/>", "<d:read/>");
+        assertThat(responseBody)
+            .contains(sharedCalendarPath)
+            .contains("<d:write/>", "<d:read/>");
     }
 }

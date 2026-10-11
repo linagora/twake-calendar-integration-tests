@@ -18,7 +18,6 @@
 
 package com.linagora.dav.contracts.cal;
 
-import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
 
@@ -26,9 +25,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.linagora.dav.CalDavClient;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
+
+import io.restassured.response.Response;
 
 /**
  * Reproduces https://github.com/linagora/esn-sabre/issues/374
@@ -80,12 +80,12 @@ public abstract class InvalidUntilReportContract {
         calDavClient.upsertCalendarEvent(alice, eventUid, ics);
 
         // WHEN a time-range REPORT has to expand that recurrence
-        DavResponse response = calDavClient.findEventsByTime(alice, "20260601T000000", "20260701T000000");
+        Response response = calDavClient.findEventsByTime(alice, "20260601T000000", "20260701T000000");
 
         // THEN the REPORT answers gracefully instead of failing with a 500
         // (it is fine for the malformed occurrence to be filtered out of the result)
-        assertThat(response.status())
-            .as("Time-range REPORT response body: %s", response.body())
-            .isEqualTo(200);
+        response.then()
+            .log().ifValidationFails()
+            .statusCode(200);
     }
 }

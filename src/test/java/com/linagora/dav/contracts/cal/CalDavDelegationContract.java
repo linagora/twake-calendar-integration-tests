@@ -21,9 +21,6 @@ package com.linagora.dav.contracts.cal;
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.awaitCalendarEntries;
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static com.linagora.dav.TestUtil.executeNoContent;
 import static com.linagora.dav.contracts.cal.ITIPRequestContract.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -45,7 +42,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.assertj.core.api.AssertionsForClassTypes;
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,9 +58,7 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
-import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarData;
 import com.linagora.dav.JsonCalendarEventData;
@@ -75,13 +69,10 @@ import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.restassured.RestAssured;
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.config.EncoderConfig;
-import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.javacrumbs.jsonunit.core.Option;
@@ -99,12 +90,10 @@ public abstract class CalDavDelegationContract {
     void setUp() {
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
 
-        RestAssured.requestSpecification = new RequestSpecBuilder()
-            .setContentType(ContentType.JSON)
-            .setAccept(ContentType.JSON)
-            .setConfig(RestAssuredConfig.newConfig().encoderConfig(EncoderConfig.encoderConfig().defaultContentCharset(StandardCharsets.UTF_8)))
-            .setBaseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton().getServiceUri(DockerTwakeCalendarSetup.DockerService.SABRE_DAV, "http").toString())
-            .build();
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         bob = dockerExtension().newTestUser();
         alice = dockerExtension().newTestUser();
@@ -181,20 +170,30 @@ public abstract class CalDavDelegationContract {
         // THEN a copy of bob calendar is created in Alice calendar list
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         // AND: Alice see the subscription in her calendars
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + alice.id()));
-        assertThat(response.status()).isEqualTo(207);
-        List<String> actual = XMLUtil.extractMultipleValueByXPath(response.body(), "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/calendars/" + alice.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        List<String> actual = XMLUtil.extractMultipleValueByXPath(responseBody, "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
         AssertionsForInterfaceTypes.assertThat(actual).contains(calendarURL.asUri() + "/");
         // AND: the subscription do not contain event
-        DavResponse response2 = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(calendarURL.asUri().toString()));
-        assertThat(response2.status()).isEqualTo(207);
-        assertThat(response2.body()).contains("<cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set>");
+        String calendarCapabilitiesResponseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", calendarURL.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        assertThat(calendarCapabilitiesResponseBody).contains("<cal:supported-calendar-component-set><cal:comp name=\"VEVENT\"/><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set>");
     }
 
     @ParameterizedTest
@@ -226,13 +225,12 @@ public abstract class CalDavDelegationContract {
         // THEN a copy of bob calendar is created in Alice calendar list
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
         // THEN: Alice can report the event in her subscription
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(calendarURL.asUri().toString())
-            .send(body("""
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -248,10 +246,15 @@ public abstract class CalDavDelegationContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.replace("{eventUid}", eventUid))));
+                """.replace("{eventUid}", eventUid))
+        .when()
+            .request("REPORT", calendarURL.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         String actual = XMLUtil.extractByXPath(
-            response.body(),
+            responseBody,
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
@@ -273,12 +276,12 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob reads Alice's calendar through its delegated source, like the frontend does
-        DavResponse response = calDavClient.findEventsByTime(bob, CalendarURL.from(alice.id()),
+        Response response = calDavClient.findEventsByTime(bob, CalendarURL.from(alice.id()),
             "20300310T000000", "20300510T000000");
 
         // THEN Bob gets the event
-        assertThat(response.status()).isEqualTo(200);
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        response.then().statusCode(200);
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
         assertThat(result.get(0).summary()).contains("Sprint planning #01");
@@ -293,11 +296,12 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob queries Alice's SOURCE calendar (not his copy) with a CalDAV REPORT
-        DavResponse response = xmlCalendarQueryByUid(bob, CalendarURL.from(alice.id()).asUri().toString(), eventUid);
+        String responseBody = xmlCalendarQueryByUid(bob, CalendarURL.from(alice.id()).asUri().toString(), eventUid)
+            .then().statusCode(207)
+            .extract().asString();
 
         // THEN Bob gets the event
-        assertThat(response.status()).isEqualTo(207);
-        String calendarData = XMLUtil.extractByXPath(response.body(), "//cal:calendar-data",
+        String calendarData = XMLUtil.extractByXPath(responseBody, "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
         assertThat(calendarData)
             .contains("UID:" + eventUid)
@@ -313,11 +317,12 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob gets the event from Alice's SOURCE calendar
-        DavResponse response = getEvent(bob, alice, eventUid);
+        String responseBody = getEvent(bob, alice, eventUid)
+            .then().statusCode(200)
+            .extract().asString();
 
         // THEN Bob gets the event
-        assertThat(response.status()).isEqualTo(200);
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("UID:" + eventUid)
             .contains("SUMMARY:Sprint planning #01");
     }
@@ -331,11 +336,11 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob synchronizes Alice's SOURCE calendar
-        DavResponse response = calDavClient.findEventsBySyncToken(bob, CalendarURL.from(alice.id()), INITIAL_SYNC_TOKEN);
+        Response response = calDavClient.findEventsBySyncToken(bob, CalendarURL.from(alice.id()), INITIAL_SYNC_TOKEN);
 
         // THEN Bob gets the event
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(JsonCalendarData.from(response.body()).items())
+        response.then().statusCode(207);
+        assertThat(JsonCalendarData.from(response.asString()).items())
             .extracting(JsonCalendarData.DavItem::href)
             .contains(aliceSourceEventPath(eventUid));
     }
@@ -356,16 +361,17 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob reads Alice's SOURCE calendar with a JSON REPORT
-        DavResponse response = calDavClient.findEventsByTime(bob, CalendarURL.from(alice.id()),
+        Response response = calDavClient.findEventsByTime(bob, CalendarURL.from(alice.id()),
             "20300310T000000", "20300510T000000");
 
         // THEN Bob sees an anonymized version of the event
-        assertThat(response.status()).isEqualTo(200);
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        response.then().statusCode(200);
+        String responseBody = response.asString();
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(responseBody);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
         assertThat(result.get(0).summary()).contains("Busy");
-        assertThatDoesNotLeakPrivateEventDetails(response.body());
+        assertThatDoesNotLeakPrivateEventDetails(responseBody);
     }
 
     @ParameterizedTest(name = "{0} with {1}")
@@ -384,17 +390,18 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob queries Alice's SOURCE calendar with a CalDAV REPORT
-        DavResponse response = xmlCalendarQueryByUid(bob, CalendarURL.from(alice.id()).asUri().toString(), eventUid);
+        String responseBody = xmlCalendarQueryByUid(bob, CalendarURL.from(alice.id()).asUri().toString(), eventUid)
+            .then().statusCode(207)
+            .extract().asString();
 
         // THEN Bob sees an anonymized version of the event
-        assertThat(response.status()).isEqualTo(207);
-        String calendarData = XMLUtil.extractByXPath(response.body(), "//cal:calendar-data",
+        String calendarData = XMLUtil.extractByXPath(responseBody, "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
         CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(calendarData);
         assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
-        assertThatDoesNotLeakPrivateEventDetails(response.body());
+        assertThatDoesNotLeakPrivateEventDetails(responseBody);
     }
 
     @ParameterizedTest(name = "{0} with {1}")
@@ -413,15 +420,16 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob gets the event from Alice's SOURCE calendar
-        DavResponse response = getEvent(bob, alice, eventUid);
+        String responseBody = getEvent(bob, alice, eventUid)
+            .then().statusCode(200)
+            .extract().asString();
 
         // THEN Bob sees an anonymized version of the event
-        assertThat(response.status()).isEqualTo(200);
-        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(response.body());
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(responseBody);
         assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
-        assertThatDoesNotLeakPrivateEventDetails(response.body());
+        assertThatDoesNotLeakPrivateEventDetails(responseBody);
     }
 
     @ParameterizedTest(name = "{0} with {1}")
@@ -440,15 +448,16 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(alice, alice.id(), bob, right);
 
         // WHEN Bob synchronizes Alice's SOURCE calendar
-        DavResponse response = calDavClient.findEventsBySyncToken(bob, CalendarURL.from(alice.id()), INITIAL_SYNC_TOKEN);
+        Response response = calDavClient.findEventsBySyncToken(bob, CalendarURL.from(alice.id()), INITIAL_SYNC_TOKEN);
 
         // THEN Bob does not see the details of the event
-        assertThat(response.status()).isEqualTo(207);
-        assertThat(JsonCalendarData.from(response.body()).items())
+        response.then().statusCode(207);
+        String responseBody = response.asString();
+        assertThat(JsonCalendarData.from(responseBody).items())
             .filteredOn(item -> item.href().equals(aliceSourceEventPath(eventUid)))
             .flatExtracting(JsonCalendarData.DavItem::events)
             .allSatisfy(event -> assertThat(event.summary()).contains("Busy"));
-        assertThatDoesNotLeakPrivateEventDetails(response.body());
+        assertThatDoesNotLeakPrivateEventDetails(responseBody);
     }
 
     @Test
@@ -536,35 +545,30 @@ public abstract class CalDavDelegationContract {
     }
 
     private void assertThatCannotReadAliceSourceCalendar(OpenPaasUser user, String eventUid) {
-        assertSoftly(softly -> {
-            softly.assertThat(calDavClient.findEventsByTime(user, CalendarURL.from(alice.id()),
-                    "20300310T000000", "20300510T000000").status())
-                .as("JSON REPORT")
-                .isEqualTo(SC_FORBIDDEN);
-            softly.assertThat(xmlCalendarQueryByUid(user, CalendarURL.from(alice.id()).asUri().toString(), eventUid).status())
-                .as("XML REPORT")
-                .isEqualTo(SC_FORBIDDEN);
-            softly.assertThat(getEvent(user, alice, eventUid).status())
-                .as("GET")
-                .isEqualTo(SC_FORBIDDEN);
-        });
+        calDavClient.findEventsByTime(user, CalendarURL.from(alice.id()),
+                "20300310T000000", "20300510T000000")
+            .then().statusCode(SC_FORBIDDEN);
+        xmlCalendarQueryByUid(user, CalendarURL.from(alice.id()).asUri().toString(), eventUid)
+            .then().statusCode(SC_FORBIDDEN);
+        getEvent(user, alice, eventUid)
+            .then().statusCode(SC_FORBIDDEN);
     }
 
-    private DavResponse getEvent(OpenPaasUser user, OpenPaasUser owner, String eventUid) {
-        return execute(dockerExtension().davHttpClient()
-            .headers(user::impersonatedBasicAuth)
-            .get()
-            .uri(CalendarURL.from(owner.id()).asUri() + "/" + eventUid + ".ics"));
+    private Response getEvent(OpenPaasUser user, OpenPaasUser owner, String eventUid) {
+        return given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(CalendarURL.from(owner.id()).asUri() + "/" + eventUid + ".ics");
     }
 
-    private DavResponse xmlCalendarQueryByUid(OpenPaasUser user, String calendarUri, String eventUid) {
-        return execute(dockerExtension().davHttpClient()
-            .headers(headers -> user.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(calendarUri)
-            .send(body("""
+    private Response xmlCalendarQueryByUid(OpenPaasUser user, String calendarUri, String eventUid) {
+        return given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -580,7 +584,9 @@ public abstract class CalDavDelegationContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.formatted(eventUid))));
+                """.formatted(eventUid))
+        .when()
+            .request("REPORT", calendarUri);
     }
 
     @ParameterizedTest
@@ -657,10 +663,16 @@ public abstract class CalDavDelegationContract {
         URI delegatedEventUri = calDavClient.findDelegatedCalendar(alice, bob.id()).eventHref(eventUid);
 
         // WHEN Alice modifies the private event via her delegated calendar
-        int status = putIcsEvent(alice, delegatedEventUri, tamperedPrivateIcsEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(tamperedPrivateIcsEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(delegatedEventUri.toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
 
-        // THEN the modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        // THEN Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -674,10 +686,16 @@ public abstract class CalDavDelegationContract {
         URI delegatedEventUri = calDavClient.findDelegatedCalendar(alice, bob.id()).eventHref(eventUid);
 
         // WHEN Alice modifies the private event via her delegated calendar using the JSON API
-        int status = putJsonEvent(alice, delegatedEventUri, tamperedPrivateJsonEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/calendar+json")
+            .body(tamperedPrivateJsonEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(delegatedEventUri.toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
 
-        // THEN the modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        // THEN Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -689,13 +707,14 @@ public abstract class CalDavDelegationContract {
         URI delegatedEventUri = calDavClient.findDelegatedCalendar(alice, bob.id()).eventHref(eventUid);
 
         // WHEN Alice deletes the private event via her delegated calendar
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .delete()
-            .uri(delegatedEventUri.toString()));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .delete(delegatedEventUri.toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
 
         // THEN the deletion is rejected and Bob's event still exists
-        assertThat(status).isEqualTo(SC_FORBIDDEN);
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -708,10 +727,16 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // WHEN Alice modifies the private event directly in Bob's SOURCE calendar
-        int status = putIcsEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateIcsEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(tamperedPrivateIcsEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
 
-        // THEN the modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        // THEN Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -724,10 +749,16 @@ public abstract class CalDavDelegationContract {
         calDavClient.grantDelegation(bob, bob.id(), alice, right);
 
         // WHEN Alice modifies the private event directly in Bob's SOURCE calendar using the JSON API
-        int status = putJsonEvent(alice, CalendarURL.from(bob.id()).eventHref(eventUid), tamperedPrivateJsonEvent(eventUid));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/calendar+json")
+            .body(tamperedPrivateJsonEvent(eventUid).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(CalendarURL.from(bob.id()).eventHref(eventUid).toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
 
-        // THEN the modification is rejected and Bob's event is left untouched
-        assertThat(status).isEqualTo(SC_FORBIDDEN);
+        // THEN Bob's event is left untouched
         assertThatBobPrivateEventIsUnchanged(eventUid);
     }
 
@@ -781,23 +812,6 @@ public abstract class CalDavDelegationContract {
                 ["class",{},"text","PRIVATE"]
             ],[]]]]
             """.formatted(eventUid);
-    }
-
-    private int putIcsEvent(OpenPaasUser user, URI eventUri, String calendarData) {
-        return putEvent(user, eventUri, "text/calendar ; charset=utf-8", calendarData);
-    }
-
-    private int putJsonEvent(OpenPaasUser user, URI eventUri, String calendarData) {
-        return putEvent(user, eventUri, "application/calendar+json", calendarData);
-    }
-
-    private int putEvent(OpenPaasUser user, URI eventUri, String contentType, String calendarData) {
-        return executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> user.impersonatedBasicAuth(headers)
-                .add("Content-Type", contentType))
-            .put()
-            .uri(eventUri.toString())
-            .send(body(calendarData)));
     }
 
     private void assertThatBobPrivateEventIsUnchanged(String eventUid) {
@@ -917,11 +931,11 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
-        DavResponse response = calDavClient.findEventsByTime(testUser2,
+        Response response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -950,11 +964,11 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, right);
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
-        DavResponse response = calDavClient.findEventsByTime(testUser2,
+        Response response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -982,12 +996,13 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ);
 
-        DavResponse response2 = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "?export"));
-
-        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "?export")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -1011,12 +1026,13 @@ public abstract class CalDavDelegationContract {
 
         calDavClient.grantDelegation(testUser, testUser.id(), testUser2, DelegationRight.READ_WRITE);
 
-        DavResponse response2 = execute(dockerExtension().davHttpClient()
-            .headers(testUser::impersonatedBasicAuth)
-            .get()
-            .uri("/calendars/" + testUser.id() + "/" + testUser.id() + "?export"));
-
-        AssertionsForClassTypes.assertThat(response2.status()).isEqualTo(200);
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "?export")
+        .then()
+            .statusCode(200);
     }
 
     @Test
@@ -1027,14 +1043,17 @@ public abstract class CalDavDelegationContract {
         CalendarURL delegatedCalendar = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice exports Bob's calendar through her delegated copy
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .get()
-            .uri(delegatedCalendar.asUri() + "?export"));
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("*/*")
+        .when()
+            .get(delegatedCalendar.asUri() + "?export")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
         // THEN the export contains only the sanitized event details
-        assertThat(response.status()).isEqualTo(200);
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("UID:" + eventUid, "SUMMARY:Busy")
             .doesNotContain("Bob private meeting", "Bob private description");
     }
@@ -1083,13 +1102,12 @@ public abstract class CalDavDelegationContract {
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(bob, alice.id());
 
         // WHEN Bob queries the event via CalDAV REPORT
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(calendarURL.asUri().toString())
-            .send(body("""
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -1105,13 +1123,17 @@ public abstract class CalDavDelegationContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.formatted(eventUid))));
+                """.formatted(eventUid))
+        .when()
+            .request("REPORT", calendarURL.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
 
         // THEN Bob sees an anonymized version of the event
         String calendarDataResponse = XMLUtil.extractByXPath(
-            response.body(),
+            responseBody,
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
@@ -1121,7 +1143,7 @@ public abstract class CalDavDelegationContract {
         assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.DESCRIPTION)).isEmpty();
         assertThat(actualCalendar.extractOptionalEventProperty(Optional.empty(), Property.LOCATION)).isEmpty();
-        assertThat(response.body())
+        assertThat(responseBody)
             .contains("DTSTAMP:20250929T080000Z")
             .doesNotContain("BEGIN:VALARM")
             .doesNotContain("Secret alarm text")
@@ -1167,15 +1189,18 @@ public abstract class CalDavDelegationContract {
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(bob, alice.id());
 
         // WHEN Bob queries the event via CalDAV GET
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri(calendarURL.asUri().toASCIIString() + "/" + eventUid + ".ics"));
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(calendarURL.asUri().toASCIIString() + "/" + eventUid + ".ics")
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(200);
 
         // THEN Bob sees an anonymized version of the event
-        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(response.body());
+        CalendarUtil.CalendarExtractor actualCalendar = CalendarUtil.toExtractor(responseBody);
 
         // The event should be anonymized: SUMMARY = "Busy", no DESCRIPTION, no LOCATION
         assertThat(actualCalendar.extractPropertyValue(Property.SUMMARY)).isEqualTo("Busy");
@@ -1204,11 +1229,11 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
-        DavResponse response = calDavClient.findEventsByTime(testUser2,
+        Response response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -1248,11 +1273,11 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, updatedCalendarData);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
-        DavResponse response = calDavClient.findEventsByTime(testUser2,
+        Response response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -1282,11 +1307,11 @@ public abstract class CalDavDelegationContract {
         calDavClient.deleteCalendarEvent(testUser, eventUid);
 
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(testUser2, testUser.id());
-        DavResponse response = calDavClient.findEventsByTime(testUser2,
+        Response response = calDavClient.findEventsByTime(testUser2,
             calendarURL,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         assertThat(result).hasSize(0);
     }
@@ -1736,10 +1761,10 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid2, calendarData2);
 
         // AND the event is created in Bob original calendar
-        DavResponse response = calDavClient.findEventsByTime(bob,
+        Response response = calDavClient.findEventsByTime(bob,
             "20251029T090000",
             "20251031T100000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid2);
         assertThat(result.get(0).summary().get()).isEqualTo("Alice created event");
@@ -1775,13 +1800,12 @@ public abstract class CalDavDelegationContract {
 
         // THEN the event appears in Bob's SOURCE calendar via CalDAV REPORT
         String bobSourceCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(bobSourceCalendarUri)
-            .send(body("""
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -1797,12 +1821,16 @@ public abstract class CalDavDelegationContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.formatted(eventUid))));
+                """.formatted(eventUid))
+        .when()
+            .request("REPORT", bobSourceCalendarUri)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
 
         String calendarDataResponse = XMLUtil.extractByXPath(
-            response.body(),
+            responseBody,
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
 
@@ -1844,10 +1872,10 @@ public abstract class CalDavDelegationContract {
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
 
         // THEN the event is deleted in Bob's original calendar
-        DavResponse response = calDavClient.findEventsByTime(bob,
+        Response response = calDavClient.findEventsByTime(bob,
             "20251029T090000",
             "20251031T100000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
         assertThat(result).isEmpty();
     }
 
@@ -1884,13 +1912,12 @@ public abstract class CalDavDelegationContract {
 
         // THEN the event is removed from Bob's SOURCE calendar (verified via CalDAV REPORT)
         String bobSourceCalendarUri = "/calendars/" + bob.id() + "/" + bob.id();
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "application/xml")
-                .add("Depth", "1"))
-            .request(HttpMethod.valueOf("REPORT"))
-            .uri(bobSourceCalendarUri)
-            .send(body("""
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
                 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                     <d:prop>
                         <d:getetag />
@@ -1906,12 +1933,16 @@ public abstract class CalDavDelegationContract {
                         </c:comp-filter>
                     </c:filter>
                 </c:calendar-query>
-                """.formatted(eventUid))));
+                """.formatted(eventUid))
+        .when()
+            .request("REPORT", bobSourceCalendarUri)
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
         // No calendar-data should be returned for the deleted event
         String calendarDataResponse = XMLUtil.extractByXPath(
-            response.body(),
+            responseBody,
             "//cal:calendar-data",
             Map.of("cal", "urn:ietf:params:xml:ns:caldav"));
         assertThat(calendarDataResponse).isNullOrEmpty();
@@ -1969,31 +2000,29 @@ public abstract class CalDavDelegationContract {
         URI mirrorEventUri = URI.create(mirrorCalendarURL.asUri() + "/" + eventUid + ".ics");
 
         // WHEN Alice deletes the event via the delegated mirror calendar
-        int mirrorDeleteStatus = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .delete()
-            .uri(mirrorEventUri.toASCIIString()));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+        .when()
+            .delete(mirrorEventUri.toASCIIString())
+        .then()
+            .statusCode(403);
 
         // AND Bob's origin calendar object must remain regardless of the mirror DELETE status
         URI originEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
-        DavResponse originEventResponse = execute(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .get()
-            .uri(originEventUri.toASCIIString()));
+        String originEventResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .accept("text/calendar")
+        .when()
+            .get(originEventUri.toASCIIString())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertSoftly(softly -> {
-            softly.assertThat(mirrorDeleteStatus)
-                .as("Read-only delegated mirror DELETE should be rejected")
-                .isEqualTo(403);
-            softly.assertThat(originEventResponse.status())
-                .as("Origin calendar event must remain when mirror DELETE returned " + mirrorDeleteStatus)
-                .isEqualTo(200);
-            softly.assertThat(originEventResponse.body())
-                .contains(eventUid)
-                .contains("SUMMARY:Bob's protected delegated event");
-        });
+        assertThat(originEventResponseBody)
+            .contains(eventUid)
+            .contains("SUMMARY:Bob's protected delegated event");
     }
 
     @Test
@@ -2059,25 +2088,22 @@ public abstract class CalDavDelegationContract {
             .as("Alice PARTSTAT on David's delegated calendar before update")
             .isEqualTo(PartStat.NEEDS_ACTION);
         String acceptedDelegatedEventIcs = CalendarUtil.withAttendeePartStat(delegatedEventIcs, alice.email(), PartStat.ACCEPTED);
-        int delegatedUpdateStatus = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> david.impersonatedBasicAuth(headers)
-                .add("Content-Type", "text/calendar ; charset=utf-8"))
-            .put()
-            .uri(delegatedEventUri.toASCIIString())
-            .send(body(acceptedDelegatedEventIcs)));
+        given()
+            .header("Authorization", david.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(acceptedDelegatedEventIcs.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(delegatedEventUri.toASCIIString())
+        .then()
+            .statusCode(403);
 
         // THEN Bob's organizer calendar keeps Alice participation untouched
         Awaitility.await()
             .during(Duration.ofSeconds(2))
-            .untilAsserted(() -> assertSoftly(softly -> {
-                softly.assertThat(delegatedUpdateStatus)
-                    .as("Read-only delegated PARTSTAT update should be rejected")
-                    .isEqualTo(403);
-                softly.assertThat(CalendarUtil.getAttendeePartStat(
-                        calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
-                    .as("Alice PARTSTAT on Bob organizer calendar after David delegated update")
-                    .isEqualTo(PartStat.NEEDS_ACTION);
-            }));
+            .untilAsserted(() -> assertThat(CalendarUtil.getAttendeePartStat(
+                    calDavClient.getCalendarEvent(bob, organizerEventUri), alice.email()))
+                .as("Alice PARTSTAT on Bob organizer calendar after David delegated update")
+                .isEqualTo(PartStat.NEEDS_ACTION));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -2117,10 +2143,10 @@ public abstract class CalDavDelegationContract {
             .toString();
         calDavClient.upsertCalendarEvent(alice, calendarURL, eventUid, updatedCalendarData);
 
-        DavResponse response = calDavClient.findEventsByTime(bob,
+        Response response = calDavClient.findEventsByTime(bob,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         // THEN the event is updated in Bob original calendar
         assertThat(result).hasSize(1);
@@ -2155,10 +2181,10 @@ public abstract class CalDavDelegationContract {
         // WHEN Alice deletes the event in Bob calendar copy
         calDavClient.deleteCalendarEvent(alice, calendarURL, eventUid);
 
-        DavResponse response = calDavClient.findEventsByTime(bob,
+        Response response = calDavClient.findEventsByTime(bob,
             "20300310T000000",
             "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
         // THEN the event is deleted in Bob original calendar
         assertThat(result).hasSize(0);
@@ -2193,12 +2219,12 @@ public abstract class CalDavDelegationContract {
 
         // THEN an ITIP request is sent to Cedric
         awaitAtMost.untilAsserted(() -> {
-            DavResponse response = calDavClient.findEventsByTime(cedric,
+            Response response = calDavClient.findEventsByTime(cedric,
                 cedric.id(),
                 "inbox",
                 "20300310T000000",
                 "20300510T000000");
-            List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+            List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).uid()).isEqualTo(eventUid);
@@ -2238,12 +2264,12 @@ public abstract class CalDavDelegationContract {
 
         // THEN an ITIP cancel is sent to Cedric
         awaitAtMost.untilAsserted(() -> {
-            DavResponse response = calDavClient.findEventsByTime(cedric,
+            Response response = calDavClient.findEventsByTime(cedric,
                 cedric.id(),
                 "inbox",
                 "20300310T000000",
                 "20300510T000000");
-            List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+            List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
 
             assertThat(result).hasSize(2);
             assertThat(result).anySatisfy(eventData -> {
@@ -2391,18 +2417,17 @@ public abstract class CalDavDelegationContract {
             }
             """.formatted(bob.email(), DelegationRight.READ.getValue());
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> bob.impersonatedBasicAuth(headers)
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
-                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
-            .request(HttpMethod.POST)
-            .uri(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + bob.id() + "/" + calendarId + ".json")
-            .send(body(payload)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/json;charset=UTF-8")
+            .accept("application/json, text/plain, */*")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + bob.id() + "/" + calendarId + ".json")
+        .then()
+            .statusCode(SC_BAD_REQUEST);
 
         // THEN the self delegation is rejected
-        assertThat(status)
-            .as("Self delegation by owner should be rejected")
-            .isEqualTo(SC_BAD_REQUEST);
         assertThat(calDavClient.getUserCalendarsJson(bob))
             .as("Self delegation by owner must not mutate Bob's calendar list")
             .isEqualTo(bobCalendarsBeforeSelfDelegation);
@@ -2437,18 +2462,17 @@ public abstract class CalDavDelegationContract {
             }
             """.formatted(alice.email(), DelegationRight.READ.getValue());
 
-        int status = executeNoContent(dockerExtension().davHttpClient()
-            .headers(headers -> alice.impersonatedBasicAuth(headers)
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
-                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
-            .request(HttpMethod.POST)
-            .uri(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + alice.id() + "/" + delegatedCalendarURL.calendarId() + ".json")
-            .send(body(payload)));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/json;charset=UTF-8")
+            .accept("application/json, text/plain, */*")
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .post(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + alice.id() + "/" + delegatedCalendarURL.calendarId() + ".json")
+        .then()
+            .statusCode(SC_BAD_REQUEST);
 
         // THEN the self delegation by delegated admin is rejected
-        assertThat(status)
-            .as("Self delegation by delegated admin should be rejected")
-            .isEqualTo(SC_BAD_REQUEST);
         assertThat(calDavClient.getUserCalendarsJson(bob))
             .as("Self delegation by delegated admin must not mutate Bob's source calendar list")
             .isEqualTo(bobCalendarsBeforeSelfDelegation);
@@ -2896,21 +2920,24 @@ public abstract class CalDavDelegationContract {
         calDavClient.updateCalendarSetting(bob, CalendarURL.from(bob.id()), "new name", "#009688");
 
         awaitAtMost.untilAsserted(() -> {
-            DavResponse response = execute(dockerExtension().davHttpClient()
-                .headers(headers -> alice.impersonatedBasicAuth(headers)
-                    .add("Depth", "0")
-                    .add("Content-Type", "application/xml"))
-                .request(HttpMethod.valueOf("PROPFIND"))
-                .uri(delegatedCalendar.asUri().toString())
-                .send(body("""
+            String responseBody = given()
+                .contentType("application/xml")
+                .accept("application/xml")
+                .header("Authorization", alice.impersonatedBasicAuth())
+                .header("Depth", "0")
+                .body("""
                     <d:propfind xmlns:d="DAV:">
                       <d:prop>
                         <d:displayname/>
                       </d:prop>
-                    </d:propfind>""")));
+                    </d:propfind>""")
+            .when()
+                .request("PROPFIND", delegatedCalendar.asUri().toString())
+            .then()
+                .statusCode(207)
+                .extract().asString();
 
-            assertThat(response.status()).isEqualTo(207);
-            XmlAssert.assertThat(response.body())
+            XmlAssert.assertThat(responseBody)
                 .withNamespaceContext(DAV_NAMESPACES)
                 .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
                     .formatted(delegatedCalendar.asUri()))
@@ -2932,21 +2959,24 @@ public abstract class CalDavDelegationContract {
         calDavClient.updateCalendarSetting(technicalToken, CalendarURL.from(resource.id()), "Renamed Resource Calendar", "#009688");
 
         awaitAtMost.untilAsserted(() -> {
-            DavResponse response = execute(dockerExtension().davHttpClient()
-                .headers(headers -> bob.impersonatedBasicAuth(headers)
-                    .add("Depth", "0")
-                    .add("Content-Type", "application/xml"))
-                .request(HttpMethod.valueOf("PROPFIND"))
-                .uri(delegatedResourceCalendar.asUri().toString())
-                .send(body("""
+            String responseBody = given()
+                .contentType("application/xml")
+                .accept("application/xml")
+                .header("Authorization", bob.impersonatedBasicAuth())
+                .header("Depth", "0")
+                .body("""
                     <d:propfind xmlns:d="DAV:">
                       <d:prop>
                         <d:displayname/>
                       </d:prop>
-                    </d:propfind>""")));
+                    </d:propfind>""")
+            .when()
+                .request("PROPFIND", delegatedResourceCalendar.asUri().toString())
+            .then()
+                .statusCode(207)
+                .extract().asString();
 
-            assertThat(response.status()).isEqualTo(207);
-            XmlAssert.assertThat(response.body())
+            XmlAssert.assertThat(responseBody)
                 .withNamespaceContext(DAV_NAMESPACES)
                 .valueByXPath("//d:response[d:href='%s/']/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname"
                     .formatted(delegatedResourceCalendar.asUri()))
@@ -2995,34 +3025,41 @@ public abstract class CalDavDelegationContract {
         URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
 
         // THEN: Bob can retrieve the event via GET
-        DavResponse getResponse = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri(resourceEventUri.toASCIIString()));
+        String resourceEventResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(getResponse.status()).isEqualTo(200);
-        assertThat(getResponse.body()).contains(eventUid);
+        assertThat(resourceEventResponseBody).contains(eventUid);
 
         // WHEN: Bob updates the resource participation status to ACCEPTED
-        String updatedEventIcs = getResponse.body()
+        String updatedEventIcs = resourceEventResponseBody
             .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
 
-        int updateStatusCode = executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri(resourceEventUri.toASCIIString())
-            .send(body(updatedEventIcs)));
-
-        assertThat(updateStatusCode).isEqualTo(204);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(updatedEventIcs.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(204);
 
         // THEN: Verify that the participation status is updated
-        DavResponse verifyResponse = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri(resourceEventUri.toASCIIString()));
+        String updatedResourceEventResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        assertThat(verifyResponse.status()).isEqualTo(200);
-        assertThat(verifyResponse.body())
+        assertThat(updatedResourceEventResponseBody)
             .contains("mailto:" + resource.id() + "@open-paas.org")
             .contains("PARTSTAT=ACCEPTED");
     }
@@ -3066,28 +3103,38 @@ public abstract class CalDavDelegationContract {
         // WHEN: Bob updates the resource participation status to ACCEPTED
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), bob), Optional::isPresent).get();
         URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
-        DavResponse getResponse = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri(resourceEventUri.toASCIIString()));
+        String resourceEventResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        String updatedEventIcs = getResponse.body()
+        String updatedEventIcs = resourceEventResponseBody
             .replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
-        executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri(resourceEventUri.toASCIIString())
-            .send(body(updatedEventIcs)));
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(updatedEventIcs.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(204);
 
         // THEN: Verify that Alice sees the updated participation status of the resource
         awaitAtMost.untilAsserted(() -> {
-            DavResponse aliceViewResponse = execute(dockerExtension().davHttpClient()
-                .headers(alice::impersonatedBasicAuth)
-                .get()
-                .uri("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics"));
+            String aliceEventResponseBody = given()
+                .header("Authorization", alice.impersonatedBasicAuth())
+                .accept("text/calendar")
+            .when()
+                .get("/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics")
+            .then()
+                .statusCode(200)
+                .extract().asString();
 
-            assertThat(aliceViewResponse.status()).isEqualTo(200);
-            assertThat(aliceViewResponse.body())
+            assertThat(aliceEventResponseBody)
                 .contains("mailto:" + resource.id() + "@open-paas.org")
                 .contains("PARTSTAT=ACCEPTED");
         });
@@ -3232,7 +3279,7 @@ public abstract class CalDavDelegationContract {
         // GIVEN: Bob's delegated resource calendar URL and event href
         CalendarURL resourceCalendarUrl = calDavClient.findDelegatedCalendar(bob, resource.id());
         List<String> propfindHrefs = awaitCalendarEntries(
-            dockerExtension().davHttpClient(),
+            dockerExtension().davRequestSpecification(),
             bob, resourceCalendarUrl.asUri().toString(), 1);
 
         // WHEN: Bob (resource admin) sends ITIP COUNTER via delegated calendar event URI
@@ -3336,35 +3383,30 @@ public abstract class CalDavDelegationContract {
         URI resourceEventUri = calDavClient.findDelegatedCalendar(bob, resource.id()).eventHref(resourceEventId);
 
         // sanity check: PUT works before revocation
-        DavResponse initialGetResponse = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .get()
-            .uri(resourceEventUri.toASCIIString()));
-        assertThat(initialGetResponse.status()).isEqualTo(200);
+        String initialEventResponseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(resourceEventUri.toASCIIString())
+        .then()
+            .statusCode(200)
+            .extract().asString();
 
-        String acceptedEventIcs = initialGetResponse.body().replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
-        Supplier<Integer> putAsDelegatedResourceAdmin = () -> executeNoContent(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .put()
-            .uri(resourceEventUri.toASCIIString())
-            .send(body(acceptedEventIcs)));
+        String acceptedEventIcs = initialEventResponseBody.replace("PARTSTAT=NEEDS-ACTION", "PARTSTAT=ACCEPTED");
+        Supplier<Response> putAsDelegatedResourceAdmin = () -> given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/calendar; charset=utf-8")
+            .body(acceptedEventIcs.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(resourceEventUri.toASCIIString());
 
-        int putBeforeRevokeStatus = putAsDelegatedResourceAdmin.get();
-        assertThat(putBeforeRevokeStatus)
-            .as("Bob is able to update delegated resource event before revocation")
-            .isEqualTo(204);
+        putAsDelegatedResourceAdmin.get().then().statusCode(204);
 
         // WHEN: revoke Bob's delegated right on the resource calendar
         revokeResourceAdmin(resource, bob, technicalToken);
 
         // THEN: PUT on delegated resource event is no longer allowed
-        awaitAtMost.untilAsserted(() -> {
-            int putAfterRevokeStatus = putAsDelegatedResourceAdmin.get();
-
-            assertThat(putAfterRevokeStatus)
-                .as("Bob is not able to update delegated resource event after revocation")
-                .isEqualTo(404);
-        });
+        awaitAtMost.untilAsserted(() -> putAsDelegatedResourceAdmin.get().then().statusCode(404));
     }
 
     @Test
@@ -3470,15 +3512,13 @@ public abstract class CalDavDelegationContract {
         String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
         delegateResourceToAdmin(resource, bob, technicalToken);
 
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(bob::impersonatedBasicAuth)
-            .headers(headers -> headers.add("Accept", "application/calendar+json"))
-            .get()
-            .uri("/calendars/" + bob.id() + "/events.json"));
-
-        assertThat(response.status())
-            .as("Expected status 200 but got %s with body: %s", response.status(), response.body())
-            .isEqualTo(200);
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("application/calendar+json")
+        .when()
+            .get("/calendars/" + bob.id() + "/events.json")
+        .then()
+            .statusCode(200);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -3492,24 +3532,28 @@ public abstract class CalDavDelegationContract {
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice PROPFIND the delegated calendar with current-user-privilege-set property
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(calendarURL.asUri().toString())
-            .send(body("""
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:">
                   <D:prop>
                     <D:current-user-privilege-set/>
                   </D:prop>
                 </D:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", calendarURL.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN Alice should see only read privileges in the current-user-privilege-set property of the delegated calendar
-        AssertionsForClassTypes.assertThat(response.status()).isEqualTo(207);
-        AssertionsForClassTypes.assertThat(response.body()).contains(calendarURL.asUri().toString());
-        AssertionsForClassTypes.assertThat(response.body()).contains("<d:read/>");
-        AssertionsForClassTypes.assertThat(response.body())
+        assertThat(responseBody)
+            .contains(calendarURL.asUri().toString())
+            .contains("<d:read/>")
             .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
     }
 
@@ -3524,23 +3568,28 @@ public abstract class CalDavDelegationContract {
         CalendarURL calendarURL = calDavClient.findDelegatedCalendar(alice, bob.id());
 
         // WHEN Alice PROPFIND the delegated calendar with current-user-privilege-set property
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(alice::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri(calendarURL.asUri().toString())
-            .send(body("""
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:">
                   <D:prop>
                     <D:current-user-privilege-set/>
                   </D:prop>
                 </D:propfind>
-                """)));
+                """)
+        .when()
+            .request("PROPFIND", calendarURL.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         // THEN Alice should see write privileges in the current-user-privilege-set property of the delegated calendar
-        AssertionsForClassTypes.assertThat(response.status()).isEqualTo(207);
-        AssertionsForClassTypes.assertThat(response.body()).contains(calendarURL.asUri().toString());
-        AssertionsForClassTypes.assertThat(response.body()).contains("<d:read/>", "<d:write/>");
+        assertThat(responseBody)
+            .contains(calendarURL.asUri().toString())
+            .contains("<d:read/>", "<d:write/>");
     }
 
     private void delegateResourceToAdmin(OpenPaaSResource resource, OpenPaasUser admin, String technicalToken) {
@@ -3662,8 +3711,8 @@ public abstract class CalDavDelegationContract {
         calDavClient.upsertCalendarEvent(alice, calendarUrls.getFirst(), eventUid, calendarData);
 
         // THEN the event appears in Bob's source calendar
-        DavResponse response = calDavClient.findEventsByTime(bob, "20300310T000000", "20300510T000000");
-        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.body());
+        Response response = calDavClient.findEventsByTime(bob, "20300310T000000", "20300510T000000");
+        List<JsonCalendarEventData> result = JsonCalendarEventData.from(response.asString());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).uid()).isEqualTo(eventUid);
     }
@@ -3714,8 +3763,8 @@ public abstract class CalDavDelegationContract {
         assertThat(bobCalendarsResponse).doesNotContain(alice.id());
 
         // AND Alice can read Bob's calendar via the subscription
-        DavResponse readResponse = calDavClient.findEventsByTime(alice, subscribedCalendarURL, "20300310T000000", "20300510T000000");
-        List<JsonCalendarEventData> readResult = JsonCalendarEventData.from(readResponse.body());
+        Response readResponse = calDavClient.findEventsByTime(alice, subscribedCalendarURL, "20300310T000000", "20300510T000000");
+        List<JsonCalendarEventData> readResult = JsonCalendarEventData.from(readResponse.asString());
         assertThat(readResult).hasSize(1);
         assertThat(readResult.get(0).uid()).isEqualTo(eventUid);
 
@@ -3766,13 +3815,18 @@ public abstract class CalDavDelegationContract {
     }
 
     private List<String> getXmlCalendars(OpenPaasUser user) throws Exception {
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(user::impersonatedBasicAuth)
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/calendars/" + user.id()));
+        String responseBody = given()
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Authorization", user.impersonatedBasicAuth())
+        .when()
+            .request("PROPFIND", "/calendars/" + user.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
         List<String> xmlAliceCalendars = XMLUtil.extractMultipleValueByXPath(
-            response.body(),
+            responseBody,
             "//d:multistatus/d:response/d:href",
             Map.of("d", "DAV:")
         );

@@ -18,41 +18,49 @@
 
 package com.linagora.dav.contracts;
 
-import static com.linagora.dav.TestUtil.body;
-import static com.linagora.dav.TestUtil.execute;
-import static org.assertj.core.api.Assertions.assertThat;
+import static io.restassured.RestAssured.given;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.xmlunit.assertj3.XmlAssert;
 
-import com.linagora.dav.DavResponse;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
 
-import io.netty.handler.codec.http.HttpMethod;
+import io.restassured.RestAssured;
 
 public abstract class PrincipalContract {
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
+    private OpenPaasUser testUser;
+
+    @BeforeEach
+    void setUp() {
+        RestAssured.reset();
+        testUser = dockerExtension().newTestUser();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification()
+            .contentType("application/xml")
+            .header("Authorization", testUser.impersonatedBasicAuth());
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
     @Test
     void currentUserPrincipalShouldLinkTheUserPrincipal() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/")
-            .send(body("""
+        String responseBody = given()
+            .header("Depth", 0)
+            .body("""
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                      <d:current-user-principal />
                   </d:prop>
-                </d:propfind>""")));
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>/principals/users/" + testUser.id() + "/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -63,24 +71,22 @@ public abstract class PrincipalContract {
 
     @Test
     void shouldShowDisplayName() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/")
-            .send(body("""
+        String responseBody = given()
+            .header("Depth", 0)
+            .body("""
                 <d:propfind xmlns:d="DAV:">
                   <d:prop>
                      <d:displayname/>
                      <d:current-user-principal />
                   </d:prop>
-                </d:propfind>""")));
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/")
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>/principals/users/" + testUser.id() + "/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>" +
@@ -91,23 +97,21 @@ public abstract class PrincipalContract {
 
     @Test
     void shouldAllowAddressBookDiscovery() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/users/" + testUser.id())
-            .send(body("""
+        String responseBody = given()
+            .header("Depth", 0)
+            .body("""
                 <d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
                                <d:prop>
                                   <card:addressbook-home-set />
                                </d:prop>
-                             </d:propfind>""")));
+                             </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/users/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/principals/users/" + testUser.id() + "/</d:href><d:propstat><d:prop><card:addressbook-home-set><d:href>/addressbooks/" + testUser.id() + "/</d:href></card:addressbook-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
@@ -118,23 +122,21 @@ public abstract class PrincipalContract {
 
     @Test
     void shouldAllowCalendarDiscovery() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-
-        DavResponse response = execute(dockerExtension().davHttpClient()
-            .headers(headers -> testUser.impersonatedBasicAuth(headers)
-                .add("Depth", 0)
-                .add("Content-Type", "application/xml"))
-            .request(HttpMethod.valueOf("PROPFIND"))
-            .uri("/principals/users/" + testUser.id())
-            .send(body("""
+        String responseBody = given()
+            .header("Depth", 0)
+            .body("""
                 <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
                                             <d:prop>
                                                <c:calendar-home-set />
                                             </d:prop>
-                                          </d:propfind>""")));
+                                          </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/users/" + testUser.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
 
-        assertThat(response.status()).isEqualTo(207);
-        XmlAssert.assertThat(response.body())
+        XmlAssert.assertThat(responseBody)
             .and("<?xml version=\"1.0\"?>" +
                 "<d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
                 "<d:response><d:href>/principals/users/" + testUser.id() + "/</d:href><d:propstat><d:prop><cal:calendar-home-set><d:href>/calendars/" + testUser.id() + "/</d:href></cal:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>" +
