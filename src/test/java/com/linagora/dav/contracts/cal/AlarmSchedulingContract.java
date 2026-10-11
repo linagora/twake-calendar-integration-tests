@@ -1896,7 +1896,7 @@ public abstract class AlarmSchedulingContract {
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
-        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstEventId(user));
+        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstEventId(user, CalendarURL.from(user.id())));
     }
 
     private String readEventSummary(String icsContent) {
