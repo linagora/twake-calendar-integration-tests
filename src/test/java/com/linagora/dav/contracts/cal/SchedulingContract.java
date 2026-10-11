@@ -4964,7 +4964,7 @@ public abstract class SchedulingContract {
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
-        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstEventId(user));
+        return awaitPresent(awaitAtMost, () -> calDavClient.findFirstEventId(user, CalendarURL.from(user.id())));
     }
 
     private URI awaitCalendarObjectUriByEventUid(OpenPaasUser user, CalendarURL calendarURL, String eventUid) {
