@@ -21,15 +21,20 @@ package com.linagora.dav.contracts.card;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.google.common.collect.ImmutableSet;
 import com.linagora.dav.AddressBookURL;
@@ -41,6 +46,7 @@ import com.linagora.dav.XMLUtil;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
+import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CardDavSharingContract {
 
@@ -135,6 +141,70 @@ public abstract class CardDavSharingContract {
                 """.replace("{addressBook}", copiedAddressBook)
                 .replace("{aliceId}", alice.id())
                 .replace("{bobId}", bob.id()));
+    }
+
+    @ParameterizedTest
+    @EnumSource(PublicRight.class)
+    protected void userShouldBeAbleToResubscribeToPublicAddressBook(PublicRight publicRight) {
+        String sourceAddressBookId = "collected";
+        String resubscribedName = "Resubscribed address book";
+
+        // GIVEN Alice has a public address book containing a contact
+        cardDavClient.upsertContact(alice, sourceAddressBookId, "test-contact-uid", """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:John Doe
+            END:VCARD
+            """.replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8));
+        cardDavClient.setPublicRight(alice, alice.id(), sourceAddressBookId, publicRight);
+
+        // AND Bob subscribes to Alice's address book
+        cardDavClient.subscribe(bob, alice.id(), sourceAddressBookId, "Alice's address book");
+        AddressBookURL subscribedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)
+            .orElseThrow();
+
+        // WHEN Bob deletes his subscription and subscribes again
+        cardDavClient.deleteAddressBook(bob, subscribedAddressBook.addressBookId());
+        assertThat(cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId))
+            .isEmpty();
+        cardDavClient.subscribe(bob, alice.id(), sourceAddressBookId, resubscribedName);
+
+        // THEN Bob has a new public subscription with the requested name and the source's public rights
+        String addressBooksResponse = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        Optional<AddressBookURL> resubscribedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId);
+        assertSoftly(softly -> {
+            softly.assertThat(resubscribedAddressBook).as("New public subscription").isPresent();
+            softly.assertThatCode(() -> assertThatJson(addressBooksResponse)
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .inPath("_embedded.dav:addressbook[2]")
+                    .isEqualTo("""
+                        {
+                            "openpaas:source": "/addressbooks/{aliceId}/{sourceAddressBookId}.json",
+                            "openpaas:subscription-type": "public",
+                            "dav:name": "{resubscribedName}",
+                            "dav:acl": {publicAcl}
+                        }
+                        """.replace("{aliceId}", alice.id())
+                        .replace("{sourceAddressBookId}", sourceAddressBookId)
+                        .replace("{resubscribedName}", resubscribedName)
+                        .replace("{publicAcl}", publicRight == PublicRight.READ ? "[\"dav:read\"]" : "[\"dav:read\", \"dav:write\"]")))
+                .as("Public subscription metadata")
+                .doesNotThrowAnyException();
+
+            // AND Bob can read Alice's existing contact through the new subscription
+            resubscribedAddressBook.ifPresent(addressBook -> softly.assertThat(cardDavClient.getContacts(bob, bob.id(), addressBook.addressBookId()))
+                .as("Contacts read through the new public subscription")
+                .contains("John Doe"));
+        });
     }
 
     @Test

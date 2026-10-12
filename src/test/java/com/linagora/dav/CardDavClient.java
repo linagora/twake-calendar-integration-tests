@@ -19,9 +19,12 @@
 package com.linagora.dav;
 
 import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
+import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_OK;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -215,6 +218,31 @@ public class CardDavClient {
                             """.formatted(response.status().code(), openPaaSUser.id(), errorBody))));
                 }
             }).flatMapMany(Flux::fromIterable);
+    }
+
+    public Optional<AddressBookURL> findSubscribedAddressBook(OpenPaasUser user, String sourceUserId, String sourceAddressBookId) {
+        String source = new AddressBookURL(sourceUserId, sourceAddressBookId).asUri() + ".json";
+        JsonNode response = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .queryParam("inviteStatus", 2)
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get("/addressbooks/" + user.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().as(JsonNode.class);
+
+        List<AddressBookURL> subscriptions = Streams.stream(response.path("_embedded").path("dav:addressbook").elements())
+            .filter(book -> source.equals(book.path("openpaas:source").asText()))
+            .map(book -> parseHref(book.path("_links").path("self").path("href").asText()))
+            .toList();
+        if (subscriptions.size() > 1) {
+            throw new IllegalStateException("Expected at most one subscribed address book for source %s and user %s, but found %d"
+                .formatted(source, user.email(), subscriptions.size()));
+        }
+        return subscriptions.stream().findFirst();
     }
 
     public void createAddressBook(OpenPaasUser user, String addressBook) {
