@@ -23,6 +23,8 @@ import static com.linagora.dav.contracts.cal.CalDavContract.ICS_2;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_OK;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -33,14 +35,18 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Streams;
 import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
@@ -49,6 +55,7 @@ import com.linagora.dav.dto.share.SubscribedCalendarRequest;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CalJsonContract {
@@ -3876,5 +3883,524 @@ public abstract class CalJsonContract {
                 .dtend("2030-06-03T10:00:00Z")
                 .recurrenceId("2030-06-03T09:00:00Z")
                 .build());
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldReturnOnlyTeamCalendarEvents() throws JsonProcessingException {
+        // Given Alice has events with the same UID in two delegated team calendars and her personal calendar
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        OpenPaaSTeamCalendar firstTeamCalendar = createTeamCalendarWithEvent(alice, eventUid);
+        OpenPaaSTeamCalendar secondTeamCalendar = createTeamCalendarWithEvent(alice, eventUid);
+        CalendarURL personalCalendar = CalendarURL.from(alice.id());
+        calDavClient.upsertCalendarEvent(alice, personalCalendar, eventUid, eventIcsWithUid(eventUid));
+
+        // When querying only team calendars by UID
+        Response response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("ownCalendar", false)
+            .queryParam("teamCalendars", true)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events").prettyPeek()
+        .then()
+            .statusCode(SC_OK)
+            .extract().response();
+
+        // Then the team source events are returned and the personal calendar event is excluded
+        assertThat(response.<String>path("_links.self.href"))
+            .isEqualTo("/calendars/" + alice.id() + "/events");
+        String firstTeamEventHref = "/calendars/" + firstTeamCalendar.id() + "/" + firstTeamCalendar.id() + "/" + eventUid + ".ics";
+        String secondTeamEventHref = "/calendars/" + secondTeamCalendar.id() + "/" + secondTeamCalendar.id() + "/" + eventUid + ".ics";
+        String personalEventHref = "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics";
+        List<String> eventHrefs = response.path("_embedded.'dav:item'._links.self.href");
+        assertThat(eventHrefs)
+            .containsExactlyInAnyOrder(firstTeamEventHref, secondTeamEventHref)
+            .doesNotContain(personalEventHref);
+        assertThat(JsonCalendarEventData.from(response.asString()))
+            .hasSize(2)
+            .allSatisfy(event -> assertThat(event.summary()).contains("Source report event"));
+
+        // When Alice excludes both team calendars and her personal calendar
+        List<?> unselectedEvents = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("ownCalendar", false)
+            .queryParam("teamCalendars", false)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then none of the existing events are returned
+        assertThat(unselectedEvents).isEmpty();
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldMatchOwnEventUidExactly() {
+        // Given an event whose UID has a suffix
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), "exact-suffix",
+            eventIcsWithUid("exact-suffix"));
+
+        // When querying a prefix
+        List<?> prefixMatches = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {
+                    "uid": "exact"
+                }
+                """)
+        .when()
+            .post("/calendars/" + alice.id() + "/events?ownCalendar=true")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then the prefix does not match
+        assertThat(prefixMatches).isEmpty();
+
+        // When querying the full UID
+        List<?> exactMatches = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {
+                    "uid": "exact-suffix"
+                }
+                """)
+        .when()
+            .post("/calendars/" + alice.id() + "/events?ownCalendar=true")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then the event is returned
+        assertThat(exactMatches).hasSize(1);
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldNotReturnTeamEventsWhenCallerHasNoReadAccess() {
+        // Given Alice can read a team calendar, but Bob has no access
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        OpenPaaSTeamCalendar teamCalendar = createTeamCalendarWithEvent(alice, eventUid);
+        // Remove public read access; Alice keeps her delegation.
+        calDavClient.updateTeamCalendarAcl(teamCalendar, "");
+        OpenPaasUser bob = dockerExtension().newTestUser();
+
+        // When Bob searches Alice's calendar home using his own credentials
+        List<?> returnedEvents = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("teamCalendars", true)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then Bob receives no events despite Alice's access to the team calendar
+        assertThat(returnedEvents).isEmpty();
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldNotReadAnotherUsersPersonalCalendar() {
+        // Given Alice has a personal event that Bob has no permission to read
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.updateCalendarAcl(alice, "");
+        calDavClient.upsertCalendarEvent(alice, CalendarURL.from(alice.id()), eventUid,
+            eventIcsWithUid(eventUid).replace("Source report event", "Alice's confidential meeting"));
+        String personalEventHref = "/calendars/" + alice.id() + "/" + alice.id() + "/" + eventUid + ".ics";
+        String uidFilter = """
+            {
+                "uid": "${uid}"
+            }
+            """.replace("${uid}", eventUid);
+
+        // Alice can retrieve the event through the endpoint
+        List<String> ownerEventHrefs = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("ownCalendar", true)
+            .body(uidFilter)
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'._links.self.href");
+
+        assertThat(ownerEventHrefs).containsExactly(personalEventHref);
+
+        // When Bob targets Alice's home and enables every selector
+        String responseBody = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("ownCalendar", true)
+            .queryParam("teamCalendars", true)
+            .queryParam("publicSubscriptions", true)
+            .queryParam("sharedCalendars", true)
+            .queryParam("resourceCalendars", true)
+            .body(uidFilter)
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then neither the event nor its private data is exposed
+        assertThatJson(responseBody)
+            .inPath("_embedded['dav:item']")
+            .isArray()
+            .isEmpty();
+        assertThat(responseBody).doesNotContain(eventUid, personalEventHref, "Alice's confidential meeting");
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldNotReadEventsAfterDelegationIsRevoked() {
+        // Given Alice can read an event delegated by Bob
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, eventIcsWithUid(eventUid));
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        String sharedEventHref = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        String uidFilter = """
+            {
+                "uid": "${uid}"
+            }
+            """.replace("${uid}", eventUid);
+
+        List<String> accessibleEventHrefs = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedCalendars", true)
+            .body(uidFilter)
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'._links.self.href");
+
+        assertThat(accessibleEventHrefs).containsExactly(sharedEventHref);
+
+        // When Bob revokes Alice's delegation and she repeats the same query
+        calDavClient.revokeDelegation(bob, bob.id(), alice);
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedCalendars", true)
+            .body(uidFilter)
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then the formerly accessible event is no longer returned
+        assertThatJson(responseBody)
+            .inPath("_embedded['dav:item']")
+            .isArray()
+            .isEmpty();
+        assertThat(responseBody).doesNotContain(eventUid, sharedEventHref, "Source report event");
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldNotReadSubscribedEventsAfterPublicAccessIsRevoked() {
+        // Given Alice subscribes to Bob's public calendar and can read its event
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, eventIcsWithUid(eventUid));
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        calDavClient.subscribeToSharedCalendar(alice, SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob's public calendar")
+            .color("#00FF00")
+            .readOnly(true)
+            .build());
+        String subscribedEventHref = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        String uidFilter = """
+            {
+                "uid": "${uid}"
+            }
+            """.replace("${uid}", eventUid);
+
+        List<String> accessibleEventHrefs = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("publicSubscriptions", true)
+            .body(uidFilter)
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'._links.self.href");
+
+        assertThat(accessibleEventHrefs).containsExactly(subscribedEventHref);
+
+        // When Bob removes public read access while Alice keeps her subscription
+        calDavClient.updateCalendarAcl(bob, "");
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("publicSubscriptions", true)
+            .body(uidFilter)
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then a subscription cannot bypass the source calendar's current ACL
+        assertThatJson(responseBody)
+            .inPath("_embedded['dav:item']")
+            .isArray()
+            .isEmpty();
+        assertThat(responseBody).doesNotContain(eventUid, subscribedEventHref, "Source report event");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+        ownCalendar=true  | {}
+        ownCalendar=true  | null
+        ownCalendar=true  | []
+        ownCalendar=true  | {
+        ownCalendar=true  | {"uid":12}
+        ownCalendar=true  | {"uid":""}
+        ownCalendar=true  | {"uid":"x","summary":"y"}
+        teamCalendars=yes | {"uid":"x"}
+        """)
+    protected void reportAcrossSourcesShouldRejectInvalidOrUnsupportedRequests(String query, String payload) {
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // When submitting invalid selectors or invalid/unsupported filters
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body(payload)
+        .when()
+            .post("/calendars/" + alice.id() + "/events?" + query)
+        .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldQueryDelegatedCalendar() {
+        // Given an event in Bob's calendar delegated read-only to Alice
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, eventIcsWithUid(eventUid));
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+
+        // When Alice queries shared calendars by UID
+        List<String> eventHrefs = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedCalendars", true)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'._links.self.href");
+
+        // Then the event href points to Bob's original calendar
+        String sharedEventHref = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        assertThat(eventHrefs).containsExactly(sharedEventHref);
+
+        // When Alice excludes delegated calendars
+        List<?> unselectedEvents = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedCalendars", false)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then Bob's event is not returned
+        assertThat(unselectedEvents).isEmpty();
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldQueryPublicSubscription() {
+        // Given Alice subscribes to Bob's public calendar containing an event
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(bob, CalendarURL.from(bob.id()), eventUid, eventIcsWithUid(eventUid));
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        calDavClient.subscribeToSharedCalendar(alice, SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob's public calendar")
+            .color("#00FF00")
+            .readOnly(true)
+            .build());
+
+        // When Alice queries public subscriptions by UID
+        List<String> eventHrefs = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("publicSubscriptions", true)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'._links.self.href");
+
+        // Then the event href points to Bob's source, rather than Alice's subscription
+        String subscribedEventHref = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
+        assertThat(eventHrefs).containsExactly(subscribedEventHref);
+
+        // When Alice excludes public subscriptions
+        List<?> unselectedEvents = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("publicSubscriptions", false)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then the subscribed event is not returned
+        assertThat(unselectedEvents).isEmpty();
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldQueryResourceCalendar() {
+        // Given an event in a resource calendar delegated read-only to Alice
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        String resourceId = dockerExtension().twakeCalendarProvisioningService()
+            .createResource("resource-" + UUID.randomUUID(), "Report resource", alice)
+            .block()
+            .id();
+        String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.upsertCalendarEvent(resourceId, eventUid, eventIcsWithUid(eventUid), token);
+        calDavClient.grantDelegation(resourceId, alice, DelegationRight.READ, token);
+
+        // When Alice queries resource calendars by UID
+        List<String> eventHrefs = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("resourceCalendars", true)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'._links.self.href");
+
+        // Then the event href points to the resource's original calendar
+        String resourceEventHref = "/calendars/" + resourceId + "/" + resourceId + "/" + eventUid + ".ics";
+        assertThat(eventHrefs).containsExactly(resourceEventHref);
+
+        // When Alice excludes resource calendars
+        List<?> unselectedEvents = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("resourceCalendars", false)
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", eventUid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events")
+        .then()
+            .statusCode(SC_OK)
+            .extract().path("_embedded.'dav:item'");
+
+        // Then the resource event is not returned
+        assertThat(unselectedEvents).isEmpty();
+    }
+
+    @Test
+    protected void reportAcrossSourcesShouldPreservePrivateEventRedactionOnSharedSource() {
+        // Given a private event in a calendar delegated read-only to Alice
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser owner = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(owner, CalendarURL.from(owner.id()), uid,
+            eventIcsWithUid(uid).replace("SUMMARY:Source report event", "CLASS:PRIVATE\nSUMMARY:Secret meeting"));
+        calDavClient.grantDelegation(owner, owner.id(), alice, DelegationRight.READ);
+
+        // When querying the source
+        String body = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {
+                    "uid": "${uid}"
+                }
+                """.replace("${uid}", uid))
+        .when()
+            .post("/calendars/" + alice.id() + "/events?sharedCalendars=true")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then the event is returned, but its private details remain hidden
+        assertThatJson(body)
+            .inPath("_embedded['dav:item']")
+            .isArray()
+            .hasSize(1);
+        assertThat(body).doesNotContain("Secret meeting");
+    }
+
+    private OpenPaaSTeamCalendar createTeamCalendarWithEvent(OpenPaasUser alice, String uid) {
+        OpenPaaSTeamCalendar team = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("report-" + UUID.randomUUID(), "Report team")
+            .block();
+        calDavClient.grantDelegation(team.id(), alice, DelegationRight.READ_WRITE,
+            dockerExtension().twakeCalendarProvisioningService().generateToken());
+        CalendarURL delegated = calDavClient.findDelegatedCalendar(alice, team.id());
+        calDavClient.upsertCalendarEvent(alice, delegated, uid, eventIcsWithUid(uid));
+        return team;
+    }
+
+    private String eventIcsWithUid(String uid) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//Calendar//EN
+            BEGIN:VEVENT
+            UID:${uid}
+            DTSTAMP:20300101T080000Z
+            DTSTART:20300110T090000Z
+            DTEND:20300110T100000Z
+            SUMMARY:Source report event
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("${uid}", uid);
     }
 }
