@@ -22,12 +22,17 @@ import static com.linagora.dav.CardDavClient.*;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_CREATED;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
@@ -229,7 +234,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void listAddressBooksShouldNotShowSharingRightOfDelegationWhenCopiedAddressBookHasBeenDeleted() {
+    void listAddressBooksShouldShowSharingRightOfDelegationWhenCopiedAddressBookHasBeenDeleted() {
         // GIVEN Bob has an address book
         // AND Bob delegates that address book to Alice
         cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.ADMIN);
@@ -254,8 +259,194 @@ public abstract class CardDavDelegationContract {
             .then()
             .extract().asString();
 
-        // THEN the sharing right for Alice is removed on Bob's source address book
-        assertThat(response).doesNotContain(alice.id());
+        // THEN deleting the copy keeps Alice's rights on Bob's source address book, as for calendars
+        assertThatJson(response).inPath("_embedded.dav:addressbook[0].acl").isArray()
+            .anySatisfy(acl -> assertThatJson(acl)
+                .inPath("principal")
+                .isEqualTo("principals/users/" + alice.id()));
+        assertThat(cardDavClient.findSubscribedAddressBook(alice, bob.id(), "collected")).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(DelegationRight.class)
+    protected void userShouldKeepDelegationAfterResubscribingToHiddenAddressBook(DelegationRight right) {
+        String sourceAddressBookId = "collected";
+        String resubscribedName = "Resubscribed address book";
+
+        // GIVEN Alice shares a hidden address book containing a contact with Bob
+        cardDavClient.setHiddenPublicRight(alice, alice.id(), sourceAddressBookId);
+        cardDavClient.upsertContact(alice, sourceAddressBookId, "test-contact-uid", """
+            BEGIN:VCARD
+            VERSION:3.0
+            FN:John Doe
+            END:VCARD
+            """.replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8));
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, right);
+        AddressBookURL delegatedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId).orElseThrow();
+
+        // WHEN Bob deletes the delegated copy and subscribes again
+        cardDavClient.deleteAddressBook(bob, delegatedAddressBook.addressBookId());
+        assertThat(cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)).isEmpty();
+        cardDavClient.subscribe(bob, alice.id(), sourceAddressBookId, resubscribedName);
+
+        // THEN one delegated copy is restored, with the original access level and the new name
+        String addressBooksResponse = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        Optional<AddressBookURL> resubscribedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId);
+        assertSoftly(softly -> {
+            softly.assertThat(resubscribedAddressBook).as("Restored delegation").isPresent();
+            softly.assertThatCode(() -> assertThatJson(addressBooksResponse)
+                    .when(Option.IGNORING_EXTRA_FIELDS)
+                    .inPath("_embedded.dav:addressbook[2]")
+                    .isEqualTo("""
+                        {
+                            "openpaas:source": "/addressbooks/{aliceId}/{sourceAddressBookId}.json",
+                            "openpaas:subscription-type": "delegation",
+                            "dav:share-access": {shareAccess},
+                            "dav:name": "{resubscribedName}"
+                        }
+                        """.replace("{aliceId}", alice.id())
+                        .replace("{sourceAddressBookId}", sourceAddressBookId)
+                        .replace("{shareAccess}", String.valueOf(right.getValue()))
+                        .replace("{resubscribedName}", resubscribedName)))
+                .as("Restored delegation metadata")
+                .doesNotThrowAnyException();
+            resubscribedAddressBook.ifPresent(addressBook -> softly.assertThat(cardDavClient.getContacts(bob, bob.id(), addressBook.addressBookId()))
+                .as("Contacts read through the restored delegation")
+                .contains("John Doe"));
+        });
+
+        // AND Bob can write through the restored copy only when his delegation allows it
+        boolean canWrite = right != DelegationRight.READ;
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Bob's contact
+                END:VCARD
+                """.replace("\n", "\r\n"))
+        .when()
+            .put(resubscribedAddressBook.orElseThrow().asUri() + "/bob-contact.vcf")
+        .then()
+            .statusCode(canWrite ? SC_CREATED : SC_FORBIDDEN);
+        assertThat(cardDavClient.getContacts(alice, alice.id(), sourceAddressBookId).contains("Bob's contact"))
+            .as("Contact creation in Alice's source book matches Bob's delegation")
+            .isEqualTo(canWrite);
+    }
+
+    @Test
+    protected void userShouldKeepWriteDelegationAfterResubscribingToPublicReadOnlyAddressBook() {
+        String sourceAddressBookId = "collected";
+
+        // GIVEN Alice's address book is publicly readable
+        cardDavClient.setPublicRight(alice, alice.id(), sourceAddressBookId, PublicRight.READ);
+
+        // AND Alice grants Bob read/write delegation
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, DelegationRight.READ_WRITE);
+        AddressBookURL delegatedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)
+            .orElseThrow();
+
+        // WHEN Bob deletes the delegated copy and subscribes again
+        cardDavClient.deleteAddressBook(bob, delegatedAddressBook.addressBookId());
+        cardDavClient.subscribe(bob, alice.id(), sourceAddressBookId, "Resubscribed address book");
+        AddressBookURL resubscribedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)
+            .orElseThrow();
+
+        // THEN Bob retains his delegated write access and can create a contact through the new copy
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body("""
+                BEGIN:VCARD
+                VERSION:3.0
+                FN:Bob's contact
+                END:VCARD
+                """.replace("\n", "\r\n"))
+        .when()
+            .put(resubscribedAddressBook.asUri() + "/bob-contact.vcf")
+        .then()
+            .statusCode(SC_CREATED);
+
+        // AND the contact appears in Alice's source address book
+        assertThat(cardDavClient.getContacts(alice, alice.id(), sourceAddressBookId))
+            .contains("Bob's contact");
+    }
+
+    @Test
+    protected void resubscribedUserShouldOnlyHavePublicRightAfterDelegationIsRevoked() {
+        // GIVEN Bob unsubscribes from Alice's delegated address book, then Alice revokes his delegation
+        cardDavClient.setPublicRight(alice, alice.id(), "collected", PublicRight.READ);
+        cardDavClient.grantDelegation(alice, "collected", bob, DelegationRight.READ_WRITE);
+        AddressBookURL delegated = cardDavClient.findSubscribedAddressBook(bob, alice.id(), "collected").orElseThrow();
+        cardDavClient.deleteAddressBook(bob, delegated.addressBookId());
+        cardDavClient.revokeDelegation(alice, "collected", bob);
+
+        // WHEN Bob subscribes again using the remaining public read access
+        cardDavClient.subscribe(bob, alice.id(), "collected", "Public subscription");
+        AddressBookURL resubscribed = cardDavClient.findSubscribedAddressBook(bob, alice.id(), "collected").orElseThrow();
+
+        // THEN his revoked write access is not restored
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob's contact\r\nEND:VCARD\r\n")
+        .when()
+            .put(resubscribed.asUri() + "/bob-contact.vcf")
+        .then()
+            .statusCode(SC_FORBIDDEN);
+    }
+
+    @Test
+    protected void userShouldNotResubscribeToHiddenAddressBookAfterDelegationIsRevoked() {
+        String sourceAddressBookId = "collected";
+
+        // GIVEN Alice grants Bob read/write delegation to a hidden address book
+        cardDavClient.setHiddenPublicRight(alice, alice.id(), sourceAddressBookId);
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, DelegationRight.READ_WRITE);
+        AddressBookURL delegatedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)
+            .orElseThrow();
+
+        // AND Bob unsubscribes, then Alice revokes his delegation
+        cardDavClient.deleteAddressBook(bob, delegatedAddressBook.addressBookId());
+        cardDavClient.revokeDelegation(alice, sourceAddressBookId, bob);
+
+        // WHEN Bob tries to subscribe again
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body("""
+                {
+                    "id": "resubscribed-address-book",
+                    "dav:name": "Resubscribed address book",
+                    "type": "subscription",
+                    "openpaas:source": {
+                        "_links": {
+                            "self": {
+                                "href": "/addressbooks/{aliceId}/{sourceAddressBookId}.json"
+                            }
+                        }
+                    }
+                }
+                """.replace("{aliceId}", alice.id())
+                .replace("{sourceAddressBookId}", sourceAddressBookId))
+        .when()
+            .post("/addressbooks/" + bob.id() + ".json")
+        .then()
+            // THEN access is forbidden because Bob no longer has delegation or public read access
+            .statusCode(SC_FORBIDDEN);
+
+        // AND no subscription to Alice's address book is created
+        assertThat(cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId))
+            .isEmpty();
     }
 
     @Test
