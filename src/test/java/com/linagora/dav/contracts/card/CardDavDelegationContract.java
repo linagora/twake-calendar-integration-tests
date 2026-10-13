@@ -234,7 +234,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    void listAddressBooksShouldNotShowSharingRightOfDelegationWhenCopiedAddressBookHasBeenDeleted() {
+    void listAddressBooksShouldShowSharingRightOfDelegationWhenCopiedAddressBookHasBeenDeleted() {
         // GIVEN Bob has an address book
         // AND Bob delegates that address book to Alice
         cardDavClient.grantDelegation(bob, "collected", alice, DelegationRight.ADMIN);
