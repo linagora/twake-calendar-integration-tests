@@ -29,7 +29,12 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,6 +71,10 @@ import net.fortuna.ical4j.model.parameter.PartStat;
 import net.fortuna.ical4j.model.property.Attendee;
 
 public abstract class ITIPRequestContract {
+    private static final DateTimeFormatter UTC_DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter LOCAL_DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
+    private static final ZoneId HO_CHI_MINH = ZoneId.of("Asia/Ho_Chi_Minh");
+
     public abstract DockerTwakeCalendarExtension extension();
 
     private CalDavClient calDavClient;
@@ -782,9 +791,9 @@ public abstract class ITIPRequestContract {
             CALSCALE:GREGORIAN
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
+            DTSTAMP:30251003T080000Z
+            DTSTART:30251005T090000Z
+            DTEND:30251005T100000Z
             SUMMARY:Meeting proposed by Bob
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -801,8 +810,8 @@ public abstract class ITIPRequestContract {
             List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                     alice,
                     aliceDefaultCalendarUri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
+                    Instant.parse("3025-09-01T00:00:00Z"),
+                    Instant.parse("3025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -821,9 +830,9 @@ public abstract class ITIPRequestContract {
             METHOD:COUNTER
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T081000Z
-            DTSTART:20251005T100000Z
-            DTEND:20251005T110000Z
+            DTSTAMP:30251003T081000Z
+            DTSTART:30251005T100000Z
+            DTEND:30251005T110000Z
             SUMMARY:Meeting proposed by Bob - new proposal
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -848,8 +857,8 @@ public abstract class ITIPRequestContract {
             List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
                     bob,
                     bobInboxUri,
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
+                    Instant.parse("3025-09-01T00:00:00Z"),
+                    Instant.parse("3025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -1039,9 +1048,9 @@ public abstract class ITIPRequestContract {
             CALSCALE:GREGORIAN
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
+            DTSTAMP:30251003T080000Z
+            DTSTART:30251005T090000Z
+            DTEND:30251005T100000Z
             SUMMARY:Counter authorization check
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -1059,9 +1068,9 @@ public abstract class ITIPRequestContract {
             METHOD:COUNTER
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T081000Z
-            DTSTART:20251005T100000Z
-            DTEND:20251005T110000Z
+            DTSTAMP:30251003T081000Z
+            DTSTART:30251005T100000Z
+            DTEND:30251005T110000Z
             SUMMARY:Counter authorization check - proposal
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -1086,8 +1095,8 @@ public abstract class ITIPRequestContract {
         List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
                 bob,
                 "/calendars/" + bob.id() + "/inbox/",
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("3025-09-01T00:00:00Z"),
+                Instant.parse("3025-11-01T00:00:00Z"))
             .collectList()
             .block();
 
@@ -1108,9 +1117,9 @@ public abstract class ITIPRequestContract {
             CALSCALE:GREGORIAN
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
+            DTSTAMP:30251003T080000Z
+            DTSTART:30251005T090000Z
+            DTEND:30251005T100000Z
             SUMMARY:Delegated counter proposal
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -1130,9 +1139,9 @@ public abstract class ITIPRequestContract {
             METHOD:COUNTER
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T081000Z
-            DTSTART:20251005T100000Z
-            DTEND:20251005T110000Z
+            DTSTAMP:30251003T081000Z
+            DTSTART:30251005T100000Z
+            DTEND:30251005T110000Z
             SUMMARY:Delegated counter proposal - new slot
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -1156,8 +1165,8 @@ public abstract class ITIPRequestContract {
             List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
                     bob,
                     "/calendars/" + bob.id() + "/inbox/",
-                    Instant.parse("2025-09-01T00:00:00Z"),
-                    Instant.parse("2025-11-01T00:00:00Z"))
+                    Instant.parse("3025-09-01T00:00:00Z"),
+                    Instant.parse("3025-11-01T00:00:00Z"))
                 .collectList()
                 .block();
 
@@ -1181,9 +1190,9 @@ public abstract class ITIPRequestContract {
             CALSCALE:GREGORIAN
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
+            DTSTAMP:30251003T080000Z
+            DTSTART:30251005T090000Z
+            DTEND:30251005T100000Z
             SUMMARY:Read-only delegated counter proposal
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -1202,9 +1211,9 @@ public abstract class ITIPRequestContract {
             METHOD:COUNTER
             BEGIN:VEVENT
             UID:%s
-            DTSTAMP:20251003T081000Z
-            DTSTART:20251005T100000Z
-            DTEND:20251005T110000Z
+            DTSTAMP:30251003T081000Z
+            DTSTART:30251005T100000Z
+            DTEND:30251005T110000Z
             SUMMARY:Read-only delegated counter proposal - new slot
             ORGANIZER;CN=Bob:mailto:%s
             ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
@@ -1229,8 +1238,8 @@ public abstract class ITIPRequestContract {
         List<JsonNode> bobInboxItems = calDavClient.reportCalendarEvents(
                 bob,
                 "/calendars/" + bob.id() + "/inbox/",
-                Instant.parse("2025-09-01T00:00:00Z"),
-                Instant.parse("2025-11-01T00:00:00Z"))
+                Instant.parse("3025-09-01T00:00:00Z"),
+                Instant.parse("3025-11-01T00:00:00Z"))
             .collectList()
             .block();
 
@@ -1238,6 +1247,320 @@ public abstract class ITIPRequestContract {
             .noneSatisfy(item -> assertThat(item.toString())
                 .contains(eventUid)
                 .contains("\"COUNTER\""));
+    }
+
+    @Test
+    void itipCounterShouldReturn400WhenProposedStartIsInThePast() {
+        // GIVEN Bob invites Alice to an upcoming event
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobEventInvitingAlice(eventUid, """
+            DTSTART:%s
+            DTEND:%s""".formatted(utcDateTime(Duration.ofDays(1)), utcDateTime(Duration.ofDays(1).plusHours(1))));
+
+        // WHEN Alice proposes a slot that is already past
+        String counterIcs = counterIcs("""
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            DTSTART:%s
+            DTEND:%s
+            SUMMARY:Counter in the past
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), utcDateTime(Duration.ofHours(-2)), utcDateTime(Duration.ofHours(-1)),
+                bob.email(), alice.email()));
+
+        // THEN the COUNTER is rejected and never reaches Bob
+        assertCounterRejectedWith400(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterShouldReturn400WhenProposedAllDayStartIsInThePast() {
+        // GIVEN Bob invites Alice to an upcoming all-day event
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobEventInvitingAlice(eventUid, """
+            DTSTART;VALUE=DATE:%s
+            DTEND;VALUE=DATE:%s""".formatted(utcDate(1), utcDate(2)));
+
+        // WHEN Alice proposes a day that is already past
+        String counterIcs = counterIcs("""
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            DTSTART;VALUE=DATE:%s
+            DTEND;VALUE=DATE:%s
+            SUMMARY:All-day counter in the past
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), utcDate(-1), utcDate(0), bob.email(), alice.email()));
+
+        // THEN the COUNTER is rejected and never reaches Bob
+        assertCounterRejectedWith400(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterShouldBeDeliveredWhenProposedAllDayStartIsInTheFuture() {
+        // GIVEN Bob invites Alice to an upcoming all-day event
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobEventInvitingAlice(eventUid, """
+            DTSTART;VALUE=DATE:%s
+            DTEND;VALUE=DATE:%s""".formatted(utcDate(1), utcDate(2)));
+
+        // WHEN Alice proposes another upcoming day
+        String counterIcs = counterIcs("""
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            DTSTART;VALUE=DATE:%s
+            DTEND;VALUE=DATE:%s
+            SUMMARY:All-day counter in the future
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), utcDate(2), utcDate(3), bob.email(), alice.email()));
+
+        // THEN the COUNTER is accepted and reaches Bob
+        assertCounterDelivered(eventUid, counterIcs);
+    }
+
+    // Both this test and the server take "today" as the current UTC date. Should UTC midnight pass
+    // between building the COUNTER and the server checking it, the proposed day becomes yesterday and
+    // the server answers 400: a rare false failure, limited to a run around 00:00 UTC.
+    @Test
+    void itipCounterShouldBeDeliveredWhenProposedAllDayStartIsToday() {
+        // GIVEN Bob invites Alice to an upcoming all-day event
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobEventInvitingAlice(eventUid, """
+            DTSTART;VALUE=DATE:%s
+            DTEND;VALUE=DATE:%s""".formatted(utcDate(1), utcDate(2)));
+
+        // WHEN Alice proposes today: it has already begun, yet it is not over
+        String counterIcs = counterIcs("""
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            DTSTART;VALUE=DATE:%s
+            DTEND;VALUE=DATE:%s
+            SUMMARY:All-day counter for today
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), utcDate(0), utcDate(1), bob.email(), alice.email()));
+
+        // THEN the COUNTER is accepted and reaches Bob
+        assertCounterDelivered(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterShouldReturn400WhenProposedOccurrenceStartIsInThePast() {
+        // GIVEN Bob invites Alice to a daily recurring event which started a month ago
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobDailyEventInvitingAlice(eventUid);
+
+        // WHEN Alice proposes, for yesterday's occurrence, a proposed slot that is already past
+        String counterIcs = counterIcs(occurrenceCounter(eventUid, -1));
+
+        // THEN the COUNTER is rejected and never reaches Bob
+        assertCounterRejectedWith400(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterShouldReturn400WhenOneOfProposedOccurrencesStartsInThePast() {
+        // GIVEN Bob invites Alice to a daily recurring event which started a month ago
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobDailyEventInvitingAlice(eventUid);
+
+        // WHEN Alice proposes new slots for two occurrences, tomorrow's one and yesterday's one
+        String counterIcs = counterIcs(occurrenceCounter(eventUid, 1) + occurrenceCounter(eventUid, -1));
+
+        // THEN the whole COUNTER is rejected and never reaches Bob
+        assertCounterRejectedWith400(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterShouldBeDeliveredWhenProposedOccurrenceStartIsInTheFuture() {
+        // GIVEN Bob invites Alice to a daily recurring event which started a month ago
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobDailyEventInvitingAlice(eventUid);
+
+        // WHEN Alice proposes an upcoming slot for yesterday's occurrence
+        String counterIcs = counterIcs(occurrenceCounter(eventUid, 1));
+
+        // THEN the COUNTER is accepted and reaches Bob
+        assertCounterDelivered(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterShouldBeDeliveredWhenItContainsRecurringMaster() {
+        // GIVEN Bob invites Alice to a daily recurring event
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobDailyEventInvitingAlice(eventUid);
+
+        // WHEN Alice proposes a new time for the whole series
+        String counterIcs = counterIcs("""
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            DTSTART;TZID=Asia/Ho_Chi_Minh:%s
+            DTEND;TZID=Asia/Ho_Chi_Minh:%s
+            RRULE:FREQ=DAILY
+            SEQUENCE:1
+            SUMMARY:Series counter
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), hoChiMinhDateTime(-30, 14), hoChiMinhDateTime(-30, 15),
+                bob.email(), alice.email()));
+
+        // THEN the COUNTER is not checked and reaches Bob
+        assertCounterDelivered(eventUid, counterIcs);
+    }
+
+    @Test
+    void itipCounterSentViaMethodOverrideShouldReturn400WhenProposedStartIsInThePast() {
+        // GIVEN Bob invites Alice to an upcoming event
+        String eventUid = "event-" + UUID.randomUUID();
+        upsertBobEventInvitingAlice(eventUid, """
+            DTSTART:%s
+            DTEND:%s""".formatted(utcDateTime(Duration.ofDays(1)), utcDateTime(Duration.ofDays(1).plusHours(1))));
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+
+        // WHEN Alice proposes a past slot the way the web client does (POST + X-Http-Method-Override: ITIP)
+        String counterIcs = counterIcs("""
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            DTSTART:%s
+            DTEND:%s
+            SUMMARY:Counter in the past
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), utcDateTime(Duration.ofHours(-2)), utcDateTime(Duration.ofHours(-1)),
+                bob.email(), alice.email()));
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(counterIcs, alice.email(), bob.email(), eventUid, 1);
+
+        // THEN the COUNTER is rejected and never reaches Bob
+        assertThatThrownBy(() -> calDavClient.sendITIPViaMethodOverride(alice, attendeeEventId, counterRequest))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 400");
+        assertNoCounterInBobInbox(eventUid);
+    }
+
+    private void upsertBobEventInvitingAlice(String eventUid, String timeProperties) {
+        String organizerIcs = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            %s
+            SUMMARY:Counter date check
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), timeProperties, bob.email(), alice.email());
+
+        calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), organizerIcs);
+    }
+
+    // Daily at 10:00 Ho Chi Minh time, starting a month ago
+    private void upsertBobDailyEventInvitingAlice(String eventUid) {
+        upsertBobEventInvitingAlice(eventUid, """
+            DTSTART;TZID=Asia/Ho_Chi_Minh:%s
+            DTEND;TZID=Asia/Ho_Chi_Minh:%s
+            RRULE:FREQ=DAILY""".formatted(hoChiMinhDateTime(-30, 10), hoChiMinhDateTime(-30, 11)));
+    }
+
+    // Moves the occurrence of yesterday (relative to today) from 10:00 to 14:00 of the given day, Ho Chi Minh time
+    private String occurrenceCounter(String eventUid, int dayOffset) {
+        return """
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:%s
+            RECURRENCE-ID;TZID=Asia/Ho_Chi_Minh:%s
+            DTSTART;TZID=Asia/Ho_Chi_Minh:%s
+            DTEND;TZID=Asia/Ho_Chi_Minh:%s
+            SEQUENCE:1
+            SUMMARY:Occurrence counter
+            ORGANIZER;CN=Bob:mailto:%s
+            ATTENDEE;CN=Alice;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            """.formatted(eventUid, utcDateTime(Duration.ZERO), hoChiMinhDateTime(-1, 10),
+            hoChiMinhDateTime(dayOffset, 14), hoChiMinhDateTime(dayOffset, 15),
+            bob.email(), alice.email());
+    }
+
+    private static String utcDateTime(Duration offsetFromNow) {
+        return UTC_DATE_TIME.format(Instant.now().plus(offsetFromNow));
+    }
+
+    private static String utcDate(int dayOffset) {
+        return LocalDate.now(ZoneOffset.UTC).plusDays(dayOffset).format(DateTimeFormatter.BASIC_ISO_DATE);
+    }
+
+    private static String hoChiMinhDateTime(int dayOffset, int hour) {
+        return LocalDate.now(HO_CHI_MINH).plusDays(dayOffset).atTime(hour, 0).format(LOCAL_DATE_TIME);
+    }
+
+    private String counterIcs(String vevents) {
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            METHOD:COUNTER
+            %sEND:VCALENDAR
+            """.formatted(vevents);
+    }
+
+    private String counterBody(String eventUid, String counterIcs) {
+        return ITIPJsonBodyRequest.builder()
+            .ical(counterIcs)
+            .sender(alice.email())
+            .recipient(bob.email())
+            .uid(eventUid)
+            .method("COUNTER")
+            .buildJson();
+    }
+
+    private void assertCounterRejectedWith400(String eventUid, String counterIcs) {
+        assertThatThrownBy(() -> calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + bob.id()), counterBody(eventUid, counterIcs)).block())
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 400");
+
+        assertNoCounterInBobInbox(eventUid);
+    }
+
+    private void assertCounterDelivered(String eventUid, String counterIcs) {
+        calDavClient.sendITIPRequest(alice, URI.create("/calendars/" + bob.id()), counterBody(eventUid, counterIcs)).block();
+
+        awaitAtMost.untilAsserted(() -> assertThat(reportBobInbox())
+            .as("Bob should receive Alice's COUNTER proposal in inbox")
+            .anySatisfy(item -> assertThat(item.toString())
+                .contains(eventUid, "\"COUNTER\"", "mailto:" + alice.email(), "mailto:" + bob.email())));
+    }
+
+    private void assertNoCounterInBobInbox(String eventUid) {
+        assertThat(reportBobInbox())
+            .noneSatisfy(item -> assertThat(item.toString())
+                .contains(eventUid)
+                .contains("\"COUNTER\""));
+    }
+
+    private List<JsonNode> reportBobInbox() {
+        return calDavClient.reportCalendarEvents(
+                bob,
+                "/calendars/" + bob.id() + "/inbox/",
+                Instant.now().minus(Duration.ofDays(60)),
+                Instant.now().plus(Duration.ofDays(60)))
+            .collectList()
+            .block();
     }
 
     @Test
