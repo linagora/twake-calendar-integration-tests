@@ -245,7 +245,31 @@ public class CardDavClient {
         return subscriptions.stream().findFirst();
     }
 
+    public String getAddressBookName(OpenPaasUser user, AddressBookURL addressBook) {
+        String selfHref = addressBook.asUri() + ".json";
+        JsonNode response = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+        .when()
+            .get("/addressbooks/" + user.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().as(JsonNode.class);
+
+        return Streams.stream(response.path("_embedded").path("dav:addressbook").elements())
+            .filter(book -> selfHref.equals(book.path("_links").path("self").path("href").asText()))
+            .map(book -> book.path("dav:name").asText())
+            .findAny()
+            .orElseThrow(() -> new IllegalStateException("Address book %s not found for user %s".formatted(selfHref, user.email())));
+    }
+
     public void createAddressBook(OpenPaasUser user, String addressBook) {
+        createAddressBook(user, UUID.randomUUID().toString(), addressBook);
+    }
+
+    public void createAddressBook(OpenPaasUser user, String addressBookId, String addressBook) {
         String payload = """
             {
                 "id": "{id}",
@@ -256,7 +280,7 @@ public class CardDavClient {
                 ],
                 "type": "user"
             }
-            """.replace("{id}", UUID.randomUUID().toString())
+            """.replace("{id}", addressBookId)
             .replace("{addressBook}", addressBook);
 
         client.headers(headers -> user.impersonatedBasicAuth(headers)
@@ -275,6 +299,32 @@ public class CardDavClient {
                         Unexpected status code: %d when creating address book '%s'
                         %s
                         """.formatted(response.status().code(), addressBook, errorBody))));
+            }).block();
+    }
+
+    public void renameAddressBook(OpenPaasUser user, String baseId, String addressBookId, String newName) {
+        String payload = """
+            {
+                "dav:name": "{newName}"
+            }
+            """.replace("{newName}", newName);
+
+        client.headers(headers -> user.impersonatedBasicAuth(headers)
+                .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
+                .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
+            .request(HttpMethod.valueOf("PROPPATCH"))
+            .uri("/addressbooks/" + baseId + "/" + addressBookId + ".json")
+            .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
+            .responseSingle((response, responseContent) -> {
+                if (response.status().code() == 204) {
+                    return Mono.empty();
+                }
+                return responseContent.asString(StandardCharsets.UTF_8)
+                    .switchIfEmpty(Mono.just(StringUtils.EMPTY))
+                    .flatMap(errorBody -> Mono.error(new RuntimeException("""
+                        Unexpected status code: %d when renaming address book '%s' of base '%s'
+                        %s
+                        """.formatted(response.status().code(), addressBookId, baseId, errorBody))));
             }).block();
     }
 
