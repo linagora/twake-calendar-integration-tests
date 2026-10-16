@@ -1242,6 +1242,84 @@ public abstract class CalDavContract {
             """);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"Tom & Jerry", "R&D&&QA", "Café & crème brûlée", "Tom ＆ Jerry"})
+    void exportShouldPreserveSpecialCharactersInSummary(String summary) {
+        putEventWithSummary(summary);
+
+        byte[] responseBody = given(authenticatedRequest)
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "?export")
+        .then()
+            .statusCode(200)
+            .extract().asByteArray();
+
+        assertThat(new String(responseBody, StandardCharsets.UTF_8))
+            .contains("SUMMARY:" + summary);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Tom & Jerry", "R&D&&QA", "Café & crème brûlée", "Tom ＆ Jerry"})
+    void jcalExportShouldPreserveSpecialCharactersInSummary(String summary) throws Exception {
+        putEventWithSummary(summary);
+
+        byte[] responseBody = given(authenticatedRequest)
+            .accept("*/*")
+        .when()
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "?export&accept=jcal")
+        .then()
+            .statusCode(200)
+            .extract().asByteArray();
+
+        JsonNode veventProperties = MAPPER.readTree(responseBody).get(2).get(0).get(1);
+        assertThat(veventProperties)
+            .anySatisfy(property -> {
+                assertThat(property.get(0).asText()).isEqualTo("summary");
+                assertThat(property.get(3).asText()).isEqualTo(summary);
+            });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Tom & Jerry", "R&D&&QA", "Café & crème brûlée", "Tom ＆ Jerry"})
+    void getEventShouldPreserveSpecialCharactersInSummary(String summary) {
+        putEventWithSummary(summary);
+
+        byte[] responseBody = given(authenticatedRequest)
+            .accept("text/calendar")
+        .when()
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/special-chars.ics")
+        .then()
+            .statusCode(200)
+            .extract().asByteArray();
+
+        assertThat(new String(responseBody, StandardCharsets.UTF_8))
+            .contains("SUMMARY:" + summary);
+    }
+
+    private void putEventWithSummary(String summary) {
+        given(authenticatedRequest)
+            .contentType("text/calendar; charset=utf-8")
+            .body("""
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+                CALSCALE:GREGORIAN
+                BEGIN:VEVENT
+                UID:2d6a1c9e-3f45-4b8a-9c1e-5235235235aa
+                DTSTAMP:20251006T120000Z
+                DTSTART:20251010T090000Z
+                DTEND:20251010T100000Z
+                SUMMARY:%s
+                END:VEVENT
+                END:VCALENDAR
+                """.formatted(summary).getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/special-chars.ics")
+        .then()
+            .statusCode(201);
+    }
+
     @Test
     void inboxShouldContainInvites() throws Exception {
         // CF https://sabre.io/dav/scheduling/
