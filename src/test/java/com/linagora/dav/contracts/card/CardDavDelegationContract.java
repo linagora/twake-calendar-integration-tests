@@ -41,7 +41,6 @@ import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -85,7 +84,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("Wait for a new Sabre image. Upstream PR: https://github.com/linagora/esn-sabre/pull/541")
     protected void adminDelegationShouldNotifySourceAndNewCopy() throws IOException {
         // Roles: Alice owns the source address book; Bob is its ADMIN delegate; Cedric is the new sharee.
         // Given Alice grants Bob ADMIN access, allowing him to manage delegations through his copy.
@@ -142,7 +140,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("Wait for a new Sabre image. Upstream PR: https://github.com/linagora/esn-sabre/pull/541")
     protected void delegationRightsChangeShouldNotifySourceAndCopy() throws IOException {
         // Roles: Alice owns the source address book and changes access; Bob is the existing READ delegate.
         // Given Alice grants Bob READ access, creating a delegated copy in Bob's address book list.
@@ -197,7 +194,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("Wait for a new Sabre image. Upstream PR: https://github.com/linagora/esn-sabre/pull/541")
     protected void delegationRevocationShouldNotifySourceAndDeletedCopy() throws IOException {
         // Roles: Alice owns the source address book and revokes access; Bob is the delegate losing access.
         // Given Alice grants Bob READ access, creating a visible delegated copy for Bob.
@@ -1671,7 +1667,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
     void renameSourceAddressBookShouldRenameUncustomizedDelegatedCopy() {
         // GIVEN Alice shares an address book named "Customers" with Bob
         String sourceAddressBookId = UUID.randomUUID().toString();
@@ -1690,7 +1685,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
     void renameSourceAddressBookShouldNotRenameCustomizedDelegatedCopy() {
         // GIVEN Alice shares an address book named "Customers" with Bob
         String sourceAddressBookId = UUID.randomUUID().toString();
@@ -1709,7 +1703,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
     void renameDelegatedCopyShouldNotRenameSourceNorOtherDelegatedCopies() {
         // GIVEN Alice shares an address book named "Customers" with Bob and Cedric
         String sourceAddressBookId = UUID.randomUUID().toString();
