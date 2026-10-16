@@ -22,6 +22,8 @@ import static com.linagora.dav.contracts.card.CardDavContract.STRING;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
@@ -34,12 +36,20 @@ import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+import com.linagora.dav.CardDavClient;
+import com.linagora.dav.CardDavClient.DelegationRight;
+import com.linagora.dav.CardDavClient.PublicRight;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.VCardContact;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
+import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class CardJsonContract {
     public abstract DockerTwakeCalendarExtension dockerExtension();
@@ -134,6 +144,198 @@ public abstract class CardJsonContract {
                         ]
                     }
                 }""", testUser.id(), testUser.id(), testUser.id(), testUser.id(), testUser.id()));
+    }
+
+    @ParameterizedTest(name = "personal={0}, shared={1}, subscribed={2}, public={3}")
+    @CsvSource(delimiter = '|', textBlock = """
+        # personal | shared | subscribed | public
+          true     | false  | false      | false
+          false    | true   | false      | false
+          false    | false  | true       | false
+          true     | true   | true       | false
+          false    | true   | false      | true
+          false    | false  | true       | true
+          true     | true   | true       | true
+        """)
+    void shouldNotExposeAnotherUsersAddressBooks(boolean personal, boolean shared, boolean subscribed, boolean publicBooks) {
+        // GIVEN Alice, Bob and Cedric belong to the same domain.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        CardDavClient cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
+
+        // AND Bob owns three private books: contacts, collected and a custom book.
+        cardDavClient.createAddressBook(bob, "Bob private book");
+        cardDavClient.upsertContact(bob, "contacts", "bob-private-contact",
+            VCardContact.builder()
+                .firstName("Bob")
+                .lastName("Private")
+                .build()
+                .toVCardPayload("bob-private-contact"));
+
+        // AND Cedric delegates his private collected book to Bob only.
+        cardDavClient.grantDelegation(cedric, "collected", bob, DelegationRight.READ);
+
+        // AND Bob subscribes to Cedric's public contacts book; the subscription belongs to Bob.
+        cardDavClient.setPublicRight(cedric, cedric.id(), "contacts", PublicRight.READ);
+        cardDavClient.subscribe(bob, cedric.id(), "contacts", "Bob subscription");
+
+        // Check the owner can see all five books, including the private contact count.
+        String ownerResponse = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("personal", true)
+            .queryParam("shared", true)
+            .queryParam("subscribed", true)
+            .queryParam("contactsCount", true)
+        .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        assertThatJson(ownerResponse)
+            .inPath("_embedded.dav:addressbook")
+            .isArray()
+            .hasSize(5);
+
+        assertThatJson(ownerResponse)
+            .inPath("_embedded.dav:addressbook")
+            .isArray()
+            .anySatisfy(book -> assertThatJson(book)
+                .when(Option.IGNORING_EXTRA_FIELDS)
+                .isEqualTo("""
+                    {
+                        "_links": {
+                            "self": {
+                                "href": "/addressbooks/{bobId}/contacts.json"
+                            }
+                        },
+                        "numberOfContacts": 1
+                    }
+                    """.replace("{bobId}", bob.id())));
+
+        // WHEN Alice requests Bob's home with client-controlled listing filters.
+        Response response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("personal", personal)
+            .queryParam("shared", shared)
+            .queryParam("subscribed", subscribed)
+            .queryParam("public", publicBooks)
+            .queryParam("contactsCount", true)
+        .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .statusCode(anyOf(is(SC_OK), is(SC_FORBIDDEN)))
+            .extract().response();
+
+        // THEN deny the request or omit every book Alice cannot read, including subscription metadata.
+        if (response.statusCode() == SC_OK) {
+            assertThatJson(response.asString())
+                .inPath("_embedded.dav:addressbook")
+                .isArray()
+                .isEmpty();
+        } else {
+            assertThat(response.asString())
+                .doesNotContain(
+                    "Bob private book",
+                    "Bob subscription",
+                    "dav:addressbook",
+                    "numberOfContacts",
+                    "openpaas:source",
+                    "/addressbooks/" + bob.id() + "/contacts.json",
+                    "/addressbooks/" + cedric.id() + "/contacts.json",
+                    "/addressbooks/" + cedric.id() + "/collected.json");
+        }
+    }
+
+    @Test
+    void shouldStillDiscoverAnotherUsersPublicAddressBooks() {
+        // GIVEN Bob has private books and one public book.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        CardDavClient cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
+        cardDavClient.createAddressBook(bob, "Bob private book");
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ);
+
+        // WHEN Alice discovers Bob's public books for subscription.
+        String response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("public", true)
+            .queryParam("contactsCount", true)
+        .when()
+            .get("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // THEN only the public book is returned.
+        assertThatJson(response)
+            .inPath("_embedded.dav:addressbook")
+            .isArray()
+            .hasSize(1);
+
+        assertThatJson(response)
+            .inPath("_embedded.dav:addressbook[0]._links.self.href")
+            .isEqualTo("/addressbooks/" + bob.id() + "/contacts.json");
+    }
+
+    @Test
+    void shouldForbidReadingAnotherUsersPrivateContacts() {
+        // GIVEN Bob has a contact in a private book.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        CardDavClient cardDavClient = new CardDavClient(dockerExtension().davHttpClient());
+        String contactUid = "bob-private-contact";
+        String firstName = "PrivateContactSentinel";
+        String lastName = "ConfidentialSurname";
+        String email = "private-contact-sentinel@example.test";
+        String phone = "+84911223344";
+
+        cardDavClient.upsertContact(bob, "contacts", contactUid,
+            VCardContact.builder()
+                .firstName(firstName)
+                .lastName(lastName)
+                .email(email)
+                .tel(phone)
+                .build()
+                .toVCardPayload(contactUid));
+
+        // AND the owner can read every private value, so the absence checks below are meaningful.
+        String ownerResponse = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("limit", 2)
+            .queryParam("offset", 0)
+        .when()
+            .get("/addressbooks/" + bob.id() + "/contacts.json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        assertThat(ownerResponse)
+            .contains(contactUid, firstName, lastName, email, phone);
+
+        // WHEN Alice tries to read the same private book.
+        String forbiddenResponse = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("limit", 2)
+            .queryParam("offset", 0)
+        .when()
+            .get("/addressbooks/" + bob.id() + "/contacts.json")
+        .then()
+            .statusCode(SC_FORBIDDEN)
+            .extract().asString();
+
+        // THEN both the status and the body deny access: no contact values or contact payload are returned.
+        assertThat(forbiddenResponse)
+            .doesNotContain(
+                contactUid,
+                firstName,
+                lastName,
+                email,
+                phone,
+                "dav:item",
+                "BEGIN:VCARD",
+                "\"vcard\"");
     }
 
     @Test
