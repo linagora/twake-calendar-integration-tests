@@ -1671,6 +1671,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
     void renameSourceAddressBookShouldRenameUncustomizedDelegatedCopy() {
         // GIVEN Alice shares an address book named "Customers" with Bob
         String sourceAddressBookId = UUID.randomUUID().toString();
@@ -1689,6 +1690,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
     void renameSourceAddressBookShouldNotRenameCustomizedDelegatedCopy() {
         // GIVEN Alice shares an address book named "Customers" with Bob
         String sourceAddressBookId = UUID.randomUUID().toString();
@@ -1707,6 +1709,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
     void renameDelegatedCopyShouldNotRenameSourceNorOtherDelegatedCopies() {
         // GIVEN Alice shares an address book named "Customers" with Bob and Cedric
         String sourceAddressBookId = UUID.randomUUID().toString();
