@@ -1467,6 +1467,20 @@ public abstract class ITIPRequestContract {
             """.formatted(eventUid, utcDateTime(Duration.ZERO), timeProperties, bob.email(), alice.email());
 
         calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), organizerIcs);
+        awaitAliceCopy(eventUid);
+    }
+
+    // Sabre only accepts a COUNTER addressed to the organizer of the sender's stored copy of the event
+    private void awaitAliceCopy(String eventUid) {
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.reportCalendarEvents(
+                    alice,
+                    "/calendars/" + alice.id() + "/" + alice.id(),
+                    Instant.now().minus(Duration.ofDays(60)),
+                    Instant.now().plus(Duration.ofDays(60)))
+                .collectList()
+                .block())
+            .as("Alice should have her copy of Bob's event")
+            .anySatisfy(item -> assertThat(item.toString()).contains(eventUid)));
     }
 
     // Daily at 10:00 Ho Chi Minh time, starting a month ago
