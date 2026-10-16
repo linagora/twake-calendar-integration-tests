@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -146,6 +147,7 @@ public abstract class CardJsonContract {
                 }""", testUser.id(), testUser.id(), testUser.id(), testUser.id(), testUser.id()));
     }
 
+    @Disabled("Wait for new esn-sabre image with https://github.com/linagora/esn-sabre/pull/548")
     @ParameterizedTest(name = "personal={0}, shared={1}, subscribed={2}, public={3}")
     @CsvSource(delimiter = '|', textBlock = """
         # personal | shared | subscribed | public
@@ -249,6 +251,7 @@ public abstract class CardJsonContract {
     }
 
     @Test
+    @Disabled("Wait for new esn-sabre image with https://github.com/linagora/esn-sabre/pull/548")
     void shouldStillDiscoverAnotherUsersPublicAddressBooks() {
         // GIVEN Bob has private books and one public book.
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -280,6 +283,7 @@ public abstract class CardJsonContract {
     }
 
     @Test
+    @Disabled("Wait for new esn-sabre image with https://github.com/linagora/esn-sabre/pull/548")
     void shouldForbidReadingAnotherUsersPrivateContacts() {
         // GIVEN Bob has a contact in a private book.
         OpenPaasUser alice = dockerExtension().newTestUser();
