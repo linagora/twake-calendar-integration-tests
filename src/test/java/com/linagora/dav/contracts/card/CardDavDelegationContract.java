@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
@@ -1667,6 +1668,72 @@ public abstract class CardDavDelegationContract {
                 .replace("{cedricEmail}", cedric.email())
                 .replace("{cedricId}", cedric.id())
                 .replace("{bobId}", bob.id()));
+    }
+
+    @Test
+    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
+    void renameSourceAddressBookShouldRenameUncustomizedDelegatedCopy() {
+        // GIVEN Alice shares an address book named "Customers" with Bob
+        String sourceAddressBookId = UUID.randomUUID().toString();
+        cardDavClient.createAddressBook(alice, sourceAddressBookId, "Customers");
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, DelegationRight.READ);
+        AddressBookURL bobCopy = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId).orElseThrow();
+
+        // AND Bob's delegated copy is still named "Customers"
+        assertThat(cardDavClient.getAddressBookName(bob, bobCopy)).isEqualTo("Customers");
+
+        // WHEN Alice renames the source address book to "Clients"
+        cardDavClient.renameAddressBook(alice, alice.id(), sourceAddressBookId, "Clients");
+
+        // THEN Bob's delegated copy is renamed to "Clients"
+        assertThat(cardDavClient.getAddressBookName(bob, bobCopy)).isEqualTo("Clients");
+    }
+
+    @Test
+    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
+    void renameSourceAddressBookShouldNotRenameCustomizedDelegatedCopy() {
+        // GIVEN Alice shares an address book named "Customers" with Bob
+        String sourceAddressBookId = UUID.randomUUID().toString();
+        cardDavClient.createAddressBook(alice, sourceAddressBookId, "Customers");
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, DelegationRight.READ);
+        AddressBookURL bobCopy = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId).orElseThrow();
+
+        // AND Bob renames his delegated copy to "My customers"
+        cardDavClient.renameAddressBook(bob, bob.id(), bobCopy.addressBookId(), "My customers");
+
+        // WHEN Alice renames the source address book to "Clients"
+        cardDavClient.renameAddressBook(alice, alice.id(), sourceAddressBookId, "Clients");
+
+        // THEN Bob's delegated copy keeps the name "My customers"
+        assertThat(cardDavClient.getAddressBookName(bob, bobCopy)).isEqualTo("My customers");
+    }
+
+    @Test
+    @Disabled("wait to upstream https://github.com/linagora/esn-sabre/pull/546")
+    void renameDelegatedCopyShouldNotRenameSourceNorOtherDelegatedCopies() {
+        // GIVEN Alice shares an address book named "Customers" with Bob and Cedric
+        String sourceAddressBookId = UUID.randomUUID().toString();
+        cardDavClient.createAddressBook(alice, sourceAddressBookId, "Customers");
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, DelegationRight.READ);
+        cardDavClient.grantDelegation(alice, sourceAddressBookId, cedric, DelegationRight.READ);
+        AddressBookURL bobCopy = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId).orElseThrow();
+        AddressBookURL cedricCopy = cardDavClient.findSubscribedAddressBook(cedric, alice.id(), sourceAddressBookId).orElseThrow();
+
+        // WHEN Bob renames his delegated copy to "My customers"
+        cardDavClient.renameAddressBook(bob, bob.id(), bobCopy.addressBookId(), "My customers");
+
+        // THEN Alice's source address book and Cedric's delegated copy remain unchanged
+        assertSoftly(softly -> {
+            softly.assertThat(cardDavClient.getAddressBookName(alice, new AddressBookURL(alice.id(), sourceAddressBookId)))
+                .as("Alice's source address book name")
+                .isEqualTo("Customers");
+            softly.assertThat(cardDavClient.getAddressBookName(cedric, cedricCopy))
+                .as("Cedric's delegated copy name")
+                .isEqualTo("Customers");
+            softly.assertThat(cardDavClient.getAddressBookName(bob, bobCopy))
+                .as("Bob's delegated copy name")
+                .isEqualTo("My customers");
+        });
     }
 
     private String getAddressBooksJson(OpenPaasUser user) {
