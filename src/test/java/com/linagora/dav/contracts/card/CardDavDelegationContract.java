@@ -19,20 +19,24 @@
 package com.linagora.dav.contracts.card;
 
 import static com.linagora.dav.CardDavClient.*;
+import static com.linagora.dav.TestUtil.awaitAtMost;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.apache.http.HttpStatus.SC_OK;
+import static org.apache.http.HttpStatus.SC_NO_CONTENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +45,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.google.common.collect.ImmutableSet;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.AddressBookURL;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.OpenPaasUser;
@@ -52,6 +58,8 @@ import net.javacrumbs.jsonunit.core.Option;
 import io.restassured.http.ContentType;
 
 public abstract class CardDavDelegationContract {
+    private static final int ACCESS_NOACCESS = 4;
+
     public abstract DockerTwakeCalendarExtension dockerExtension();
 
     private CardDavClient cardDavClient;
@@ -72,6 +80,180 @@ public abstract class CardDavDelegationContract {
             .contentType(ContentType.JSON)
             .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
+    @Test
+    protected void adminDelegationShouldNotifySourceAndNewCopy() throws IOException {
+        // Roles: Alice owns the source address book; Bob is its ADMIN delegate; Cedric is the new sharee.
+        // Given Alice grants Bob ADMIN access, allowing him to manage delegations through his copy.
+        cardDavClient.grantDelegation(alice, "collected", bob, DelegationRight.ADMIN);
+        AddressBookURL bobCopy = cardDavClient.findSubscribedAddressBook(bob, alice.id(), "collected").orElseThrow();
+
+        // Listen after setup so only messages from Bob's next action are captured.
+        BlockingQueue<JsonNode> sourceMessagesQueue = listenToAddressBookExchange("sabre:addressbook:updated");
+        BlockingQueue<JsonNode> createdMessagesQueue = listenToAddressBookExchange("sabre:addressbook:subscription:created");
+
+        // When Bob grants Cedric READ access to Alice's address book through Bob's delegated copy.
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body("""
+                {
+                    "dav:share-resource": {
+                        "dav:sharee": [
+                            {
+                                "dav:href": "mailto:{email}",
+                                "dav:share-access": {access}
+                            }
+                        ]
+                    }
+                }
+                """.replace("{email}", cedric.email())
+                .replace("{access}", String.valueOf(DelegationRight.READ.getValue())))
+        .when()
+            .post(bobCopy.asUri() + ".json")
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then Cedric has his own delegated copy of Alice's address book.
+        AddressBookURL cedricCopy = cardDavClient.findSubscribedAddressBook(cedric, alice.id(), "collected").orElseThrow();
+        awaitAtMost.untilAsserted(() -> {
+            // Alice's source gets an AMQP update because its delegation list changed.
+            // connectedUser identifies Bob as the user who made the change.
+            assertThat(sourceMessagesQueue).hasSize(1);
+            assertThatJson(sourceMessagesQueue.peek().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo("""
+                {
+                    "path": "addressbooks/{owner}/collected",
+                    "connectedUser": "principals/users/{actor}"
+                }
+                """.replace("{owner}", alice.id()).replace("{actor}", bob.id()));
+
+            // Cedric's new copy gets an AMQP created message, also recording Bob as the actor.
+            assertThat(createdMessagesQueue).hasSize(1);
+            assertThatJson(createdMessagesQueue.peek().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo("""
+                {
+                    "path": "addressbooks/{copy}",
+                    "connectedUser": "principals/users/{actor}"
+                }
+                """.replace("{copy}", cedricCopy.serialize()).replace("{actor}", bob.id()));
+        });
+    }
+
+    @Test
+    protected void delegationRightsChangeShouldNotifySourceAndCopy() throws IOException {
+        // Roles: Alice owns the source address book and changes access; Bob is the existing READ delegate.
+        // Given Alice grants Bob READ access, creating a delegated copy in Bob's address book list.
+        cardDavClient.grantDelegation(alice, "collected", bob, DelegationRight.READ);
+        AddressBookURL bobCopy = cardDavClient.findSubscribedAddressBook(bob, alice.id(), "collected").orElseThrow();
+
+        // Listen after setup so only messages from the access change are captured.
+        BlockingQueue<JsonNode> sourceMessagesQueue = listenToAddressBookExchange("sabre:addressbook:updated");
+        BlockingQueue<JsonNode> updatedMessagesQueue = listenToAddressBookExchange("sabre:addressbook:subscription:updated");
+
+        // When Alice upgrades Bob's access from READ to READ_WRITE on her source address book.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {
+                    "dav:share-resource": {
+                        "dav:sharee": [
+                            {
+                                "dav:href": "mailto:{email}",
+                                "dav:share-access": {access}
+                            }
+                        ]
+                    }
+                }
+                """.replace("{email}", bob.email())
+                .replace("{access}", String.valueOf(DelegationRight.READ_WRITE.getValue())))
+        .when()
+            .post("/addressbooks/" + alice.id() + "/collected.json")
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then AMQP updates identify both changed resources, with Alice as connectedUser (the actor).
+        awaitAtMost.untilAsserted(() -> {
+            // Alice's source is updated because Bob's delegation rights changed.
+            assertThat(sourceMessagesQueue).hasSize(1);
+            assertThatJson(sourceMessagesQueue.peek().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo("""
+                {
+                    "path": "addressbooks/{owner}/collected",
+                    "connectedUser": "principals/users/{actor}"
+                }
+                """.replace("{owner}", alice.id()).replace("{actor}", alice.id()));
+
+            // Bob's existing copy is updated to reflect his new access rights.
+            assertThat(updatedMessagesQueue).hasSize(1);
+            assertThatJson(updatedMessagesQueue.peek().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo("""
+                {
+                    "path": "addressbooks/{copy}",
+                    "connectedUser": "principals/users/{actor}"
+                }
+                """.replace("{copy}", bobCopy.serialize()).replace("{actor}", alice.id()));
+        });
+    }
+
+    @Test
+    protected void delegationRevocationShouldNotifySourceAndDeletedCopy() throws IOException {
+        // Roles: Alice owns the source address book and revokes access; Bob is the delegate losing access.
+        // Given Alice grants Bob READ access, creating a visible delegated copy for Bob.
+        cardDavClient.grantDelegation(alice, "collected", bob, DelegationRight.READ);
+        AddressBookURL bobCopy = cardDavClient.findSubscribedAddressBook(bob, alice.id(), "collected").orElseThrow();
+
+        // Listen after setup so only messages from the revocation are captured.
+        BlockingQueue<JsonNode> sourceMessagesQueue = listenToAddressBookExchange("sabre:addressbook:updated");
+        BlockingQueue<JsonNode> deletedMessagesQueue = listenToAddressBookExchange("sabre:addressbook:subscription:deleted");
+
+        // When Alice revokes Bob's delegation by setting his access to ACCESS_NOACCESS.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {
+                    "dav:share-resource": {
+                        "dav:sharee": [
+                            {
+                                "dav:href": "mailto:{email}",
+                                "dav:share-access": {access}
+                            }
+                        ]
+                    }
+                }
+                """.replace("{email}", bob.email())
+                .replace("{access}", String.valueOf(ACCESS_NOACCESS)))
+        .when()
+            .post("/addressbooks/" + alice.id() + "/collected.json")
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then AMQP messages identify Alice's updated source and Bob's deleted copy, with Alice as the actor.
+        awaitAtMost.untilAsserted(() -> {
+            // Alice's source remains, but its delegation list no longer includes Bob.
+            assertThat(sourceMessagesQueue).hasSize(1);
+            assertThatJson(sourceMessagesQueue.peek().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo("""
+                {
+                    "path": "addressbooks/{owner}/collected",
+                    "connectedUser": "principals/users/{actor}"
+                }
+                """.replace("{owner}", alice.id()).replace("{actor}", alice.id()));
+
+            // Bob's delegated copy is removed because he no longer has access.
+            assertThat(deletedMessagesQueue).hasSize(1);
+            assertThatJson(deletedMessagesQueue.peek().toString()).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo("""
+                {
+                    "path": "addressbooks/{copy}",
+                    "connectedUser": "principals/users/{actor}"
+                }
+                """.replace("{copy}", bobCopy.serialize()).replace("{actor}", alice.id()));
+        });
+        // The deleted copy belongs to Bob, while the source address book still belongs to Alice.
+        assertThatJson(deletedMessagesQueue.peek().toString()).inPath("owner").isEqualTo("principals/users/" + bob.id());
+        assertThat(cardDavClient.findSubscribedAddressBook(bob, alice.id(), "collected")).isEmpty();
+    }
+
+    private BlockingQueue<JsonNode> listenToAddressBookExchange(String exchange) throws IOException {
+        var channel = dockerExtension().getChannel();
+        String queue = channel.queueDeclare("", false, true, true, null).getQueue();
+        channel.queueBind(queue, exchange, "");
+        return AmqpTestHelper.listenToQueue(channel, queue);
     }
 
     @Test
