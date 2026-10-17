@@ -1467,6 +1467,8 @@ public abstract class ITIPRequestContract {
             """.formatted(eventUid, utcDateTime(Duration.ZERO), timeProperties, bob.email(), alice.email());
 
         calDavClient.upsertCalendarEvent(bob, URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics"), organizerIcs);
+        awaitAtMost.until(() -> calDavClient.findFirstUserCalendarObjectUriByEventUid(alice, CalendarURL.from(alice.id()), eventUid),
+            Optional::isPresent);
     }
 
     // Daily at 10:00 Ho Chi Minh time, starting a month ago
