@@ -27,6 +27,7 @@ import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -51,6 +52,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.xmlunit.assertj3.XmlAssert;
 
@@ -97,6 +99,46 @@ public abstract class CalDavDelegationContract {
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
         bob = dockerExtension().newTestUser();
         alice = dockerExtension().newTestUser();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dav:read", "dav:freebusy"})
+    protected void cannotChangeAnotherUsersCalendarInviteStatus(String right) {
+        // Given Alice shares her calendar with Bob with read-only or free/busy access.
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        calDavClient.delegateCalendar(alice, alice.id(), bob, right);
+        JsonNode calendars = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .queryParam("withFreeBusy", true)
+            .queryParam("sharedDelegationStatus", "accepted")
+        .when()
+            .get("/calendars/" + bob.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .extract().as(JsonNode.class).path("_embedded").path("dav:calendar");
+        assertThatJson(calendars).isArray().hasSize(1);
+        String delegatedPath = calendars.get(0).path("_links").path("self").path("href").asText();
+        String reply = """
+            {"invite-reply": {"invitestatus": "noresponse"}}
+            """;
+
+        // When Cedric tries to hide Bob's delegated calendar, deny the mutation.
+        given()
+            .header("Authorization", cedric.impersonatedBasicAuth())
+            .body(reply)
+        .when()
+            .post(delegatedPath)
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then Bob can still change his own invitation status without write access to Alice's calendar.
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body(reply)
+        .when()
+            .post(delegatedPath)
+        .then()
+            .statusCode(SC_OK);
     }
 
     @ParameterizedTest(name = "{0}")
