@@ -22,7 +22,9 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.hamcrest.Matchers.anyOf;
@@ -151,6 +153,50 @@ public abstract class CalendarSharingContract {
             .request("PROPPATCH", subscribedCalendar.asUri().toString())
         .then()
             .statusCode(SC_FORBIDDEN);
+    }
+
+    @Test
+    protected void importingIntoWritableCalendarShouldPreserveInaccessibleDuplicate() {
+        // Given Bob has a private event and a separate calendar Alice may write.
+        calDavClient.updateCalendarAcl(bob, "");
+        CalendarURL publicCalendar = calDavClient.createNewCalendar(bob, "public-import", "Public import", 1);
+        calDavClient.updateCalendarAcl(bob, publicCalendar, "{DAV:}write");
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//ACL regression//EN
+            BEGIN:VEVENT
+            UID:import-acl-duplicate
+            DTSTAMP:20261018T000000Z
+            DTSTART:20271018T100000Z
+            DTEND:20271018T110000Z
+            SUMMARY:Private original
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("\n", "\r\n");
+        calDavClient.upsertCalendarEvent(bob, "private-original", event);
+
+        // When Alice imports the same UID into Bob's publicly writable calendar.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .queryParam("import", "")
+            .body(event.replace("Private original", "Public copy"))
+        .when()
+            .put(publicCalendar.eventHref("public-copy"))
+        .then()
+            .statusCode(SC_CREATED);
+
+        // Then Bob can still read the original event in his private calendar.
+        String original = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(CalendarURL.from(bob.id()).eventHref("private-original"))
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        assertThat(original).contains("SUMMARY:Private original");
     }
 
     @Test
