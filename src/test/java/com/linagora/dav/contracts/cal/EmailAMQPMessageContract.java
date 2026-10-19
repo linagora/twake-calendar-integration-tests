@@ -23,6 +23,7 @@ import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.net.URI;
@@ -1080,6 +1081,183 @@ public abstract class EmailAMQPMessageContract {
                         .ignoringParticipantScheduleStatus()
                         .isEqualTo(expectedOldEventIcs);
                 }));
+    }
+
+    @Test
+    void shouldRejectCounterWhenRecipientIsAnotherUserThanTheOrganizer() {
+        // Given: Bob organizes an event with Alice as attendee; Charlie is not involved.
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        String attendeeEventId = inviteAliceToBobEvent(eventUid);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: Alice sends a COUNTER addressed to Charlie instead of Bob.
+        String counterCalendarData = generateCounterCalendarData(eventUid, bob.email(), alice.email(),
+            "Sprint planning #01", "Twake Meeting Room", "Counter proposal",
+            "30250411T150000", "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            counterCalendarData,
+            alice.email(),
+            charlie.email(),
+            eventUid,
+            1);
+
+        // Then: the COUNTER is forbidden and Charlie gets no notification email.
+        assertThatThrownBy(() -> calDavClient.sendITIP(alice, attendeeEventId, counterRequest))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(messages, charlie.email());
+    }
+
+    @Test
+    void shouldRejectCounterWhenRecipientIsAnExternalAddressThatIsNotTheOrganizer() {
+        // Given: Bob organizes an event with Alice as attendee.
+        String externalEmail = "not-the-organizer-" + UUID.randomUUID() + "@external-domain.com";
+        String eventUid = UUID.randomUUID().toString();
+        String attendeeEventId = inviteAliceToBobEvent(eventUid);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: Alice sends a COUNTER addressed to an arbitrary external address.
+        String counterCalendarData = generateCounterCalendarData(eventUid, bob.email(), alice.email(),
+            "Sprint planning #01", "Twake Meeting Room", "Counter proposal",
+            "30250411T150000", "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            counterCalendarData,
+            alice.email(),
+            externalEmail,
+            eventUid,
+            1);
+
+        // Then: the COUNTER is forbidden and the external address gets no notification email.
+        assertThatThrownBy(() -> calDavClient.sendITIP(alice, attendeeEventId, counterRequest))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(messages, externalEmail);
+    }
+
+    @Test
+    void shouldRejectCounterWhenSubmittedIcsForgesTheOrganizer() {
+        // Given: Bob organizes an event with Alice as attendee; Charlie is not involved.
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        String attendeeEventId = inviteAliceToBobEvent(eventUid);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: Alice sends a COUNTER to Charlie whose ICS claims Charlie as ORGANIZER.
+        // The ORGANIZER of the submitted ICS is client-controlled: only stored copies count.
+        String forgedCounterCalendarData = generateCounterCalendarData(eventUid, charlie.email(), alice.email(),
+            "Sprint planning #01", "Twake Meeting Room", "Counter proposal",
+            "30250411T150000", "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            forgedCounterCalendarData,
+            alice.email(),
+            charlie.email(),
+            eventUid,
+            1);
+
+        // Then: the COUNTER is forbidden and Charlie gets no notification email.
+        assertThatThrownBy(() -> calDavClient.sendITIP(alice, attendeeEventId, counterRequest))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(messages, charlie.email());
+    }
+
+    @Test
+    void shouldRejectCounterWhenSenderHasNoStoredEventWithThatUid() {
+        // Given: Alice has an event from Bob, but none with the UID she is about to counter.
+        String attendeeEventId = inviteAliceToBobEvent(UUID.randomUUID().toString());
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: Alice sends a COUNTER to Bob for an unknown UID, through the URL of her existing event.
+        String unknownEventUid = UUID.randomUUID().toString();
+        String counterCalendarData = generateCounterCalendarData(unknownEventUid, bob.email(), alice.email(),
+            "Unknown meeting", "Twake Meeting Room", "Counter proposal",
+            "30250411T150000", "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            counterCalendarData,
+            alice.email(),
+            bob.email(),
+            unknownEventUid,
+            1);
+
+        // Then: the COUNTER is forbidden and Bob gets no notification email.
+        assertThatThrownBy(() -> calDavClient.sendITIP(alice, attendeeEventId, counterRequest))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(messages, bob.email());
+    }
+
+    @Test
+    void shouldRejectCounterWhenSenderPlantedAnEventOrganizedByAnInternalUser() {
+        // Given: Alice writes into her own calendar an event claiming Charlie as organizer.
+        // Charlie never organized it and has no copy of it.
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        String plantedCalendarData = generateCalendarData(eventUid, charlie.email(), alice.email(),
+            "Planted meeting", "Twake Meeting Room", "Charlie never organized this event",
+            "30250411T100000", "30250411T110000");
+        calDavClient.upsertCalendarEvent(alice, eventUid, plantedCalendarData);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: Alice sends a COUNTER on the planted event to Charlie.
+        String counterCalendarData = generateCounterCalendarData(eventUid, charlie.email(), alice.email(),
+            "Planted meeting", "Twake Meeting Room", "Counter proposal",
+            "30250411T150000", "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            counterCalendarData,
+            alice.email(),
+            charlie.email(),
+            eventUid,
+            1);
+
+        // Then: the COUNTER is forbidden and Charlie gets no notification email.
+        assertThatThrownBy(() -> calDavClient.sendITIP(alice, eventUid, counterRequest))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(messages, charlie.email());
+    }
+
+    @Test
+    void shouldRejectCounterWhenRecipientIsJustAnAttendeeOfTheEvent() {
+        // Given: Bob organizes an event with both Alice and Charlie as attendees.
+        OpenPaasUser charlie = dockerExtension().newTestUser();
+        String eventUid = UUID.randomUUID().toString();
+        String calendarData = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Sabre//Sabre VObject 4.1.3//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:30250411T022032Z
+            SEQUENCE:1
+            DTSTART;TZID=Asia/Ho_Chi_Minh:30250411T100000
+            DTEND;TZID=Asia/Ho_Chi_Minh:30250411T110000
+            SUMMARY:Sprint planning #01
+            ORGANIZER;CN=Bob:mailto:{bobEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Alice:mailto:{aliceEmail}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Charlie:mailto:{charlieEmail}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid)
+            .replace("{bobEmail}", bob.email())
+            .replace("{aliceEmail}", alice.email())
+            .replace("{charlieEmail}", charlie.email());
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+        String attendeeEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(charlie), Optional::isPresent);
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When: Alice sends a COUNTER to Charlie, who holds a copy of the event but only as attendee.
+        String counterCalendarData = generateCounterCalendarData(eventUid, bob.email(), alice.email(),
+            "Sprint planning #01", "Twake Meeting Room", "Counter proposal",
+            "30250411T150000", "30250411T160000");
+        CalDavClient.CounterRequest counterRequest = new CalDavClient.CounterRequest(
+            counterCalendarData,
+            alice.email(),
+            charlie.email(),
+            eventUid,
+            1);
+
+        // Then: the COUNTER is forbidden and Charlie gets no notification email.
+        assertThatThrownBy(() -> calDavClient.sendITIP(alice, attendeeEventId, counterRequest))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(messages, charlie.email());
     }
 
     @Test
@@ -2670,6 +2848,32 @@ public abstract class EmailAMQPMessageContract {
 
     private BlockingQueue<JsonNode> listenToQueue() {
         return AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+    }
+
+    // Bob organizes an event with Alice as attendee; returns the id of Alice's copy once delivered.
+    private String inviteAliceToBobEvent(String eventUid) {
+        String calendarData = generateCalendarData(
+            eventUid,
+            bob.email(),
+            alice.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000");
+        calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
+
+        return awaitAtMost.until(() -> calDavClient.findFirstEventId(alice), Optional::isPresent).get();
+    }
+
+    private void assertNoCounterNotification(BlockingQueue<JsonNode> messages, String recipientEmail) {
+        calmlyAwait
+            .during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .filteredOn(message -> "COUNTER".equals(message.path("method").asText()))
+                .filteredOn(message -> recipientEmail.equalsIgnoreCase(message.path("recipientEmail").asText()))
+                .as("Unexpected COUNTER notification email for %s", recipientEmail)
+                .isEmpty());
     }
 
     private void assertBookerNotified(BlockingQueue<JsonNode> messages, String method) {
