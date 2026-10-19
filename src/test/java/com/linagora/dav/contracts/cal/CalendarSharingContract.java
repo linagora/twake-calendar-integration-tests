@@ -22,6 +22,7 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.hamcrest.Matchers.anyOf;
@@ -97,6 +98,57 @@ public abstract class CalendarSharingContract {
         bob = extension().newTestUser();
         alice = extension().newTestUser();
         cedric = extension().newTestUser();
+    }
+
+    @Test
+    protected void cannotCreateXmlSubscriptionToPrivateCalendar() {
+        // Given Bob's source calendar is private.
+        calDavClient.updateCalendarAcl(bob, "");
+        String payload = """
+            <d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+              <d:set><d:prop>
+                <d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>
+                <d:displayname>Unauthorized subscription</d:displayname>
+                <cs:source><d:href>/calendars/{bob}/{bob}</d:href></cs:source>
+              </d:prop></d:set>
+            </d:mkcol>
+            """.replace("{bob}", bob.id());
+
+        // When Alice bypasses the JSON subscription handler using XML MKCOL.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body(payload)
+        .when()
+            .request("MKCOL", "/calendars/" + alice.id() + "/private-source")
+        .then()
+            .statusCode(SC_FORBIDDEN);
+    }
+
+    @Test
+    protected void cannotRetargetXmlSubscriptionToPrivateCalendar() {
+        // Given Bob's calendar is private and Alice subscribes to her own calendar.
+        calDavClient.updateCalendarAcl(bob, "");
+        SubscribedCalendarRequest subscribeRequest = SubscribedCalendarRequest.builder()
+            .id("retarget-source")
+            .sourceUserId(alice.id())
+            .name("Own source")
+            .build();
+        CalendarURL subscribedCalendar = calDavClient.subscribeToSharedCalendar(alice, subscribeRequest);
+
+        // When Alice retargets the subscription to Bob's private calendar through XML PROPPATCH.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+                  <d:set><d:prop>
+                    <cs:source><d:href>/calendars/{bob}/{bob}</d:href></cs:source>
+                  </d:prop></d:set>
+                </d:propertyupdate>
+                """.replace("{bob}", bob.id()))
+        .when()
+            .request("PROPPATCH", subscribedCalendar.asUri().toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
     }
 
     @Test
