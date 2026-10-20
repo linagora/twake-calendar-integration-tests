@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -75,6 +76,7 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
+    @Disabled("Wait for new image")
     protected void cannotCreateSubscriptionInAnotherUsersHome() {
         // Given Alice can read her source book but cannot write Bob's home.
         String payload = """
