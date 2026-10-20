@@ -21,6 +21,7 @@ package com.linagora.dav.contracts.cal;
 import static com.linagora.dav.TestUtil.awaitPresent;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
@@ -36,6 +37,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -810,6 +812,77 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     @Test
+    void attendeeCounterShouldNotifyOrganizerOfTeamCalendarEvent() throws IOException {
+        // Given bobMember creates a Team Calendar event with nonMember as attendee
+        // The organizer copy lives in the Team Calendar, not in a calendar bobMember owns
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Team calendar counter"));
+        String nonMemberEventId = awaitAttendeeEventId(nonMember, eventUid);
+        BlockingQueue<JsonNode> emailMessages = listenToFreshQueue("team-calendar-counter-", "calendar:event:notificationEmail:send");
+
+        // When nonMember proposes a new time to bobMember
+        calDavClient.sendITIP(nonMember, nonMemberEventId,
+            counterRequest(eventUid, bobMember.email(), nonMember.email(), bobMember.email(), "Team calendar counter"));
+
+        // Then bobMember is notified of the counter proposal
+        awaitAtMost.untilAsserted(() -> assertThat(emailMessages)
+            .as("A COUNTER notification email should be published for the Team Calendar event organizer")
+            .anySatisfy(message -> {
+                assertThat(message.path("method").asText()).isEqualTo("COUNTER");
+                assertThat(message.path("senderEmail").asText()).isEqualTo(nonMember.email());
+                assertThat(message.path("recipientEmail").asText()).isEqualTo(bobMember.email());
+                assertThat(message.path("event").asText()).contains(eventUid);
+            }));
+    }
+
+    @Test
+    void attendeeCounterShouldBeRejectedWhenRecipientIsATeamMemberWhoIsNotTheOrganizer() throws IOException {
+        // Given bobMember creates a Team Calendar event with nonMember as attendee
+        // aliceMember sees the event through her own Team Calendar delegation, but she is not its organizer
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Team calendar counter to non organizer"));
+        String nonMemberEventId = awaitAttendeeEventId(nonMember, eventUid);
+        BlockingQueue<JsonNode> emailMessages = listenToFreshQueue("team-calendar-counter-non-organizer-", "calendar:event:notificationEmail:send");
+
+        // When nonMember sends a COUNTER to aliceMember
+        // Then the COUNTER is rejected and aliceMember is not notified
+        assertThatThrownBy(() -> calDavClient.sendITIP(nonMember, nonMemberEventId,
+            counterRequest(eventUid, bobMember.email(), nonMember.email(), aliceMember.email(), "Team calendar counter to non organizer")))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(emailMessages, aliceMember.email());
+    }
+
+    @Test
+    void attendeeCounterShouldBeRejectedWhenOrganizerNoLongerHasAccessToTheTeamCalendar() throws IOException {
+        // Given bobMember creates a Team Calendar event with nonMember as attendee
+        String eventUid = "team-event-" + UUID.randomUUID();
+        CalendarURL teamCalendarCanonicalUrl = CalendarURL.from(teamCalendar.id());
+        calDavClient.upsertCalendarEvent(bobMember, bobMemberDelegatedCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Team calendar counter after revocation"));
+        String nonMemberEventId = awaitAttendeeEventId(nonMember, eventUid);
+
+        // And bobMember no longer has access to the Team Calendar
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.revokeDelegation(teamCalendar.id(), bobMember, technicalToken);
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(bobMember.email()))
+        .when()
+            .get(teamCalendarCanonicalUrl.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(403), is(404)));
+        BlockingQueue<JsonNode> emailMessages = listenToFreshQueue("team-calendar-counter-revoked-", "calendar:event:notificationEmail:send");
+
+        // When nonMember sends a COUNTER to bobMember
+        // Then the COUNTER is rejected and bobMember is not notified
+        assertThatThrownBy(() -> calDavClient.sendITIP(nonMember, nonMemberEventId,
+            counterRequest(eventUid, bobMember.email(), nonMember.email(), bobMember.email(), "Team calendar counter after revocation")))
+            .hasMessageContaining("Unexpected status code: 403");
+        assertNoCounterNotification(emailMessages, bobMember.email());
+    }
+
+    @Test
     void itipReplyFromNonMemberParticipantShouldUpdateTeamCalendarWhenRecipientStillHasAccess() {
         // Given bobMember created a Team Calendar event with nonMember as participant
         String eventUid = "team-event-" + UUID.randomUUID();
@@ -1074,6 +1147,29 @@ public abstract class TeamCalendarSchedulingContract {
         return calDavClient.findUserCalendarObjectUrisByEventUid(user, calendarURL, eventUid)
             .collectList()
             .block();
+    }
+
+    private String awaitAttendeeEventId(OpenPaasUser attendee, String eventUid) {
+        URI attendeeEventUri = awaitCalendarObjectUriByEventUid(attendee, CalendarURL.from(attendee.id()), eventUid);
+        return StringUtils.removeEnd(StringUtils.substringAfterLast(attendeeEventUri.getPath(), "/"), ".ics");
+    }
+
+    private CalDavClient.CounterRequest counterRequest(String eventUid, String organizerEmail, String senderEmail,
+                                                       String recipientEmail, String summary) {
+        String counterCalendarData = calendarData(eventUid, organizerEmail, List.of(senderEmail), summary)
+            .replace("VERSION:2.0\n", "VERSION:2.0\nMETHOD:COUNTER\n")
+            .replace("DTSTART:20300110T090000Z", "DTSTART:20300110T140000Z")
+            .replace("DTEND:20300110T100000Z", "DTEND:20300110T150000Z");
+        return new CalDavClient.CounterRequest(counterCalendarData, senderEmail, recipientEmail, eventUid, 1);
+    }
+
+    private void assertNoCounterNotification(BlockingQueue<JsonNode> emailMessages, String recipientEmail) {
+        awaitAtMost.during(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(emailMessages)
+                .filteredOn(message -> "COUNTER".equals(message.path("method").asText()))
+                .filteredOn(message -> recipientEmail.equalsIgnoreCase(message.path("recipientEmail").asText()))
+                .as("Unexpected COUNTER notification email for %s", recipientEmail)
+                .isEmpty());
     }
 
     private String readEventSummary(String icsContent) {
