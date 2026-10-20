@@ -156,6 +156,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    @Disabled("Wait for new image")
     protected void importingIntoWritableCalendarShouldPreserveInaccessibleDuplicate() {
         // Given Bob has a private event and a separate calendar Alice may write.
         calDavClient.updateCalendarAcl(bob, "");
