@@ -41,7 +41,6 @@ import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -85,7 +84,6 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
-    @Disabled("Wait for new image")
     protected void cannotChangeAnotherUsersSharedAddressBookSettings() {
         // Given Alice shares an address book with Bob with read-only access; Cedric has no rights to Bob's copy.
         cardDavClient.grantDelegation(alice, "contacts", bob, DelegationRight.READ);
