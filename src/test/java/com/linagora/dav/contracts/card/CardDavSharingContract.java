@@ -21,6 +21,8 @@ package com.linagora.dav.contracts.card;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -70,6 +73,42 @@ public abstract class CardDavSharingContract {
             .contentType(ContentType.JSON)
             .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
+    @Test
+    @Disabled("Wait for new image")
+    protected void cannotCreateSubscriptionInAnotherUsersHome() {
+        // Given Alice can read her source book but cannot write Bob's home.
+        String payload = """
+            {
+                "id": "injected-subscription",
+                "dav:name": "Alice subscription",
+                "openpaas:source": {
+                    "_links": {
+                        "self": {
+                            "href": "/addressbooks/{alice}/contacts.json"
+                        }
+                    }
+                }
+            }
+            """.replace("{alice}", alice.id());
+
+        // When Alice tries to create the subscription in Bob's home, deny it.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body(payload)
+        .when()
+            .post("/addressbooks/" + bob.id() + ".json")
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then Bob confirms that no subscription was created in his home.
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .get("/addressbooks/" + bob.id() + "/injected-subscription.json")
+        .then()
+            .statusCode(SC_NOT_FOUND);
     }
 
     @Test
