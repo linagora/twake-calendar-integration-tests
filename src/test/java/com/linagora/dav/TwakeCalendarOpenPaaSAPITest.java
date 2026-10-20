@@ -142,7 +142,7 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
                             ]
                           },
                           {
-                            "name": "darkMode",
+                            "name": "theme",
                             "value": null
                           },
                           {
