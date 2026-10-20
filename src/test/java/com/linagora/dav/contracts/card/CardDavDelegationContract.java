@@ -41,6 +41,7 @@ import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -81,6 +82,43 @@ public abstract class CardDavDelegationContract {
             .contentType(ContentType.JSON)
             .accept(ContentType.JSON);
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
+    @Test
+    @Disabled("Wait for new image")
+    protected void cannotChangeAnotherUsersSharedAddressBookSettings() {
+        // Given Alice shares an address book with Bob with read-only access; Cedric has no rights to Bob's copy.
+        cardDavClient.grantDelegation(alice, "contacts", bob, DelegationRight.READ);
+        AddressBookURL delegatedBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), "contacts")
+            .orElseThrow();
+        String settingsUpdate = """
+            {
+                "dav:invite-reply": {
+                    "dav:invite-accepted": true,
+                    "dav:slug": "Bob's shared contacts"
+                }
+            }
+            """;
+
+        // When Cedric tries to mark Bob's copy as accepted and change its display name, deny the update.
+        given()
+            .header("Authorization", cedric.impersonatedBasicAuth())
+            .body(settingsUpdate)
+        .when()
+            .post(delegatedBook.asUri() + ".json")
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then Bob can still update these settings on his own copy despite having read-only access to the contacts.
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .body(settingsUpdate)
+        .when()
+            .post(delegatedBook.asUri() + ".json")
+        .then()
+            .statusCode(SC_NO_CONTENT);
+        assertThat(cardDavClient.getAddressBookName(bob, delegatedBook))
+            .isEqualTo("Bob's shared contacts");
     }
 
     @Test
