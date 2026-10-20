@@ -48,6 +48,7 @@ import java.util.function.Supplier;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -102,6 +103,7 @@ public abstract class CalDavDelegationContract {
     }
 
     @ParameterizedTest
+    @Disabled("Wait for new image")
     @ValueSource(strings = {"dav:read", "dav:freebusy"})
     protected void cannotChangeAnotherUsersCalendarInviteStatus(String right) {
         // Given Alice shares her calendar with Bob with read-only or free/busy access.
