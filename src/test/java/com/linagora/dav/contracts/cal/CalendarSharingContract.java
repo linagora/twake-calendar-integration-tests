@@ -22,6 +22,9 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
+import static org.apache.http.HttpStatus.SC_NO_CONTENT;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.apache.http.HttpStatus.SC_OK;
@@ -1274,6 +1277,100 @@ public abstract class CalendarSharingContract {
         assertThat(bobCalendars)
             .anySatisfy(url -> assertThat(url.asUri().toString())
                 .contains("/calendars/" + bob.id() + "/" + bob.id()));
+    }
+
+    // https://github.com/linagora/esn-sabre/issues/538
+    @Test
+    void readOnlySubscriptionShouldAllowMetadataUpdatesAndDavUnsubscribe() throws Exception {
+        // Given Alice subscribes to Bob's read-only calendar containing an event.
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        String eventUid = "unsubscribe-" + UUID.randomUUID();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake Calendar//Integration Test//EN
+            BEGIN:VEVENT
+            UID:{eventUid}
+            DTSTAMP:20300401T000000Z
+            DTSTART:20300411T090000Z
+            DTEND:20300411T100000Z
+            SUMMARY:Source event must survive unsubscribe
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{eventUid}", eventUid);
+        calDavClient.upsertCalendarEvent(bob, eventUid, event);
+        CalendarURL subscription = calDavClient.subscribeToSharedCalendar(alice, SubscribedCalendarRequest.builder()
+            .id(UUID.randomUUID().toString())
+            .sourceUserId(bob.id())
+            .name("Bob readonly subscription")
+            .color("#00FF00")
+            .readOnly(true)
+            .build());
+        String subscriptionPath = subscription.asUri() + "/";
+
+        // When Alice changes her subscription metadata, without writing source events.
+        // RFC 3744 section 3.4 defines write-properties independently of write-content (section 3.3).
+        // https://www.rfc-editor.org/rfc/rfc3744.html#section-3.4
+        String updateResponse = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>Renamed subscription</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:propertyupdate>
+                """)
+        .when()
+            .request("PROPPATCH", subscriptionPath)
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+
+        // Then the property itself succeeded, not just the outer HTTP 207 response.
+        assertThat(XMLUtil.extractMultipleValueByXPath(updateResponse,
+            "/d:multistatus/d:response/d:propstat[d:prop/d:displayname]/d:status", Map.of("d", "DAV:")))
+            .containsExactly("HTTP/1.1 200 OK");
+        String properties = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>
+                """)
+        .when()
+            .request("PROPFIND", subscriptionPath)
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+        assertThat(XMLUtil.extractByXPath(properties,
+            "/d:multistatus/d:response/d:propstat[d:status='HTTP/1.1 200 OK']/d:prop/d:displayname", Map.of("d", "DAV:")))
+            .isEqualTo("Renamed subscription");
+
+        // When Alice unsubscribes via DAV DELETE, as Apple Calendar does after checking metadata privileges.
+        // RFC 3744 section 3.10: DELETE requires unbind on the parent, not write-content on source events.
+        // https://www.rfc-editor.org/rfc/rfc3744.html#section-3.10
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .delete(subscriptionPath)
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then the subscription is gone while Bob's original event remains unchanged.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+        .when()
+            .request("PROPFIND", subscriptionPath)
+        .then()
+            .statusCode(SC_NOT_FOUND);
+        URI sourceEvent = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics");
+        assertThatCalendar(calDavClient.getCalendarEvent(bob, sourceEvent)).isEqualTo(event);
     }
 
     @Test
@@ -3393,7 +3490,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    protected void readOnlySubscribedCalendarShouldOnlyAdvertiseReadPrivileges() {
+    protected void readOnlySubscribedCalendarShouldAdvertiseMetadataWritePrivileges() {
         OpenPaasUser bob = extension().newTestUser();
         OpenPaasUser alice = extension().newTestUser();
 
@@ -3427,15 +3524,17 @@ public abstract class CalendarSharingContract {
             .statusCode(207)
             .extract().asString();
 
-        // THEN only read privileges are advertised, no write
+        // RFC 3744 sections 3.4 and 5.4: advertise the actual metadata write privilege.
+        // Apple Calendar needs write-properties to allow Unsubscribe locally (#538).
+        // https://www.rfc-editor.org/rfc/rfc3744.html#section-5.4
         assertThat(responseBody)
             .contains(sharedCalendarPath)
-            .contains("<d:read/>")
-            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+            .contains("<d:read/>", "<d:write-properties/>")
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:bind/>", "<d:unbind/>", "<d:all/>");
     }
 
     @Test
-    protected void subscribedResourceCalendarShouldOnlyAdvertiseReadPrivileges() {
+    protected void subscribedResourceCalendarShouldAdvertiseMetadataWritePrivileges() {
         OpenPaasUser bob = extension().newTestUser();
         OpenPaasUser alice = extension().newTestUser();
 
@@ -3471,11 +3570,11 @@ public abstract class CalendarSharingContract {
             .statusCode(207)
             .extract().asString();
 
-        // THEN only read privileges are advertised, no write
+        // Metadata remains writable even though the subscribed resource's events are read-only
         assertThat(responseBody)
             .contains(sharedCalendarPath)
-            .contains("<d:read/>")
-            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:write-properties/>", "<d:all/>");
+            .contains("<d:read/>", "<d:write-properties/>")
+            .doesNotContain("<d:write/>", "<d:write-content/>", "<d:bind/>", "<d:unbind/>", "<d:all/>");
     }
 
     @Test
