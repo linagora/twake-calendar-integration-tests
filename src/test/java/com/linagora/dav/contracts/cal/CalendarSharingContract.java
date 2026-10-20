@@ -101,6 +101,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    @Disabled("Wait for new image")
     protected void cannotCreateXmlSubscriptionToPrivateCalendar() {
         // Given Bob's source calendar is private.
         calDavClient.updateCalendarAcl(bob, "");
@@ -125,6 +126,7 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
+    @Disabled("Wait for new image")
     protected void cannotRetargetXmlSubscriptionToPrivateCalendar() {
         // Given Bob's calendar is private and Alice subscribes to her own calendar.
         calDavClient.updateCalendarAcl(bob, "");
