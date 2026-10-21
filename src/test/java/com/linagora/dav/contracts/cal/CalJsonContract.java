@@ -254,7 +254,6 @@ public abstract class CalJsonContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     protected void shouldListEmptySharedCalendarsWhenNoDelegationMatchesStatus() {
         // Given Alice has an accepted delegation and her own default calendar.
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -284,7 +283,6 @@ public abstract class CalJsonContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     protected void shouldListEmptyPublicCalendarsWhenUserOnlyHasPrivateCalendars() {
         // Given Alice's default calendar is private
         OpenPaasUser alice = dockerExtension().newTestUser();
