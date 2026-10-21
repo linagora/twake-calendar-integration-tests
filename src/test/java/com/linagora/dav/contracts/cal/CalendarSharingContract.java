@@ -1278,7 +1278,6 @@ public abstract class CalendarSharingContract {
 
     // https://github.com/linagora/esn-sabre/issues/538
     @Test
-    @Disabled("wait to new image")
     void readOnlySubscriptionShouldAllowMetadataUpdatesAndDavUnsubscribe() throws Exception {
         // Given Alice subscribes to Bob's read-only calendar containing an event.
         calDavClient.updateCalendarAcl(bob, "{DAV:}read");
@@ -3488,7 +3487,6 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     protected void readOnlySubscribedCalendarShouldAdvertiseMetadataWritePrivileges() {
         OpenPaasUser bob = extension().newTestUser();
         OpenPaasUser alice = extension().newTestUser();
@@ -3533,7 +3531,6 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     protected void subscribedResourceCalendarShouldAdvertiseMetadataWritePrivileges() {
         OpenPaasUser bob = extension().newTestUser();
         OpenPaasUser alice = extension().newTestUser();

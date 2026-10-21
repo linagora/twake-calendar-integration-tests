@@ -24,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -46,7 +45,6 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldCreateOwnDefaultCalendarWhenDelegatedBeforeFirstListing() {
         // Given a delegated #default calendar before the recipient's first calendar listing (issue #1196).
         OpenPaasUser owner = extension().newTestUser();
