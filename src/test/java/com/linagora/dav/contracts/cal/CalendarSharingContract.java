@@ -3520,7 +3520,7 @@ public abstract class CalendarSharingContract {
         .when()
             .request("PROPFIND", sharedCalendarPath)
         .then()
-            .statusCode(207)
+            .statusCode(SC_MULTI_STATUS)
             .extract().asString();
 
         // RFC 3744 sections 3.4 and 5.4: advertise the actual metadata write privilege.
@@ -3567,7 +3567,7 @@ public abstract class CalendarSharingContract {
         .when()
             .request("PROPFIND", sharedCalendarPath)
         .then()
-            .statusCode(207)
+            .statusCode(SC_MULTI_STATUS)
             .extract().asString();
 
         // Metadata remains writable even though the subscribed resource's events are read-only
