@@ -104,10 +104,14 @@ public class TwakeCalendarProvisioningService {
     }
 
     public Mono<OpenPaasUser> createUser() {
+        return createUserWithoutDefaultCalendar()
+            .flatMap(this::provisionPersonalDefaultCalendar);
+    }
+
+    public Mono<OpenPaasUser> createUserWithoutDefaultCalendar() {
         String usernameLocalPart = "user_" + UUID.randomUUID();
         return createUserInUsersRepository(usernameLocalPart + "@" + DEFAULT_DOMAIN)
-            .then(createUserInMongo(usernameLocalPart, DEFAULT_DOMAIN))
-            .flatMap(this::provisionPersonalDefaultCalendar);
+            .then(createUserInMongo(usernameLocalPart, DEFAULT_DOMAIN));
     }
 
     public Mono<OpenPaasUser> createUser(String localPart) {
