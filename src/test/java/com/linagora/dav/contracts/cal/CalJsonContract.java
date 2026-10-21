@@ -254,6 +254,62 @@ public abstract class CalJsonContract {
     }
 
     @Test
+    @Disabled("wait to new image")
+    protected void shouldListEmptySharedCalendarsWhenNoDelegationMatchesStatus() {
+        // Given Alice has an accepted delegation and her own default calendar.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        calDavClient.grantDelegation(bob, bob.id(), alice, DelegationRight.READ);
+        assertThat(calDavClient.findDelegatedCalendar(alice)).hasSize(1);
+
+        // When listing unanswered delegations, excluding personal calendars.
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("personal", false)
+            .queryParam("sharedDelegationStatus", "noresponse")
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .extract().asString();
+
+        // Then the response preserves the calendar listing envelope with an empty list
+        assertThatJson(responseBody).isEqualTo("""
+            {
+                "_links": {"self": {"href": "/calendars/${userId}.json"}},
+                "_embedded": {"dav:calendar": []}
+            }
+            """.replace("${userId}", alice.id()));
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    protected void shouldListEmptyPublicCalendarsWhenUserOnlyHasPrivateCalendars() {
+        // Given Alice's default calendar is private
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // When no calendar matches the public listing filter
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedPublic", true)
+        .when()
+            .get("/calendars/" + alice.id() + ".json")
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .extract().asString();
+
+        // Then the empty result still has the same JSON shape as a non-empty listing
+        assertThatJson(responseBody).isEqualTo("""
+            {
+                "_links": {"self": {"href": "/calendars/${userId}.json"}},
+                "_embedded": {"dav:calendar": []}
+            }
+            """.replace("${userId}", alice.id()));
+    }
+
+    @Test
     public void shouldSupportOptions() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
