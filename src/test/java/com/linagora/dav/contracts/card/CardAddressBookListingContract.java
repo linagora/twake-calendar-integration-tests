@@ -810,6 +810,19 @@ public abstract class CardAddressBookListingContract {
         assertThat(uids(response)).containsExactly("alice");
     }
 
+    @Test
+    protected void shouldFindContactsByEmailContainingJsonLiterally() {
+        // GIVEN two contacts whose emails differ only by the literal ".json"
+        addContact(alice, "contacts", "alice-json", "Alice", "Json", "alice.json@example.org");
+        addContact(alice, "contacts", "alice", "Alice", "Plain", "alice@example.org");
+
+        // WHEN Alice looks up the email containing ".json"
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", "alice.json@example.org"));
+
+        // THEN the lookup preserves the email and returns only its matching contact
+        assertThat(uids(response)).containsExactly("alice-json");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"alice@example", "example.org", "alice", "lice@example.org"})
     void shouldNotFindContactsByPartialEmail(String email) {
