@@ -490,6 +490,7 @@ public abstract class CardDavDelegationContract {
     @EnumSource(DelegationRight.class)
     protected void userShouldKeepDelegationAfterResubscribingToHiddenAddressBook(DelegationRight right) {
         String sourceAddressBookId = "collected";
+        String sourceHref = "/addressbooks/" + alice.id() + "/" + sourceAddressBookId + ".json";
         String resubscribedName = "Resubscribed address book";
 
         // GIVEN Alice shares a hidden address book containing a contact with Bob
@@ -503,9 +504,19 @@ public abstract class CardDavDelegationContract {
         cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, right);
         AddressBookURL delegatedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId).orElseThrow();
 
-        // WHEN Bob deletes the delegated copy and subscribes again
+        // WHEN Bob deletes the delegated copy
         cardDavClient.deleteAddressBook(bob, delegatedAddressBook.addressBookId());
         assertThat(cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)).isEmpty();
+
+        // THEN Bob finds it again among Alice's personal address books, and only it, but not among her public ones
+        List<String> publicHrefs = listAddressBookHrefs(bob, alice, "public");
+        List<String> personalHrefs = listAddressBookHrefs(bob, alice, "personal");
+        assertSoftly(softly -> {
+            softly.assertThat(publicHrefs).as("?public=true").doesNotContain(sourceHref);
+            softly.assertThat(personalHrefs).as("?personal=true").containsExactly(sourceHref);
+        });
+
+        // WHEN Bob subscribes to it again
         cardDavClient.subscribe(bob, alice.id(), sourceAddressBookId, resubscribedName);
 
         // THEN one delegated copy is restored, with the original access level and the new name
@@ -561,47 +572,6 @@ public abstract class CardDavDelegationContract {
         assertThat(cardDavClient.getContacts(alice, alice.id(), sourceAddressBookId).contains("Bob's contact"))
             .as("Contact creation in Alice's source book matches Bob's delegation")
             .isEqualTo(canWrite);
-    }
-
-    @Test
-    protected void userShouldRediscoverAndResubscribeToRemovedPrivateDelegation() {
-        String sourceAddressBookId = "private-delegated";
-        String sourceHref = "/addressbooks/" + alice.id() + "/" + sourceAddressBookId + ".json";
-
-        // GIVEN Alice delegates a private (non public) address book to Bob
-        cardDavClient.createAddressBook(alice, sourceAddressBookId, "Alice private book");
-        cardDavClient.grantDelegation(alice, sourceAddressBookId, bob, DelegationRight.READ);
-        AddressBookURL delegatedAddressBook = cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)
-            .orElseThrow();
-
-        // AND Bob removes it from his list
-        cardDavClient.deleteAddressBook(bob, delegatedAddressBook.addressBookId());
-        assertThat(cardDavClient.findSubscribedAddressBook(bob, alice.id(), sourceAddressBookId)).isEmpty();
-
-        // WHEN Bob lists Alice's address books to find it again
-        List<String> publicHrefs = listAddressBookHrefs(bob, alice, "public");
-        List<String> personalHrefs = listAddressBookHrefs(bob, alice, "personal");
-
-        // THEN ?public does not list the private delegation while ?personal lists it, and only it
-        assertSoftly(softly -> {
-            softly.assertThat(publicHrefs).as("?public=true").doesNotContain(sourceHref);
-            softly.assertThat(personalHrefs).as("?personal=true").containsExactly(sourceHref);
-        });
-
-        // AND subscribing to it restores the delegation
-        cardDavClient.subscribe(bob, alice.id(), sourceAddressBookId, "Resubscribed address book");
-        String subscriptionType = given()
-            .header("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("personal", true)
-            .queryParam("shared", true)
-            .queryParam("subscribed", true)
-        .when()
-            .get("/addressbooks/" + bob.id() + ".json")
-        .then()
-            .statusCode(SC_OK)
-            .extract().jsonPath()
-            .getString("_embedded.'dav:addressbook'.find { it.'openpaas:source' == '" + sourceHref + "' }.'openpaas:subscription-type'");
-        assertThat(subscriptionType).isEqualTo("delegation");
     }
 
     private List<String> listAddressBookHrefs(OpenPaasUser requester, OpenPaasUser owner, String filter) {
