@@ -331,7 +331,7 @@ public abstract class CardDavDelegationContract {
                     "openpaas:subscription-type": "delegation",
                     "type": "",
                     "state": "",
-                    "numberOfContacts": null,
+                    "numberOfContacts": 0,
                     "acl": [
                         {
                             "privilege": "{DAV:}read",
@@ -1540,7 +1540,7 @@ public abstract class CardDavDelegationContract {
                     "openpaas:subscription-type": "delegation",
                     "type": "",
                     "state": "",
-                    "numberOfContacts": null,
+                    "numberOfContacts": 0,
                     "acl": [
                         {
                             "privilege": "{DAV:}share",

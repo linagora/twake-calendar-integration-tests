@@ -2395,7 +2395,7 @@ public abstract class CardJsonContract {
                                 "openpaas:subscription-type": "delegation",
                                 "type": "",
                                 "state": "",
-                                "numberOfContacts": null,
+                                "numberOfContacts": 1,
                                 "acl": [
                                     {
                                         "privilege": "{DAV:}read",
