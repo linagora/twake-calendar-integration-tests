@@ -59,7 +59,7 @@ public class SabreV4CalendarSharingTest extends CalendarSharingContract {
             .queryParam("personal", true)
             .queryParam("sharedDelegationStatus", "accepted")
         .when()
-            .get("/calendars/" + recipient.id() + ".json")
+            .get("/calendars/" + recipient.id())
         .then()
             .statusCode(SC_OK)
             .extract().jsonPath().getList("_embedded.'dav:calendar'._links.self.href");

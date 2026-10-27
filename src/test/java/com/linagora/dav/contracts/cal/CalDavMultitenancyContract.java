@@ -348,7 +348,7 @@ public abstract class CalDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept("application/json")
         .when()
-            .get("/calendars/" + john.id() + ".json")
+            .get("/calendars/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -423,7 +423,7 @@ public abstract class CalDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept("application/json")
         .when()
-            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid)
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -436,7 +436,7 @@ public abstract class CalDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept("application/json")
         .when()
-            .get("/calendars/" + john.id() + "/" + john.id() + ".json?export")
+            .get("/calendars/" + john.id() + "/" + john.id() + "?export")
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -453,7 +453,7 @@ public abstract class CalDavMultitenancyContract {
                 {"id":"newCal","dav:name":"New Calendar","apple:order":2}
                 """)
         .when()
-            .post("/calendars/" + john.id() + ".json")
+            .post("/calendars/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -488,7 +488,7 @@ public abstract class CalDavMultitenancyContract {
                 {"match":{"start":"20300401T000000","end":"20300430T000000"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/calendars/" + john.id() + "/" + john.id() + ".json")
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -630,7 +630,7 @@ public abstract class CalDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
             .accept("application/json")
         .when()
-            .get("/calendars/" + john.id() + ".json")
+            .get("/calendars/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -639,7 +639,7 @@ public abstract class CalDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
             .accept("application/json")
         .when()
-            .get("/calendars/" + john.id() + ".json")
+            .get("/calendars/" + john.id())
         .then()
             .statusCode(200);
     }
@@ -737,7 +737,7 @@ public abstract class CalDavMultitenancyContract {
                 ],[]]]]
                 """.formatted(eventUid).getBytes(StandardCharsets.UTF_8))
         .when()
-            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid)
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -746,7 +746,7 @@ public abstract class CalDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid)
         .then()
             .statusCode(404);
     }
@@ -768,7 +768,7 @@ public abstract class CalDavMultitenancyContract {
                 ],[]]]]
                 """.formatted(eventUid).getBytes(StandardCharsets.UTF_8))
         .when()
-            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid)
         .then()
             .statusCode(201);
 
@@ -777,7 +777,7 @@ public abstract class CalDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid)
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -786,7 +786,7 @@ public abstract class CalDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + john.id() + "/" + john.id() + "/" + eventUid)
         .then()
             .statusCode(200);
     }
@@ -806,7 +806,7 @@ public abstract class CalDavMultitenancyContract {
                 {"match":{"start":"30250401T000000","end":"30250430T000000"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/calendars/" + john.id() + "/" + john.id() + ".json")
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -819,7 +819,7 @@ public abstract class CalDavMultitenancyContract {
                 {"match":{"start":"30250401T000000","end":"30250430T000000"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/calendars/" + john.id() + "/" + john.id() + ".json")
+            .request("REPORT", "/calendars/" + john.id() + "/" + john.id())
         .then()
             .statusCode(200);
     }
@@ -849,7 +849,7 @@ public abstract class CalDavMultitenancyContract {
                 }
                 """.formatted(secondDomainDelegate.email()).getBytes(StandardCharsets.UTF_8))
         .when()
-            .post("/calendars/" + john.id() + "/" + john.id() + ".json")
+            .post("/calendars/" + john.id() + "/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
 

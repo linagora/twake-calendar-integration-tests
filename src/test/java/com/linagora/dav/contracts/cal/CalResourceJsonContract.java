@@ -65,7 +65,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .body(jsonCalendarBody(eventUid))
         .when()
-            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(201);
     }
@@ -78,7 +78,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .body(jsonCalendarBody(eventUid))
         .when()
-            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(201);
 
@@ -86,7 +86,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .body(jsonCalendarBody(eventUid))
         .when()
-            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(204);
     }
@@ -99,7 +99,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .body(jsonCalendarBody(eventUid))
         .when()
-            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(201);
 
@@ -107,7 +107,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .header("Accept", "application/calendar+json")
         .when()
-            .get("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(200)
             .extract().asString();
@@ -146,7 +146,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .body(jsonCalendarBody(eventUid))
         .when()
-            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(201);
 
@@ -154,7 +154,7 @@ public abstract class CalResourceJsonContract {
             .header("TwakeCalendarToken", token)
             .body("{\"match\":{\"start\":\"30250401T000000\",\"end\":\"30250430T000000\"}}")
         .when()
-            .request("REPORT", "/calendars/" + resource.id() + "/" + resource.id() + ".json")
+            .request("REPORT", "/calendars/" + resource.id() + "/" + resource.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -169,7 +169,7 @@ public abstract class CalResourceJsonContract {
         String body = given()
             .header("TwakeCalendarToken", token)
         .when()
-            .get("/calendars/" + resource.id() + ".json")
+            .get("/calendars/" + resource.id())
         .then()
             .statusCode(200)
             .extract().asString();

@@ -78,7 +78,7 @@ public abstract class CardReportContract {
                 }
                 """.replace("{syncToken}", previousSyncToken))
         .when()
-            .request("REPORT", addressBookURL.asUri() + ".json")
+            .request("REPORT", addressBookURL.asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -111,7 +111,7 @@ public abstract class CardReportContract {
                 }
                 """.replace("{syncToken}", initialSyncToken))
         .when()
-            .request("REPORT", addressBookURL.asUri() + ".json")
+            .request("REPORT", addressBookURL.asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -148,7 +148,7 @@ public abstract class CardReportContract {
                 }
                 """.replace("{syncToken}", previousSyncToken))
         .when()
-            .request("REPORT", addressBookURL.asUri() + ".json")
+            .request("REPORT", addressBookURL.asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -186,7 +186,7 @@ public abstract class CardReportContract {
                 }
                 """.replace("{syncToken}", previousSyncToken))
         .when()
-            .request("REPORT", addressBookURL.asUri() + ".json")
+            .request("REPORT", addressBookURL.asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -218,7 +218,7 @@ public abstract class CardReportContract {
                 }
                 """.replace("{syncToken}", currentSyncToken))
         .when()
-            .request("REPORT", addressBookURL.asUri() + ".json")
+            .request("REPORT", addressBookURL.asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();

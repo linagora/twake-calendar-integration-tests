@@ -121,7 +121,7 @@ public abstract class CardAddressBookListingContract {
         JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("sort", "fn", "limit", 50));
 
         SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(response.getString("_links.self.href")).isEqualTo(contactsPath(alice.id(), "contacts"));
+            softly.assertThat(response.getString("_links.self.href")).isEqualTo("/addressbooks/" + alice.id() + "/contacts.json");
             softly.assertThat(response.getList(ITEM_HREFS, String.class)).containsExactly(
                 "/addressbooks/" + alice.id() + "/contacts/anna.vcf",
                 "/addressbooks/" + alice.id() + "/contacts/bob.vcf");
@@ -275,7 +275,7 @@ public abstract class CardAddressBookListingContract {
 
         // THEN the members are sorted by their full name, ignoring case and accents, and linked to the domain address book
         SoftAssertions.assertSoftly(softly -> {
-            softly.assertThat(response.getString("_links.self.href")).isEqualTo(contactsPath(domain.id(), "domain-members"));
+            softly.assertThat(response.getString("_links.self.href")).isEqualTo("/addressbooks/" + domain.id() + "/domain-members.json");
             softly.assertThat(response.getList(ITEM_HREFS, String.class)).containsExactly(
                 "/addressbooks/" + domain.id() + "/domain-members/anna.vcf",
                 "/addressbooks/" + domain.id() + "/domain-members/carl.vcf",
@@ -827,7 +827,7 @@ public abstract class CardAddressBookListingContract {
     }
 
     private static String contactsPath(String baseId, String addressBookId) {
-        return "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+        return "/addressbooks/" + baseId + "/" + addressBookId;
     }
 
     private List<String> uids(JsonPath response) {

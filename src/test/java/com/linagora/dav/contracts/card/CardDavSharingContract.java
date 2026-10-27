@@ -96,7 +96,7 @@ public abstract class CardDavSharingContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .body(payload)
         .when()
-            .post("/addressbooks/" + bob.id() + ".json")
+            .post("/addressbooks/" + bob.id())
         .then()
             .statusCode(SC_FORBIDDEN);
 
@@ -104,7 +104,7 @@ public abstract class CardDavSharingContract {
         given()
             .header("Authorization", bob.impersonatedBasicAuth())
         .when()
-            .get("/addressbooks/" + bob.id() + "/injected-subscription.json")
+            .get("/addressbooks/" + bob.id() + "/injected-subscription")
         .then()
             .statusCode(SC_NOT_FOUND);
     }
@@ -138,7 +138,7 @@ public abstract class CardDavSharingContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get("/addressbooks/" + alice.id())
         .then()
             .extract().asString();
 
@@ -213,7 +213,7 @@ public abstract class CardDavSharingContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
         .then()
             .statusCode(SC_OK)
             .extract().asString();
@@ -264,7 +264,7 @@ public abstract class CardDavSharingContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get("/addressbooks/" + alice.id())
         .then()
             .extract().asString();
 
@@ -446,7 +446,7 @@ public abstract class CardDavSharingContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get("/addressbooks/" + alice.id())
             .then()
             .extract().asString();
 
@@ -476,7 +476,7 @@ public abstract class CardDavSharingContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get("/addressbooks/" + alice.id())
             .then()
             .extract().asString();
 

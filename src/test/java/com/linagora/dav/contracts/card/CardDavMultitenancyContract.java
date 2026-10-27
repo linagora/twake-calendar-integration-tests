@@ -303,7 +303,7 @@ public abstract class CardDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept("application/json")
         .when()
-            .get("/addressbooks/" + john.id() + ".json")
+            .get("/addressbooks/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -318,7 +318,7 @@ public abstract class CardDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept("application/json")
         .when()
-            .get("/contacts/" + john.id() + ".json?sort=email")
+            .get("/contacts/" + john.id() + "?sort=email")
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -333,7 +333,7 @@ public abstract class CardDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
             .accept("application/json")
         .when()
-            .get("/contacts/" + john.id() + ".json?sort=email")
+            .get("/contacts/" + john.id() + "?sort=email")
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -342,7 +342,7 @@ public abstract class CardDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
             .accept(ContentType.JSON)
         .when()
-            .get("/contacts/" + john.id() + ".json?sort=email")
+            .get("/contacts/" + john.id() + "?sort=email")
         .then()
             .statusCode(200)
             .extract().asString();
@@ -361,7 +361,7 @@ public abstract class CardDavMultitenancyContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept(ContentType.JSON)
         .when()
-            .get("/contacts/" + bob.id() + ".json?sort=email")
+            .get("/contacts/" + bob.id() + "?sort=email")
         .then()
             .statusCode(200)
             .extract().asString();
@@ -417,7 +417,7 @@ public abstract class CardDavMultitenancyContract {
                 {"id":"newbook","dav:name":"New Book","dav:acl":["dav:read","dav:write"],"type":"addressbook"}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post("/addressbooks/" + john.id() + ".json")
+            .post("/addressbooks/" + john.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -434,7 +434,7 @@ public abstract class CardDavMultitenancyContract {
                 {"dav:name":"Hacked Name","carddav:description":"Hacked"}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("PROPPATCH", "/addressbooks/" + john.id() + "/contacts.json")
+            .request("PROPPATCH", "/addressbooks/" + john.id() + "/contacts")
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -451,7 +451,7 @@ public abstract class CardDavMultitenancyContract {
                 {"match":{"field":"fn","value":"Test"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/addressbooks/" + john.id() + "/contacts.json")
+            .request("REPORT", "/addressbooks/" + john.id() + "/contacts")
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -621,7 +621,7 @@ public abstract class CardDavMultitenancyContract {
             .accept("application/json")
             .body(payload.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post("/addressbooks/" + targetDomainId + ".json")
+            .post("/addressbooks/" + targetDomainId)
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -631,7 +631,7 @@ public abstract class CardDavMultitenancyContract {
             .accept("application/json")
             .body(payload.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post("/addressbooks/" + targetDomainId + ".json")
+            .post("/addressbooks/" + targetDomainId)
         .then()
             .statusCode(201);
     }
@@ -646,7 +646,7 @@ public abstract class CardDavMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
             .accept("application/json")
         .when()
-            .get("/addressbooks/" + secondDomainId + ".json")
+            .get("/addressbooks/" + secondDomainId)
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -679,7 +679,7 @@ public abstract class CardDavMultitenancyContract {
         given()
             .header(TWAKE_CALENDAR_TOKEN_HEADER, defaultDomainToken)
         .when()
-            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + "?limit=100&offset=0&sort=fn")
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -687,7 +687,7 @@ public abstract class CardDavMultitenancyContract {
         String ownTenantResponseBody = given()
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
         .when()
-            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + "?limit=100&offset=0&sort=fn")
         .then()
             .extract().asString();
 
@@ -742,7 +742,7 @@ public abstract class CardDavMultitenancyContract {
         String ownTenantResponseBody = given()
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
         .when()
-            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + "?limit=100&offset=0&sort=fn")
         .then()
             .extract().asString();
 
@@ -781,7 +781,7 @@ public abstract class CardDavMultitenancyContract {
         String ownTenantResponseBody = given()
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
         .when()
-            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + "?limit=100&offset=0&sort=fn")
         .then()
             .extract().asString();
 
@@ -826,7 +826,7 @@ public abstract class CardDavMultitenancyContract {
         String ownTenantResponseBody = given()
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
         .when()
-            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + ".json?limit=100&offset=0&sort=fn")
+            .get("/addressbooks/" + secondDomainId + "/" + addressBookId + "?limit=100&offset=0&sort=fn")
         .then()
             .extract().asString();
 

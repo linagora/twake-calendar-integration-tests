@@ -153,7 +153,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 {"match":{"start":"20300401T000000","end":"20300430T000000"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/calendars/" + resource.id() + "/" + resource.id() + ".json")
+            .request("REPORT", "/calendars/" + resource.id() + "/" + resource.id())
         .then()
             .statusCode(403);
     }
@@ -163,7 +163,7 @@ public abstract class CalDavResourceMultitenancyContract {
         given()
             .header("Authorization", john.impersonatedBasicAuth())
         .when()
-            .get("/calendars/" + resource.id() + ".json")
+            .get("/calendars/" + resource.id())
         .then()
             .statusCode(403);
     }
@@ -212,7 +212,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 ],[]]]]
                 """.formatted(eventUid))
         .when()
-            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(403);
     }
@@ -226,7 +226,7 @@ public abstract class CalDavResourceMultitenancyContract {
             .headers("Authorization", john.impersonatedBasicAuth())
             .header("Accept", "application/calendar+json")
         .when()
-            .get("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + resource.id() + "/" + resource.id() + "/" + eventUid)
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -262,7 +262,7 @@ public abstract class CalDavResourceMultitenancyContract {
         given()
             .header(TWAKE_CALENDAR_TOKEN_HEADER, token)
         .when()
-            .get("/calendars/" + secondDomainResource.id() + ".json")
+            .get("/calendars/" + secondDomainResource.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
     }
@@ -395,7 +395,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 ],[]]]]
                 """.formatted(eventUid).getBytes(StandardCharsets.UTF_8))
         .when()
-            .put("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid)
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -404,7 +404,7 @@ public abstract class CalDavResourceMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid)
         .then()
             .statusCode(404);
     }
@@ -426,7 +426,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 ],[]]]]
                 """.formatted(eventUid).getBytes(StandardCharsets.UTF_8))
         .when()
-            .put("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid + ".json")
+            .put("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid)
         .then()
             .statusCode(201);
 
@@ -435,7 +435,7 @@ public abstract class CalDavResourceMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, token)
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid)
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -444,7 +444,7 @@ public abstract class CalDavResourceMultitenancyContract {
             .header(TWAKE_CALENDAR_TOKEN_HEADER, secondDomainToken)
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid + ".json")
+            .get("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + "/" + eventUid)
         .then()
             .statusCode(200);
     }
@@ -475,7 +475,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 {"match":{"start":"30250401T000000","end":"30250430T000000"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + ".json")
+            .request("REPORT", "/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
@@ -486,7 +486,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 {"match":{"start":"30250401T000000","end":"30250430T000000"}}
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("REPORT", "/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + ".json")
+            .request("REPORT", "/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id())
         .then()
             .statusCode(200);
     }
@@ -512,7 +512,7 @@ public abstract class CalDavResourceMultitenancyContract {
                 }
                 """.formatted(secondDomainDelegate.email()).getBytes(StandardCharsets.UTF_8))
         .when()
-            .post("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id() + ".json")
+            .post("/calendars/" + secondDomainResource.id() + "/" + secondDomainResource.id())
         .then()
             .statusCode(anyOf(is(403), is(404)));
 
