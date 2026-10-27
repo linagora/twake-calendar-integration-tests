@@ -41,6 +41,7 @@ import java.util.concurrent.BlockingQueue;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -294,6 +295,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    @Disabled("wait to new image")
     void listAddressBooksShouldShowDelegatedAddressBook() {
         // GIVEN Bob has a address book named "collected"
         // WHEN Bob delegates that address book to Alice
@@ -331,7 +333,7 @@ public abstract class CardDavDelegationContract {
                     "openpaas:subscription-type": "delegation",
                     "type": "",
                     "state": "",
-                    "numberOfContacts": null,
+                    "numberOfContacts": 0,
                     "acl": [
                         {
                             "privilege": "{DAV:}read",
@@ -1440,6 +1442,7 @@ public abstract class CardDavDelegationContract {
     }
 
     @Test
+    @Disabled("wait to new image")
     void grantDelegationInCopiedAddressBookShouldSucceedWhenDelegatedUserHasAdminRight() {
         // GIVEN Bob owns an address book
         // AND Alice has admin right on Bob's address book (delegation)
@@ -1540,7 +1543,7 @@ public abstract class CardDavDelegationContract {
                     "openpaas:subscription-type": "delegation",
                     "type": "",
                     "state": "",
-                    "numberOfContacts": null,
+                    "numberOfContacts": 0,
                     "acl": [
                         {
                             "privilege": "{DAV:}share",
