@@ -402,7 +402,6 @@ public class TwakeCalendarOpenPaaSAPITest extends OpenPaaSAPIContract {
     }
 
     // No data in opensearch
-    @Disabled
     @Test
     void peopleSearch(){
     }

@@ -2257,7 +2257,6 @@ public abstract class CardJsonContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldListShareeCalendar() {
         OpenPaasUser alice = dockerExtension().newTestUser();
         OpenPaasUser bob = dockerExtension().newTestUser();
