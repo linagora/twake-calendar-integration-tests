@@ -38,6 +38,7 @@ import org.assertj.core.api.SoftAssertions;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -797,6 +798,179 @@ public abstract class CardAddressBookListingContract {
         assertThat(uids(last)).containsExactly("anna");
     }
 
+    @Test
+    @Disabled("wait to new image")
+    void shouldFindContactsByEmailIgnoringCase() {
+        // GIVEN Alice has contacts with different emails
+        addContact(alice, "contacts", "alice", "Alice", "Wonder", "Alice@Example.org");
+        addContact(alice, "contacts", "bob", "Bob", "Marley", "bob@example.org");
+
+        // WHEN Alice looks up an email written with another case
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", "alice@example.ORG"));
+
+        // THEN only the contact with this email is returned
+        assertThat(uids(response)).containsExactly("alice");
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    protected void shouldFindContactsByEmailContainingJsonLiterally() {
+        // GIVEN two contacts whose emails differ only by the literal ".json"
+        addContact(alice, "contacts", "alice-json", "Alice", "Json", "alice.json@example.org");
+        addContact(alice, "contacts", "alice", "Alice", "Plain", "alice@example.org");
+
+        // WHEN Alice looks up the email containing ".json"
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", "alice.json@example.org"));
+
+        // THEN the lookup preserves the email and returns only its matching contact
+        assertThat(uids(response)).containsExactly("alice-json");
+    }
+
+    @ParameterizedTest
+    @Disabled("wait to new image")
+    @ValueSource(strings = {"alice@example", "example.org", "alice", "lice@example.org"})
+    void shouldNotFindContactsByPartialEmail(String email) {
+        addContact(alice, "contacts", "alice", "Alice", "Wonder", "alice@example.org");
+
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", email));
+
+        assertThat(uids(response)).isEmpty();
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void shouldOnlyFindContactsByPreferredEmail() {
+        // GIVEN the preferred email of a contact is not its first email
+        String uid = "preferred";
+        String payload = new String(VCardContact.builder().firstName("Preferred").lastName("Email").email("aaa@example.org")
+            .build().toVCardPayload(uid), StandardCharsets.UTF_8)
+            .replace("EMAIL;TYPE=WORK:aaa@example.org", "EMAIL:aaa@example.org\nEMAIL;TYPE=PREF:zoe@example.org");
+        cardDavClient.upsertContact(alice, "contacts", uid, payload.getBytes(StandardCharsets.UTF_8));
+
+        // WHEN Alice looks up each of its emails
+        JsonPath byOtherEmail = listContacts(alice, alice.id(), "contacts", Map.of("email", "aaa@example.org"));
+        JsonPath byPreferredEmail = listContacts(alice, alice.id(), "contacts", Map.of("email", "zoe@example.org"));
+
+        // THEN the contact is only found by its preferred email
+        assertThat(uids(byOtherEmail)).isEmpty();
+        assertThat(uids(byPreferredEmail)).containsExactly(uid);
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void shouldNotFindContactsByEmailInOtherProperties() {
+        // GIVEN a contact mentioning an email outside of its EMAIL properties
+        String uid = "noted";
+        String payload = new String(VCardContact.builder().firstName("Noted").lastName("Contact")
+            .build().toVCardPayload(uid), StandardCharsets.UTF_8)
+            .replace("END:VCARD", "NOTE:alice@example.org\nEND:VCARD");
+        cardDavClient.upsertContact(alice, "contacts", uid, payload.getBytes(StandardCharsets.UTF_8));
+
+        // WHEN Alice looks up this email THEN the contact is not found
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", "alice@example.org"));
+
+        assertThat(uids(response)).isEmpty();
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void shouldFindAllContactsOfTheAddressBookSharingTheEmail() {
+        // GIVEN several contacts share an email, in the requested book and in another one
+        addContact(alice, "contacts", "same-1", "First", "Contact", "same@example.org");
+        addContact(alice, "contacts", "same-2", "Second", "Contact", "SAME@example.org");
+        addContact(alice, "contacts", "same-3", "Third", "Contact", "same@example.org");
+        addContact(alice, "contacts", "other", "Other", "Contact", "other@example.org");
+        addContact(alice, "collected", "collected", "Collected", "Contact", "same@example.org");
+
+        // WHEN Alice looks up this email in her contacts book
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", "same@example.org"));
+
+        // THEN all the matching contacts of this book are returned at once, without pagination
+        assertThat(uids(response)).containsExactlyInAnyOrder("same-1", "same-2", "same-3");
+        assertThat(response.getString(NEXT)).isNull();
+        assertThat(response.getString("_links.next")).isNull();
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void shouldReturnNoContactWhenNoEmailMatches() {
+        addContact(alice, "contacts", "alice", "Alice", "Wonder", "alice@example.org");
+
+        JsonPath response = listContacts(alice, alice.id(), "contacts", Map.of("email", "unknown@example.org"));
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(uids(response)).isEmpty();
+            softly.assertThat(response.getString("_links.self.href")).isEqualTo(contactsPath(alice.id(), "contacts"));
+            softly.assertThat(response.getString(SYNC_TOKEN)).isNotBlank();
+        });
+    }
+
+    @ParameterizedTest
+    @Disabled("wait to new image")
+    @CsvSource({"offset, 0", "limit, 1", "sort, fn", "sort, email", "order, asc", "search, a", "modifiedBefore, 9999999999"})
+    void emailShouldNotBeCombinedWithListingParameters(String param, String value) {
+        addContact(alice, "contacts", "alice", "Alice", "Wonder", "alice@example.org");
+
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("email", "alice@example.org")
+            .queryParam(param, value)
+            .get(contactsPath(alice.id(), "contacts"))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void emailShouldNotBeCombinedWithCursor() {
+        addContact(alice, "contacts", "anna", "Anna", "Zed", "anna@example.org");
+        addContact(alice, "contacts", "bob", "Bob", "Marley", "bob@example.org");
+        String next = listContacts(alice, alice.id(), "contacts", Map.of("sort", "fn", "limit", 1)).getString(NEXT);
+
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("email", "bob@example.org")
+            .queryParam("after", next)
+            .get(contactsPath(alice.id(), "contacts"))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void blankEmailShouldBeRejected() {
+        given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("email", "")
+            .get(contactsPath(alice.id(), "contacts"))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @Test
+    @Disabled("wait to new image")
+    void technicalTokenShouldFindDomainMembersByEmail() {
+        // GIVEN domain members written with different card UIDs
+        TestDomain domain = newDomain();
+        cardDavClient.createDomainMembersAddressBook(domain.id(), domain.technicalToken());
+        addDomainMember(domain, "ldap-uid", "Anna", "Zed", "anna@" + domain.name());
+        addDomainMember(domain, UUID.randomUUID().toString(), "Bob", "Marley", "bob@" + domain.name());
+
+        // WHEN a technical token of this domain looks up a member by email
+        JsonPath response = given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, domain.technicalToken())
+            .queryParam("email", "ANNA@" + domain.name())
+            .get(contactsPath(domain.id(), "domain-members"))
+            .then()
+            .statusCode(SC_OK)
+            .extract()
+            .jsonPath();
+
+        // THEN the member card is returned, linked to the domain members address book
+        assertThat(response.getList(ITEM_HREFS, String.class))
+            .containsExactly("/addressbooks/" + domain.id() + "/domain-members/ldap-uid.vcf");
+    }
+
     private JsonPath listContacts(OpenPaasUser user, String baseId, String addressBookId, Map<String, ?> params) {
         return given()
             .headers("Authorization", user.impersonatedBasicAuth())
@@ -883,8 +1057,15 @@ public abstract class CardAddressBookListingContract {
     }
 
     private void addDomainMember(TestDomain domain, String uid, String firstName, String lastName) {
-        cardDavClient.upsertDomainMemberContact(domain.id(), uid,
-            VCardContact.builder().firstName(firstName).lastName(lastName).build().toVCardPayload(uid), domain.technicalToken());
+        addDomainMember(domain, uid, firstName, lastName, null);
+    }
+
+    private void addDomainMember(TestDomain domain, String uid, String firstName, String lastName, String email) {
+        VCardContact.Builder builder = VCardContact.builder().firstName(firstName).lastName(lastName);
+        if (email != null) {
+            builder.email(email);
+        }
+        cardDavClient.upsertDomainMemberContact(domain.id(), uid, builder.build().toVCardPayload(uid), domain.technicalToken());
     }
 
     private OpenPaasUser newDomainUser(String domainName) {
