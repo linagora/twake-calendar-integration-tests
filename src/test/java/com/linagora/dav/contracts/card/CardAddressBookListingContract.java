@@ -38,7 +38,6 @@ import org.assertj.core.api.SoftAssertions;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -886,7 +885,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldReturnNoContactWhenNoEmailMatches() {
         addContact(alice, "contacts", "alice", "Alice", "Wonder", "alice@example.org");
 

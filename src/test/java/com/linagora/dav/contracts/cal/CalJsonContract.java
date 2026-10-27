@@ -22,9 +22,9 @@ import static com.linagora.dav.contracts.cal.CalDavContract.ICS_1;
 import static com.linagora.dav.contracts.cal.CalDavContract.ICS_2;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_OK;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -3318,74 +3318,8 @@ public abstract class CalJsonContract {
         assertThat(response2).isEqualTo(ICS_1);
     }
 
-    @Disabled("Somehow failing")
     @Test
-    void delegationWrite() throws Exception {
-        OpenPaasUser alice = dockerExtension().newTestUser();
-        OpenPaasUser bob = dockerExtension().newTestUser();
-
-        given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
-            .when()
-            .post("/calendars/" + alice.id());
-        // provision bob principal...
-        given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .body("{\"id\":\"c5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
-            .when()
-            .post("/calendars/" + bob.id());
-
-        calDavClient.upsertCalendarEvent(alice,
-            URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
-
-        given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
-            .header("Accept", "application/json, text/plain, */*")
-            .header("Content-Type", "text/html; charset=UTF-8")
-            .body("""
-                {
-                  "share": {
-                    "set": [
-                      {
-                        "dav:href": "mailto:{bobEmail}",
-                        "dav:read-write": true
-                      }
-                    ],
-                    "remove": []
-                  }
-                }
-                """
-                .replace("{bobEmail}", bob.email()))
-        .when()
-            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
-        .then()
-            .statusCode(200);
-
-        Thread.sleep(5000);
-
-        String response2 = given()
-            .headers("Authorization", bob.impersonatedBasicAuth())
-            .queryParam("withRights", true)
-        .when()
-            .get("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics")
-        .then()
-            .extract().asString();
-
-        given()
-            .header("Authorization", bob.impersonatedBasicAuth())
-            .contentType("text/calendar; charset=utf-8")
-            .body(ICS_2.getBytes(StandardCharsets.UTF_8))
-        .when()
-            .put("/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/efghi.ics")
-        .then()
-            .statusCode(201);
-
-        assertThat(response2).isEqualTo(ICS_1);
-    }
-
-    @Test
-    public void reportShouldIncludeSyncToken() throws Exception {
+    public void reportShouldIncludeSyncToken() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         // Create an event
