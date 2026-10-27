@@ -236,7 +236,6 @@ public abstract class CalendarSharingContract {
     }
 
     @Test
-    @Disabled("Wait for new image")
     public void cannotReadPrivateCalendarDataWithFilterlessCalendarQueryReport() {
         createEventInBobPrivateCalendar();
 

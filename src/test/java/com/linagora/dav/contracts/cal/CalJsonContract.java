@@ -3259,7 +3259,6 @@ public abstract class CalJsonContract {
 
     }
 
-    @Disabled("Somehow failing")
     @Test
     void delegationRead() throws Exception {
         OpenPaasUser alice = dockerExtension().newTestUser();

@@ -799,7 +799,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldFindContactsByEmailIgnoringCase() {
         // GIVEN Alice has contacts with different emails
         addContact(alice, "contacts", "alice", "Alice", "Wonder", "Alice@Example.org");
@@ -813,7 +812,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     protected void shouldFindContactsByEmailContainingJsonLiterally() {
         // GIVEN two contacts whose emails differ only by the literal ".json"
         addContact(alice, "contacts", "alice-json", "Alice", "Json", "alice.json@example.org");
@@ -827,7 +825,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @ParameterizedTest
-    @Disabled("wait to new image")
     @ValueSource(strings = {"alice@example", "example.org", "alice", "lice@example.org"})
     void shouldNotFindContactsByPartialEmail(String email) {
         addContact(alice, "contacts", "alice", "Alice", "Wonder", "alice@example.org");
@@ -838,7 +835,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldOnlyFindContactsByPreferredEmail() {
         // GIVEN the preferred email of a contact is not its first email
         String uid = "preferred";
@@ -857,7 +853,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldNotFindContactsByEmailInOtherProperties() {
         // GIVEN a contact mentioning an email outside of its EMAIL properties
         String uid = "noted";
@@ -873,7 +868,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void shouldFindAllContactsOfTheAddressBookSharingTheEmail() {
         // GIVEN several contacts share an email, in the requested book and in another one
         addContact(alice, "contacts", "same-1", "First", "Contact", "same@example.org");
@@ -906,7 +900,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @ParameterizedTest
-    @Disabled("wait to new image")
     @CsvSource({"offset, 0", "limit, 1", "sort, fn", "sort, email", "order, asc", "search, a", "modifiedBefore, 9999999999"})
     void emailShouldNotBeCombinedWithListingParameters(String param, String value) {
         addContact(alice, "contacts", "alice", "Alice", "Wonder", "alice@example.org");
@@ -921,7 +914,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void emailShouldNotBeCombinedWithCursor() {
         addContact(alice, "contacts", "anna", "Anna", "Zed", "anna@example.org");
         addContact(alice, "contacts", "bob", "Bob", "Marley", "bob@example.org");
@@ -937,7 +929,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void blankEmailShouldBeRejected() {
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -948,7 +939,6 @@ public abstract class CardAddressBookListingContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void technicalTokenShouldFindDomainMembersByEmail() {
         // GIVEN domain members written with different card UIDs
         TestDomain domain = newDomain();
