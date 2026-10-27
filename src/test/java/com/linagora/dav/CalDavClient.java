@@ -370,7 +370,7 @@ public class CalDavClient {
     }
 
     public Flux<CalendarURL> findUserCalendars(OpenPaasUser openPaaSUser) {
-        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + openPaaSUser.id()
             + "?personal=true&sharedDelegationStatus=accepted&sharedPublicSubscription=true&withRights=true";
         return httpClient.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
@@ -475,7 +475,7 @@ public class CalDavClient {
     }
 
     public void grantDelegations(OpenPaasUser user, String calendarId, Map<OpenPaasUser, DelegationRight> delegations) {
-        String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
+        String uri = "/calendars/" + user.id() + "/" + calendarId;
 
         String setEntries = delegations.entrySet().stream()
             .map(entry -> """
@@ -506,7 +506,7 @@ public class CalDavClient {
     }
 
     public void revokeDelegations(OpenPaasUser user, String calendarId, List<OpenPaasUser> delegatedUsers) {
-        String uri = "/calendars/" + user.id() + "/" + calendarId + ".json";
+        String uri = "/calendars/" + user.id() + "/" + calendarId;
 
         String removeEntries = delegatedUsers.stream()
             .map(delegated -> """
@@ -535,7 +535,7 @@ public class CalDavClient {
     }
 
     public void revokeDelegation(String entityId, OpenPaasUser delegatedUser, String token) {
-        String uri = "/calendars/" + entityId + "/" + entityId + ".json";
+        String uri = "/calendars/" + entityId + "/" + entityId;
 
         String payload = """
             {
@@ -554,7 +554,7 @@ public class CalDavClient {
     }
 
     public void grantDelegations(String entityId, Map<OpenPaasUser, DelegationRight> delegations, String token) {
-        String uri = "/calendars/" + entityId + "/" + entityId + ".json";
+        String uri = "/calendars/" + entityId + "/" + entityId;
 
         String setEntries = delegations.entrySet().stream()
             .map(entry -> """
@@ -613,7 +613,7 @@ public class CalDavClient {
     }
 
     private Response getCalendarEvents(OpenPaasUser user, CalendarURL calendarURL, String json) {
-        URI reportUri = URI.create(httpClient.configuration().baseUrl()).resolve(calendarURL.asUri() + ".json");
+        URI reportUri = URI.create(httpClient.configuration().baseUrl()).resolve(calendarURL.asUri().toString());
         return given()
             .config(RestAssuredConfig.newConfig()
                 .headerConfig(HeaderConfig.headerConfig()
@@ -696,7 +696,7 @@ public class CalDavClient {
     }
 
     public CalendarURL subscribeToSharedCalendar(OpenPaasUser user, SubscribedCalendarRequest subscribedCalendarRequest) {
-        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id();
 
         return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
@@ -740,11 +740,11 @@ public class CalDavClient {
     }
 
     public void updateCalendarAcl(OpenPaasUser user, CalendarURL calendarURL, String publicRight) {
-        updateCalendarAcl(user, URI.create(calendarURL.asUri() + ".json"), publicRight);
+        updateCalendarAcl(user, calendarURL.asUri(), publicRight);
     }
 
     public void updateTeamCalendarAcl(OpenPaaSTeamCalendar teamCalendar, String publicRight) {
-        updateCalendarAcl(teamCalendar.email(), URI.create(CalendarURL.from(teamCalendar.id()).asUri() + ".json"), publicRight);
+        updateCalendarAcl(teamCalendar.email(), CalendarURL.from(teamCalendar.id()).asUri(), publicRight);
     }
 
     /**
@@ -861,7 +861,6 @@ public class CalDavClient {
         StringBuilder uriBuilder = new StringBuilder(CalendarURL.CALENDAR_URL_PATH_PREFIX)
             .append("/")
             .append(targetUserId)
-            .append(".json")
             .append("?");
 
         if (personal) {
@@ -938,7 +937,7 @@ public class CalDavClient {
     }
 
     public String getUserCalendarsJson(OpenPaasUser user) {
-        String uri = "/calendars/" + user.id() + ".json?sharedDelegationStatus=accepted&sharedPublicSubscription=true&personal=true&withRights=true";
+        String uri = "/calendars/" + user.id() + "?sharedDelegationStatus=accepted&sharedPublicSubscription=true&personal=true&withRights=true";
 
         return httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, CONTENT_TYPE_JSON))
@@ -959,7 +958,7 @@ public class CalDavClient {
     }
 
     public CalendarURL createNewCalendar(OpenPaasUser user, String id, String name, int order) {
-        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id() + ".json";
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + user.id();
 
         String payload = """
             {
@@ -994,7 +993,7 @@ public class CalDavClient {
     }
 
     public void deleteCalendar(OpenPaasUser user, CalendarURL calendarURL) {
-        String uri = calendarURL.asUri() + ".json";
+        String uri = calendarURL.asUri().toString();
 
         httpClient.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_JSON))
@@ -1021,7 +1020,7 @@ public class CalDavClient {
      *  - Read Only: "dav:read"
      */
     public void delegateCalendar(OpenPaasUser owner, String calendarId, OpenPaasUser delegate, String rightKey) {
-        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + owner.id() + "/" + calendarId + ".json";
+        String uri = CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + owner.id() + "/" + calendarId;
 
         String payload = """
             {
@@ -1058,7 +1057,7 @@ public class CalDavClient {
     }
 
     public void updateCalendarSetting(OpenPaasUser user, CalendarURL calendarURL, String name, String color) {
-        String uri = calendarURL.asUri() + ".json";
+        String uri = calendarURL.asUri().toString();
         String payload = """
             {
               "id": "{id}",
@@ -1089,7 +1088,7 @@ public class CalDavClient {
     }
 
     public void updateCalendarSetting(String technicalToken, CalendarURL calendarURL, String name, String color) {
-        String uri = calendarURL.asUri() + ".json";
+        String uri = calendarURL.asUri().toString();
         String payload = """
             {
               "id": "{id}",

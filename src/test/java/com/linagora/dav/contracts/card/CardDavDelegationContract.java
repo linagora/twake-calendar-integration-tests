@@ -103,7 +103,7 @@ public abstract class CardDavDelegationContract {
             .header("Authorization", cedric.impersonatedBasicAuth())
             .body(settingsUpdate)
         .when()
-            .post(delegatedBook.asUri() + ".json")
+            .post(delegatedBook.asUri().toString())
         .then()
             .statusCode(SC_FORBIDDEN);
 
@@ -112,7 +112,7 @@ public abstract class CardDavDelegationContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .body(settingsUpdate)
         .when()
-            .post(delegatedBook.asUri() + ".json")
+            .post(delegatedBook.asUri().toString())
         .then()
             .statusCode(SC_NO_CONTENT);
         assertThat(cardDavClient.getAddressBookName(bob, delegatedBook))
@@ -147,7 +147,7 @@ public abstract class CardDavDelegationContract {
                 """.replace("{email}", cedric.email())
                 .replace("{access}", String.valueOf(DelegationRight.READ.getValue())))
         .when()
-            .post(bobCopy.asUri() + ".json")
+            .post(bobCopy.asUri().toString())
         .then()
             .statusCode(SC_NO_CONTENT);
 
@@ -203,7 +203,7 @@ public abstract class CardDavDelegationContract {
                 """.replace("{email}", bob.email())
                 .replace("{access}", String.valueOf(DelegationRight.READ_WRITE.getValue())))
         .when()
-            .post("/addressbooks/" + alice.id() + "/collected.json")
+            .post("/addressbooks/" + alice.id() + "/collected")
         .then()
             .statusCode(SC_NO_CONTENT);
 
@@ -257,7 +257,7 @@ public abstract class CardDavDelegationContract {
                 """.replace("{email}", bob.email())
                 .replace("{access}", String.valueOf(ACCESS_NOACCESS)))
         .when()
-            .post("/addressbooks/" + alice.id() + "/collected.json")
+            .post("/addressbooks/" + alice.id() + "/collected")
         .then()
             .statusCode(SC_NO_CONTENT);
 
@@ -307,7 +307,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get("/addressbooks/" + alice.id())
             .then()
             .extract().asString();
 
@@ -367,7 +367,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + alice.id() + ".json")
+            .get("/addressbooks/" + alice.id())
             .then()
             .extract().asString();
 
@@ -389,7 +389,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
             .then()
             .extract().asString();
 
@@ -474,7 +474,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
             .then()
             .extract().asString();
 
@@ -515,7 +515,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
         .then()
             .statusCode(SC_OK)
             .extract().asString();
@@ -658,7 +658,7 @@ public abstract class CardDavDelegationContract {
                 """.replace("{aliceId}", alice.id())
                 .replace("{sourceAddressBookId}", sourceAddressBookId))
         .when()
-            .post("/addressbooks/" + bob.id() + ".json")
+            .post("/addressbooks/" + bob.id())
         .then()
             // THEN access is forbidden because Bob no longer has delegation or public read access
             .statusCode(SC_FORBIDDEN);
@@ -1191,7 +1191,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
             .then()
             .extract().asString();
 
@@ -1298,7 +1298,7 @@ public abstract class CardDavDelegationContract {
             .accept("application/json, text/plain, */*")
             .body(payload.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
+            .post(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook)
         .then()
             .statusCode(SC_BAD_REQUEST);
 
@@ -1342,7 +1342,7 @@ public abstract class CardDavDelegationContract {
             .accept("application/json, text/plain, */*")
             .body(payload.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook + ".json")
+            .post(AddressBookURL.URL_PATH_PREFIX + "/" + bob.id() + "/" + addressBook)
         .then()
             .statusCode(SC_BAD_REQUEST);
 
@@ -1370,7 +1370,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
             .then()
             .extract().asString();
 
@@ -1774,7 +1774,7 @@ public abstract class CardDavDelegationContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get(AddressBookURL.URL_PATH_PREFIX + "/" + user.id() + ".json")
+            .get(AddressBookURL.URL_PATH_PREFIX + "/" + user.id())
         .then()
             .extract().asString();
     }

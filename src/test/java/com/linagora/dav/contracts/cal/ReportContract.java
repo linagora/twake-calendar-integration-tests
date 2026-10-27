@@ -94,7 +94,7 @@ public abstract class ReportContract {
                 }
                 """)
         .when()
-            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -142,7 +142,7 @@ public abstract class ReportContract {
                 }
                 """)
         .when()
-            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -194,7 +194,7 @@ public abstract class ReportContract {
                 }
                 """)
         .when()
-            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -256,7 +256,7 @@ public abstract class ReportContract {
                 }
                 """)
         .when()
-            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -305,7 +305,7 @@ public abstract class ReportContract {
                 }
                 """)
         .when()
-            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(207)
             .extract().asString();
@@ -359,7 +359,7 @@ public abstract class ReportContract {
                 }
                 """)
         .when()
-            .request("REPORT", CalendarURL.from(alice.id()).asUri() + ".json")
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(200)
             .extract().asString();

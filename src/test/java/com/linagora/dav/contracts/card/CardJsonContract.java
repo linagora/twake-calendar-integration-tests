@@ -75,7 +75,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + testUser.id() + ".json")
+            .get("/addressbooks/" + testUser.id())
         .then()
             .extract().asString();
 
@@ -188,7 +188,7 @@ public abstract class CardJsonContract {
             .queryParam("subscribed", true)
             .queryParam("contactsCount", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
         .then()
             .statusCode(SC_OK)
             .extract().asString();
@@ -223,7 +223,7 @@ public abstract class CardJsonContract {
             .queryParam("public", publicBooks)
             .queryParam("contactsCount", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
         .then()
             .statusCode(anyOf(is(SC_OK), is(SC_FORBIDDEN)))
             .extract().response();
@@ -263,7 +263,7 @@ public abstract class CardJsonContract {
             .queryParam("public", true)
             .queryParam("contactsCount", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
         .then()
             .statusCode(SC_OK)
             .extract().asString();
@@ -306,7 +306,7 @@ public abstract class CardJsonContract {
             .queryParam("limit", 2)
             .queryParam("offset", 0)
         .when()
-            .get("/addressbooks/" + bob.id() + "/contacts.json")
+            .get("/addressbooks/" + bob.id() + "/contacts")
         .then()
             .statusCode(SC_OK)
             .extract().asString();
@@ -320,7 +320,7 @@ public abstract class CardJsonContract {
             .queryParam("limit", 2)
             .queryParam("offset", 0)
         .when()
-            .get("/addressbooks/" + bob.id() + "/contacts.json")
+            .get("/addressbooks/" + bob.id() + "/contacts")
         .then()
             .statusCode(SC_FORBIDDEN)
             .extract().asString();
@@ -376,7 +376,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
             .then()
             .extract().asString();
 
@@ -433,7 +433,7 @@ public abstract class CardJsonContract {
                     .queryParam("offset", offset)
                     .queryParam("sort", sort)
                 .when()
-                    .get(addressBook + ".json")
+                    .get(addressBook)
                 .then()
                     .statusCode(200)
                     .extract()
@@ -470,7 +470,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
         .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
         .then()
             .extract().asString();
 
@@ -628,7 +628,7 @@ public abstract class CardJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json/abcdef.vcf")
+            .get("/addressbooks/" + testUser.id() + "/contacts/abcdef.vcf")
             .then()
             .extract().asString();
 
@@ -765,7 +765,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
             .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
             .then()
             .extract().asString();
 
@@ -999,7 +999,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
         .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
         .then()
             .extract().asString();
 
@@ -1188,7 +1188,7 @@ public abstract class CardJsonContract {
                     "type": "user"
                 }""")
             .when()
-            .post("addressbooks/" + testUser.id() + ".json")
+            .post("addressbooks/" + testUser.id())
             .then()
             .statusCode(201);
 
@@ -1200,7 +1200,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + testUser.id() + ".json")
+            .get("/addressbooks/" + testUser.id())
         .then()
             .extract().asString();
 
@@ -1318,7 +1318,7 @@ public abstract class CardJsonContract {
                     "type": "user"
                 }""")
         .when()
-            .post("addressbooks/" + testUser.id() + ".json")
+            .post("addressbooks/" + testUser.id())
         .then()
             .statusCode(201);
 
@@ -1332,7 +1332,7 @@ public abstract class CardJsonContract {
                            "state": ""
                          }""".getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586")
         .then()
             .statusCode(204);
 
@@ -1344,7 +1344,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + testUser.id() + ".json")
+            .get("/addressbooks/" + testUser.id())
         .then()
             .extract().asString();
 
@@ -1462,7 +1462,7 @@ public abstract class CardJsonContract {
                     "type": "user"
                 }""")
         .when()
-            .post("addressbooks/" + testUser.id() + ".json")
+            .post("addressbooks/" + testUser.id())
         .then()
             .statusCode(201);
 
@@ -1470,7 +1470,7 @@ public abstract class CardJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .headers("Accept", "application/vcard+json")
         .when()
-            .delete("addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586.json")
+            .delete("addressbooks/" + testUser.id() + "/86dcbff9-c748-4338-8051-6071b4389586")
         .then()
             .statusCode(204);
 
@@ -1482,7 +1482,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + testUser.id() + ".json")
+            .get("/addressbooks/" + testUser.id())
         .then()
             .extract().asString();
 
@@ -1574,7 +1574,7 @@ public abstract class CardJsonContract {
             .headers("Accept", "application/vcard")
             .queryParam("export", true)
         .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
         .then()
             .extract().asString();
 
@@ -1618,7 +1618,7 @@ public abstract class CardJsonContract {
             .queryParam("page", 1)
             .queryParam("search", "zapo")
         .when()
-            .get("/addressbooks/" + testUser.id() + ".json/contacts")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
         .then()
             .extract().asString();
 
@@ -1717,7 +1717,7 @@ public abstract class CardJsonContract {
             .queryParam("page", 1)
             .queryParam("search", "unrelated")
         .when()
-            .get("/addressbooks/" + testUser.id() + ".json/contacts")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
         .then()
             .extract().asString();
 
@@ -1783,7 +1783,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
             .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
             .then()
             .extract().asString();
         String response2 = given()
@@ -1793,7 +1793,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
             .when()
-            .get("/addressbooks/" + testUser.id() + "/collected.json")
+            .get("/addressbooks/" + testUser.id() + "/collected")
             .then()
             .extract().asString();
         assertThat(response1).doesNotContain("abcdef.vcf");
@@ -1846,7 +1846,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
             .when()
-            .get("/addressbooks/" + testUser.id() + "/contacts.json")
+            .get("/addressbooks/" + testUser.id() + "/contacts")
             .then()
             .extract().asString();
         String response2 = given()
@@ -1856,7 +1856,7 @@ public abstract class CardJsonContract {
             .queryParam("sort", "fn")
             .queryParam("userId", testUser.id())
             .when()
-            .get("/addressbooks/" + testUser.id() + "/collected.json")
+            .get("/addressbooks/" + testUser.id() + "/collected")
             .then()
             .extract().asString();
         assertThat(response1).contains("abcdef.vcf");
@@ -1876,7 +1876,7 @@ public abstract class CardJsonContract {
             .body("""
                 {"dav:publish-addressbook":{"privilege":"{DAV:}read"}}""")
         .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
             .then()
             .statusCode(204);
 
@@ -1932,7 +1932,7 @@ public abstract class CardJsonContract {
             .body("""
                 {"dav:publish-addressbook":{"privilege":"{DAV:}write"}}""")
         .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
             .then()
             .statusCode(204);
 
@@ -1986,7 +1986,7 @@ public abstract class CardJsonContract {
             .body(String.format("""
                 {"dav:share-resource":{"dav:sharee":[{"dav:href":"principals/users/%s","dav:share-access":1}]}}""", testUser.id()))
         .when()
-            .post("addressbooks/" + testUser.id() + "/contacts.json")
+            .post("addressbooks/" + testUser.id() + "/contacts")
         .then()
             .statusCode(204);
     }
@@ -2035,7 +2035,7 @@ public abstract class CardJsonContract {
       }
     }""", bob.email(), alice.id()))
         .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
         .then()
             .statusCode(204);
 
@@ -2104,7 +2104,7 @@ public abstract class CardJsonContract {
       }
     }""", bob.email(), alice.id()))
         .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
         .then()
             .statusCode(204);
 
@@ -2152,7 +2152,7 @@ public abstract class CardJsonContract {
       }
     }""", cedric.email(), bob.email(), alice.id()))
             .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
             .then()
             .statusCode(403);
     }
@@ -2202,7 +2202,7 @@ public abstract class CardJsonContract {
       }
     }""", bob.email(), alice.id()))
         .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
         .then()
             .statusCode(204);
 
@@ -2250,7 +2250,7 @@ public abstract class CardJsonContract {
       }
     }""", cedric.email(), bob.email(), alice.id()))
             .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
             .then()
             .statusCode(204);
     }
@@ -2299,7 +2299,7 @@ public abstract class CardJsonContract {
       }
     }""", bob.email(), alice.id()))
         .when()
-            .post("addressbooks/" + alice.id() + "/contacts.json")
+            .post("addressbooks/" + alice.id() + "/contacts")
         .then()
             .statusCode(204);
 
@@ -2312,7 +2312,7 @@ public abstract class CardJsonContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + bob.id() + ".json")
+            .get("/addressbooks/" + bob.id())
         .then()
             .extract().asString();
 

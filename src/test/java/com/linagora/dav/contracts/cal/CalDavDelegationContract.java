@@ -112,7 +112,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("withFreeBusy", true)
             .queryParam("sharedDelegationStatus", "accepted")
         .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
         .then()
             .statusCode(SC_OK)
             .extract().as(JsonNode.class).path("_embedded").path("dav:calendar");
@@ -157,7 +157,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
         .then()
             .extract().asString();
         String delegatedSource = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
@@ -877,7 +877,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
         .then()
             .extract().asString();
 
@@ -902,7 +902,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
         .then()
             .extract().asString();
         assertThatJson(response)
@@ -2363,7 +2363,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
         .then()
             .extract().asString();
 
@@ -2399,7 +2399,7 @@ public abstract class CalDavDelegationContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body(payload)
         .when()
-            .post(CalendarURL.from(bob.id()).asUri() + ".json")
+            .post(CalendarURL.from(bob.id()).asUri().toString())
         .then()
             .extract()
             .statusCode();
@@ -2413,7 +2413,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
         .then()
             .extract().asString();
 
@@ -2452,7 +2452,7 @@ public abstract class CalDavDelegationContract {
             .accept("application/json, text/plain, */*")
             .body(payload.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + bob.id() + "/" + calendarId + ".json")
+            .post(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + bob.id() + "/" + calendarId)
         .then()
             .statusCode(SC_BAD_REQUEST);
 
@@ -2497,7 +2497,7 @@ public abstract class CalDavDelegationContract {
             .accept("application/json, text/plain, */*")
             .body(payload.getBytes(StandardCharsets.UTF_8))
         .when()
-            .post(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + alice.id() + "/" + delegatedCalendarURL.calendarId() + ".json")
+            .post(CalendarURL.CALENDAR_URL_PATH_PREFIX + "/" + alice.id() + "/" + delegatedCalendarURL.calendarId())
         .then()
             .statusCode(SC_BAD_REQUEST);
 
@@ -2529,7 +2529,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
             .then()
             .extract().asString();
 
@@ -2641,7 +2641,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
             .then()
             .extract().asString();
 
@@ -2792,7 +2792,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
             .then()
             .extract().asString();
 
@@ -2896,7 +2896,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
             .then()
             .extract().asString();
 
@@ -2920,7 +2920,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
             .then()
             .extract().asString();
 
@@ -3501,7 +3501,7 @@ public abstract class CalDavDelegationContract {
             .header("Authorization", bob.impersonatedBasicAuth())
             .accept("application/calendar+json")
         .when()
-            .get("/calendars/" + bob.id() + "/events.json")
+            .get("/calendars/" + bob.id() + "/events")
         .then()
             .statusCode(200);
     }
@@ -3632,7 +3632,7 @@ public abstract class CalDavDelegationContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
         .then()
             .extract().asString();
         assertThatJson(bobCalendarsResponse)

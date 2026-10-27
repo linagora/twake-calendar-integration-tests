@@ -515,7 +515,7 @@ public abstract class TeamCalendarContract {
                 }
                 """)
         .when()
-            .request("REPORT", teamCalendarCanonicalUrl.asUri() + ".json")
+            .request("REPORT", teamCalendarCanonicalUrl.asUri().toString())
         .then()
             .extract()
             .response();
@@ -804,7 +804,7 @@ public abstract class TeamCalendarContract {
                 }
                 """)
         .when()
-            .request("REPORT", bobDelegatedCalendar.asUri() + ".json")
+            .request("REPORT", bobDelegatedCalendar.asUri().toString())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -869,7 +869,7 @@ public abstract class TeamCalendarContract {
                 }
                 """)
         .when()
-            .request("REPORT", teamCalendarCanonicalUrl.asUri() + ".json")
+            .request("REPORT", teamCalendarCanonicalUrl.asUri().toString())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1225,7 +1225,7 @@ public abstract class TeamCalendarContract {
                 }
                 """)
         .when()
-            .request("REPORT", calendarURL.asUri() + ".json")
+            .request("REPORT", calendarURL.asUri().toString())
         .then()
             .extract()
             .response();

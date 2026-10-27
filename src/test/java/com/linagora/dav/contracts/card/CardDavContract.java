@@ -148,12 +148,12 @@ public abstract class CardDavContract {
             new AuthenticatedEndpoint("MKCOL", "/addressbooks/" + userId + "/fake-book-id", Optional.empty(),
                 Map.of()),
 
-            new AuthenticatedEndpoint("POST", "/addressbooks/" + userId + ".json", Optional.of("""
+            new AuthenticatedEndpoint("POST", "/addressbooks/" + userId, Optional.of("""
                     {"id":"%s","dav:name":"Unauthorized Addressbook","dav:acl":["dav:read","dav:write"],"type":"user"}
                     """.formatted(userId)),
                 Map.of("Accept", "application/json", "Content-Type", "application/json")),
 
-            new AuthenticatedEndpoint("POST", "/addressbooks/" + userId + "/collected.json", Optional.of("""
+            new AuthenticatedEndpoint("POST", "/addressbooks/" + userId + "/collected", Optional.of("""
                     {"dav:share-resource":{"dav:sharee":[{"dav:href":"mailto:someone@example.com","dav:share-access":2}]}}
                     """),
                 Map.of("Accept", "application/json", "Content-Type", "application/json")),
@@ -166,7 +166,7 @@ public abstract class CardDavContract {
             new AuthenticatedEndpoint("PROPFIND", "/addressbooks/" + userId + "/contacts", Optional.empty(),
                 Map.of()),
 
-            new AuthenticatedEndpoint("PROPPATCH", "/addressbooks/" + userId + "/" + userId + ".json", Optional.of("""
+            new AuthenticatedEndpoint("PROPPATCH", "/addressbooks/" + userId + "/" + userId, Optional.of("""
                     {"dav:name":"Hacked book"}
                     """),
                 Map.of("Accept", "application/json", "Content-Type", "application/json")),

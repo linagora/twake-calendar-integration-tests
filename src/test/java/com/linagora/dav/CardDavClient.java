@@ -127,7 +127,7 @@ public class CardDavClient {
     }
 
     public String getContacts(OpenPaasUser openPaasUser, String baseId, String addressBookId) {
-        String uri = String.format("/addressbooks/%s/%s.json?limit=100&offset=0&sort=fn",
+        String uri = String.format("/addressbooks/%s/%s?limit=100&offset=0&sort=fn",
             baseId, addressBookId);
         return client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
@@ -180,7 +180,7 @@ public class CardDavClient {
     }
 
     public String getAddressBooks(OpenPaasUser openPaaSUser) {
-        String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
+        String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id()
             + "?personal=true&contactsCount=true&inviteStatus=2&shared=true&subscribed=true";
         return client.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, ACCEPT_VCARD_JSON))
@@ -200,7 +200,7 @@ public class CardDavClient {
     }
 
     public Flux<AddressBookURL> findUserAddressBooks(OpenPaasUser openPaaSUser) {
-        String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id() + ".json"
+        String uri = AddressBookURL.URL_PATH_PREFIX + "/" + openPaaSUser.id()
             + "?personal=true&contactsCount=true&inviteStatus=2&shared=true&&subscribed=true";
         return client.headers(headers -> openPaaSUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
@@ -229,7 +229,7 @@ public class CardDavClient {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + user.id() + ".json")
+            .get("/addressbooks/" + user.id())
         .then()
             .statusCode(SC_OK)
             .extract().as(JsonNode.class);
@@ -253,7 +253,7 @@ public class CardDavClient {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
         .when()
-            .get("/addressbooks/" + user.id() + ".json")
+            .get("/addressbooks/" + user.id())
         .then()
             .statusCode(SC_OK)
             .extract().as(JsonNode.class);
@@ -287,7 +287,7 @@ public class CardDavClient {
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
-            .uri("/addressbooks/" + user.id() + ".json")
+            .uri("/addressbooks/" + user.id())
             .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201) {
@@ -313,7 +313,7 @@ public class CardDavClient {
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.valueOf("PROPPATCH"))
-            .uri("/addressbooks/" + baseId + "/" + addressBookId + ".json")
+            .uri("/addressbooks/" + baseId + "/" + addressBookId)
             .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 204) {
@@ -333,7 +333,7 @@ public class CardDavClient {
     }
 
     public void deleteAddressBook(OpenPaasUser openPaasUser, String baseId, String addressBookId) {
-        String uri = String.format("/addressbooks/%s/%s.json", baseId, addressBookId);
+        String uri = String.format("/addressbooks/%s/%s", baseId, addressBookId);
         client.headers(headers -> openPaasUser.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
             .delete()
@@ -351,7 +351,7 @@ public class CardDavClient {
     }
 
     public void deleteAddressBook(String baseId, String addressBookId, String technicalToken) {
-        String uri = String.format("/addressbooks/%s/%s.json", baseId, addressBookId);
+        String uri = String.format("/addressbooks/%s/%s", baseId, addressBookId);
         client.headers(headers -> headers.add(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
                 .add(HttpHeaderNames.ACCEPT, "application/vcard+json"))
             .delete()
@@ -373,7 +373,7 @@ public class CardDavClient {
     }
 
     public void grantDelegation(OpenPaasUser user, String baseId, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
-        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId;
 
         String payload = """
             {
@@ -398,7 +398,7 @@ public class CardDavClient {
     }
 
     public void revokeDelegation(OpenPaasUser user, String addressBookId, OpenPaasUser delegatedUser) {
-        String uri = "/addressbooks/" + user.id() + "/" + addressBookId + ".json";
+        String uri = "/addressbooks/" + user.id() + "/" + addressBookId;
 
         String payload = """
             {
@@ -422,7 +422,7 @@ public class CardDavClient {
     }
 
     public void grantDomainBookDelegation(OpenPaasUser user, String baseId, String addressBookId, OpenPaasUser delegatedUser, DelegationRight right) {
-        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId;
 
         String payload = """
             {
@@ -442,7 +442,7 @@ public class CardDavClient {
     }
 
     public void setPublicRight(OpenPaasUser user, String baseId, String addressBookId, PublicRight right) {
-        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId;
 
         String payload = """
             {
@@ -456,7 +456,7 @@ public class CardDavClient {
     }
 
     public void setHiddenPublicRight(OpenPaasUser user, String baseId, String addressBookId) {
-        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId;
 
         String payload = """
             {
@@ -482,7 +482,7 @@ public class CardDavClient {
     }
 
     public void setDomainAddressBookPublicRight(OpenPaasUser user, String baseId, String addressBookId, String payload) {
-        String uri = "/addressbooks/" + baseId + "/" + addressBookId + ".json";
+        String uri = "/addressbooks/" + baseId + "/" + addressBookId;
         sendPublicRightRequest(user, uri, payload);
     }
 
@@ -513,7 +513,7 @@ public class CardDavClient {
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
             .request(HttpMethod.POST)
-            .uri("/addressbooks/" + user.id() + ".json")
+            .uri("/addressbooks/" + user.id())
             .send(Mono.just(Unpooled.wrappedBuffer(payload.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 201) {
@@ -611,7 +611,7 @@ public class CardDavClient {
     }
 
     public void createDomainMembersAddressBook(String domainId, String technicalToken) {
-        String uri = "/addressbooks/" + domainId + ".json";
+        String uri = "/addressbooks/" + domainId;
         byte[] payload = """
             {
                 "id": "domain-members",
@@ -719,7 +719,7 @@ public class CardDavClient {
      * @param state {@code enabled} or {@code disabled}
      */
     public void createDomainAddressBook(String domainId, String technicalToken, String membersRightJson, String state) {
-        String uri = "/addressbooks/" + domainId + ".json";
+        String uri = "/addressbooks/" + domainId;
         byte[] payload = """
             {
                 "id": "dab",

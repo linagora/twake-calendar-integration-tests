@@ -160,7 +160,7 @@ public abstract class CalJsonContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + testUser.id() + ".json")
+            .get("/calendars/" + testUser.id())
         .then()
             .extract().asString();
 
@@ -267,7 +267,7 @@ public abstract class CalJsonContract {
             .queryParam("personal", false)
             .queryParam("sharedDelegationStatus", "noresponse")
         .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
         .then()
             .statusCode(SC_OK)
             .header("Content-Type", "application/json; charset=utf-8")
@@ -292,7 +292,7 @@ public abstract class CalJsonContract {
             .header("Authorization", alice.impersonatedBasicAuth())
             .queryParam("sharedPublic", true)
         .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
         .then()
             .statusCode(SC_OK)
             .header("Content-Type", "application/json; charset=utf-8")
@@ -313,19 +313,19 @@ public abstract class CalJsonContract {
 
         given()
             .header("Origin", "https://it-calendar")
-            .options("/calendars/" + testUser.id() + ".json")
+            .options("/calendars/" + testUser.id())
             .then()
             .statusCode(200);
 
         given()
             .header("Origin", "https://it-calendar")
-            .options("/calendars/" + testUser.id() + "/events.json")
+            .options("/calendars/" + testUser.id() + "/events")
         .then()
             .statusCode(200);
 
         given()
             .header("Origin", "https://it-calendar")
-            .options("/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .options("/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200);
     }
@@ -341,7 +341,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + testUser.id() + "/events.json")
+            .get("/calendars/" + testUser.id() + "/events")
         .then()
             .extract().asString();
 
@@ -437,7 +437,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -659,7 +659,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -710,7 +710,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -761,7 +761,7 @@ public abstract class CalJsonContract {
             .body("""
             {"match":{"start":"30250410T000000","end":"30250420T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -812,7 +812,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -863,7 +863,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -914,7 +914,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -965,7 +965,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1016,7 +1016,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250511T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1073,7 +1073,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20300413T000000","end":"20300520T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1124,7 +1124,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1181,7 +1181,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"30250311T000000","end":"30250611T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1239,7 +1239,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20300410T000000","end":"20310520T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1290,7 +1290,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20300413T000000","end":"20300620T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1342,7 +1342,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1388,7 +1388,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20300415T000000","end":"20300417T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1421,7 +1421,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(201);
 
@@ -1431,7 +1431,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20250224T000000","end":"20250315T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1564,7 +1564,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(201);
 
@@ -1572,7 +1572,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH 2\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(204);
 
@@ -1582,7 +1582,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20250224T000000","end":"20250315T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -1714,7 +1714,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(201);
 
@@ -1723,7 +1723,7 @@ public abstract class CalJsonContract {
             .header("If-Match", "bad")
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH 2\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(412);
     }
@@ -1736,7 +1736,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(201);
 
@@ -1744,7 +1744,7 @@ public abstract class CalJsonContract {
         String etag = given()
             .headers("Authorization", testUser.impersonatedBasicAuth())
         .when()
-            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .extract()
             .header("Etag");
@@ -1754,7 +1754,7 @@ public abstract class CalJsonContract {
             .header("If-Match", etag)
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH 2\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(204);
     }
@@ -1767,7 +1767,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(201);
 
@@ -1775,7 +1775,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", testUser.impersonatedBasicAuth())
             .header("Accept", "application/calendar+json")
         .when()
-            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .get("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .extract().asString();
 
@@ -1973,7 +1973,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("[\"vcalendar\",[],[[\"vevent\",[[\"uid\",{},\"text\",\"1111632f-9917-4efc-b78f-243be5403074\"],[\"transp\",{},\"text\",\"OPAQUE\"],[\"dtstart\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-01\"],[\"dtend\",{\"tzid\":\"Europe/Paris\"},\"date\",\"2025-03-02\"],[\"class\",{},\"text\",\"PUBLIC\"],[\"x-openpaas-videoconference\",{},\"uri\",null],[\"summary\",{},\"text\",\"USTH\"],[\"organizer\",{\"cn\":\"Benoît TELLIER\"},\"cal-address\",\"mailto:btellier@linagora.com\"],[\"attendee\",{\"partstat\":\"ACCEPTED\",\"rsvp\":\"FALSE\",\"role\":\"CHAIR\",\"cutype\":\"INDIVIDUAL\"},\"cal-address\",\"mailto:btellier@linagora.com\"]],[]],[\"vtimezone\",[[\"tzid\",{},\"text\",\"Europe/Paris\"]],[[\"daylight\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+01:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+02:00\"],[\"tzname\",{},\"text\",\"CEST\"],[\"dtstart\",{},\"date-time\",\"1970-03-29T02:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":3,\"byday\":\"-1SU\"}]],[]],[\"standard\",[[\"tzoffsetfrom\",{},\"utc-offset\",\"+02:00\"],[\"tzoffsetto\",{},\"utc-offset\",\"+01:00\"],[\"tzname\",{},\"text\",\"CET\"],[\"dtstart\",{},\"date-time\",\"1970-10-25T03:00:00\"],[\"rrule\",{},\"recur\",{\"freq\":\"YEARLY\",\"bymonth\":10,\"byday\":\"-1SU\"}]],[]]]]]]")
         .when()
-            .put("/calendars/" + alice.id() + "/" + alice.id() + "/1111632f-9917-4efc-b78f-243be5403074.json")
+            .put("/calendars/" + alice.id() + "/" + alice.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(201);
 
@@ -2341,7 +2341,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -2415,7 +2415,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"type":"free-busy-query","match":{"start":"20300411T020000","end":"20300411T050000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -2480,7 +2480,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -2555,7 +2555,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"type":"free-busy-query","match":{"start":"20300412T020000","end":"20300412T050000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();
@@ -2601,7 +2601,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         String response = given()
             .headers("Authorization", alice.impersonatedBasicAuth())
@@ -2610,7 +2610,7 @@ public abstract class CalJsonContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
         .then()
             .extract().asString();
 
@@ -2787,14 +2787,14 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         String responseBody = given()
             .header("Authorization", alice.impersonatedBasicAuth())
             .body("""
                 {"public_right":""}""")
         .when()
-            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200)
             .extract().asString();
@@ -2865,7 +2865,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         given()
             .header("Authorization", alice.impersonatedBasicAuth())
@@ -2942,7 +2942,7 @@ public abstract class CalJsonContract {
                 alice.id(), alice.id(), alice.id(), alice.id(), alice.id(),
                 alice.id()).getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("PROPPATCH", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .request("PROPPATCH", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(204);
 
@@ -2953,7 +2953,7 @@ public abstract class CalJsonContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
         .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
         .then()
             .extract().asString();
 
@@ -3131,14 +3131,14 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         given()
             .header("Authorization", alice.impersonatedBasicAuth())
             .body("""
                 {"public_right":"{DAV:}read"}""")
         .when()
-            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200);
 
@@ -3174,14 +3174,14 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         given()
             .header("Authorization", alice.impersonatedBasicAuth())
             .body("""
                 {"public_right":"{DAV:}write"}""")
         .when()
-            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200);
 
@@ -3217,14 +3217,14 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
         .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         given()
             .header("Authorization", alice.impersonatedBasicAuth())
             .body("""
                 {"public_right":"{DAV:}write"}""")
         .when()
-            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200);
 
@@ -3233,7 +3233,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"public_right":""}""")
         .when()
-            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .request("ACL", "/calendars/" + alice.id() + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200);
 
@@ -3269,7 +3269,7 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
             .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
 
         calDavClient.upsertCalendarEvent(alice,
             URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
@@ -3293,7 +3293,7 @@ public abstract class CalJsonContract {
                 """
                 .replace("{bobEmail}", bob.email()))
         .when()
-            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200);
 
@@ -3329,13 +3329,13 @@ public abstract class CalJsonContract {
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"b5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
             .when()
-            .post("/calendars/" + alice.id() + ".json");
+            .post("/calendars/" + alice.id());
         // provision bob principal...
         given()
             .headers("Authorization", alice.impersonatedBasicAuth())
             .body("{\"id\":\"c5dd8eee-7ae3-45f5-834a-356025b1e877\",\"dav:name\":\"automated\",\"apple:color\":\"#E91E63\",\"caldav:description\":\"\"}")
             .when()
-            .post("/calendars/" + bob.id() + ".json");
+            .post("/calendars/" + bob.id());
 
         calDavClient.upsertCalendarEvent(alice,
             URI.create("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877/abcd.ics"), ICS_1);
@@ -3359,7 +3359,7 @@ public abstract class CalJsonContract {
                 """
                 .replace("{bobEmail}", bob.email()))
         .when()
-            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877.json")
+            .post("/calendars/" + alice.id()  + "/b5dd8eee-7ae3-45f5-834a-356025b1e877")
         .then()
             .statusCode(200);
 
@@ -3400,7 +3400,7 @@ public abstract class CalJsonContract {
             .body("""
                 {"match":{"start":"20250201T000000","end":"20250215T000000"}}""")
         .when()
-            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id() + ".json")
+            .request("REPORT", "/calendars/" + testUser.id() + "/" + testUser.id())
         .then()
             .statusCode(200)
             .extract().asString();

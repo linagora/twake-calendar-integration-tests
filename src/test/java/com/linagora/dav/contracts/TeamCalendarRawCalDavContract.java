@@ -151,7 +151,7 @@ public abstract class TeamCalendarRawCalDavContract {
                                 "end": "20300110T235959"
                             }
                         }""")
-                    .request("REPORT", calendarURL.asUri() + ".json");
+                    .request("REPORT", calendarURL.asUri().toString());
             }
         };
 

@@ -331,7 +331,7 @@ public abstract class CalendarSharingContract {
             .contentType("application/json")
             .accept("application/json")
         .when()
-            .get(CalendarURL.from(bob.id()).asUri() + ".json?export")
+            .get(CalendarURL.from(bob.id()).asUri() + "?export")
         .then()
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
@@ -359,7 +359,7 @@ public abstract class CalendarSharingContract {
                 """.replace("{bobId}", bob.id())
                 .replace("{eventUid}", eventUid))
         .when()
-            .request("REPORT", "/calendars.json")
+            .request("REPORT", "/calendars")
         .then()
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
@@ -388,7 +388,7 @@ public abstract class CalendarSharingContract {
             .contentType("application/json")
             .accept("application/json")
         .when()
-            .get(CalendarURL.from(bob.id()).asUri() + ".json?allEvents=true")
+            .get(CalendarURL.from(bob.id()).asUri() + "?allEvents=true")
         .then()
             .statusCode(anyOf(is(403), is(404)))
             .extract().asString();
@@ -785,7 +785,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Alice's copy of Bob's calendar should also contain the event (with description)
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
@@ -837,7 +837,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Alice's copy of Bob's calendar should also contain the event (with description)
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
@@ -891,7 +891,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Alice's copy of Bob's calendar should also contain the event (with description)
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
@@ -1037,7 +1037,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, calendarData);
 
         // THEN: the event should also be visible by Alice in her copy of Bob's calendar
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
@@ -1107,7 +1107,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(bob, eventUid, updatedEvent);
 
         // THEN: Alice should see the updated version in her copy, not the original
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
             alice,
@@ -1159,7 +1159,7 @@ public abstract class CalendarSharingContract {
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         Supplier<List<JsonNode>> aliceEvents = () -> calDavClient.reportCalendarEvents(
             alice,
@@ -1259,7 +1259,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice unsubscribes (deletes her copy)
-        String aliceSubscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String aliceSubscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
         calDavClient.deleteSubscribedCalendar(alice, aliceSubscribedCalendarURI);
 
         // THEN: Alice should no longer see the calendar
@@ -1563,7 +1563,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice tries to update Bob's event in her subscribed copy
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(alice, subscribedCalendarURI,
                 Instant.parse("2025-09-01T00:00:00Z"), Instant.parse("2025-11-01T00:00:00Z"))
             .collectList().block();
@@ -1773,7 +1773,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // AND: Alice sees Bob's event in her subscribed copy
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         Supplier<List<JsonNode>> aliceEventsSupplier = () -> calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -1792,7 +1792,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
 
         // THEN: Bob should see the updated event in his own calendar
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
@@ -1858,7 +1858,7 @@ public abstract class CalendarSharingContract {
             .build();
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
 
         Supplier<List<JsonNode>> aliceEventsSupplier = () -> calDavClient.reportCalendarEvents(
                 alice, aliceCalendarURI,
@@ -1875,7 +1875,7 @@ public abstract class CalendarSharingContract {
         calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
 
         // THEN: Bob should not see the event anymore
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob, bobCalendarURI,
                 Instant.parse("2025-09-01T00:00:00Z"),
@@ -1936,7 +1936,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice updates the event by adding Cedric as attendee
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -1952,7 +1952,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
 
         // THEN: Bob should see the updated event in his own calendar
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
@@ -2023,7 +2023,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // WHEN: Alice updates the event (changes description)
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -2040,7 +2040,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
 
         // THEN: Bob should see the updated event in his own calendar
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
@@ -2123,7 +2123,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // CONFIRM: Alice sees the event
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEventsBefore = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -2164,7 +2164,7 @@ public abstract class CalendarSharingContract {
         calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
 
         // THEN: Bob should no longer see the event in his own calendar
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEventsAfter = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
@@ -2241,7 +2241,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // CONFIRM: Alice sees the event
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -2258,7 +2258,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(alice, URI.create(eventHref), updatedEvent);
 
         // THEN: Bob should see the updated event without Cedric
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
@@ -2347,7 +2347,7 @@ public abstract class CalendarSharingContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + bob.id() + ".json")
+            .get("/calendars/" + bob.id())
             .then()
             .extract().asString();
 
@@ -2381,7 +2381,7 @@ public abstract class CalendarSharingContract {
             .queryParam("personal", true)
             .queryParam("withRights", true)
             .when()
-            .get("/calendars/" + alice.id() + ".json")
+            .get("/calendars/" + alice.id())
             .then()
             .extract().asString();
 
@@ -2426,7 +2426,7 @@ public abstract class CalendarSharingContract {
             });
 
         // AND: Alice can read events from it (if any)
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
@@ -2496,7 +2496,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // THEN: Alice can see the event from the resource calendar in her subscribed copy
-        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id() + ".json";
+        String subscribedCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarRequest.id();
 
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
@@ -3116,7 +3116,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(alice, eventUri, calendarData);
 
         // AND: Alice should see the event in her subscription
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -3170,7 +3170,7 @@ public abstract class CalendarSharingContract {
         calDavClient.upsertCalendarEvent(alice, eventUri, calendarData);
 
         // THEN: Bob should see the event in his own calendar (source calendar)
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,
@@ -3222,7 +3222,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // AND: Alice sees the event in her subscription
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -3348,7 +3348,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // AND: Alice sees the event in her subscription
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -3415,7 +3415,7 @@ public abstract class CalendarSharingContract {
         calDavClient.subscribeToSharedCalendar(alice, subscribedCalendarRequest);
 
         // AND: Alice sees the event in her subscription
-        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId + ".json";
+        String aliceCalendarURI = "/calendars/" + alice.id() + "/" + subscribedCalendarId;
         List<JsonNode> aliceEvents = calDavClient.reportCalendarEvents(
                 alice,
                 aliceCalendarURI,
@@ -3430,7 +3430,7 @@ public abstract class CalendarSharingContract {
         calDavClient.deleteCalendarEvent(alice, URI.create(eventHref));
 
         // THEN: Bob should no longer see the event in his own calendar (source calendar)
-        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id() + ".json";
+        String bobCalendarURI = "/calendars/" + bob.id() + "/" + bob.id();
         List<JsonNode> bobEvents = calDavClient.reportCalendarEvents(
                 bob,
                 bobCalendarURI,

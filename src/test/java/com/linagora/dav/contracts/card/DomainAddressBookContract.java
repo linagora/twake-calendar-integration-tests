@@ -910,7 +910,7 @@ public abstract class DomainAddressBookContract {
             .queryParam("shared", true)
             .queryParam("subscribed", true)
             .when()
-            .get("/addressbooks/" + domainId + ".json")
+            .get("/addressbooks/" + domainId)
             .then()
             .extract().asString();
     }

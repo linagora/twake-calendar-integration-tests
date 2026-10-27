@@ -516,7 +516,7 @@ public abstract class CardAggregatedListingContract {
     }
 
     private static String contactsPath(String userId) {
-        return "/contacts/" + userId + ".json";
+        return "/contacts/" + userId;
     }
 
     private List<String> uids(JsonPath response) {
