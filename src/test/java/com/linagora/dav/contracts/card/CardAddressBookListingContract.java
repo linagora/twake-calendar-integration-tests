@@ -892,7 +892,7 @@ public abstract class CardAddressBookListingContract {
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(uids(response)).isEmpty();
-            softly.assertThat(response.getString("_links.self.href")).isEqualTo(contactsPath(alice.id(), "contacts"));
+            softly.assertThat(response.getString("_links.self.href")).isEqualTo(contactsPath(alice.id(), "contacts") + ".json");
             softly.assertThat(response.getString(SYNC_TOKEN)).isNotBlank();
         });
     }
