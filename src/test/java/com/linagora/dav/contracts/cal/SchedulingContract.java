@@ -40,6 +40,7 @@ import java.util.stream.Stream;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -1832,6 +1833,7 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("Expects the 403 introduced by linagora/esn-sabre#594 (attendee override changing an occurrence). Re-enable once that PR is merged.")
     @Test
     void attendeeCreatingNewOverrideChangingOccurrenceShouldBeRejected() {
         // Given Bob creates a recurring master event (no override) and invites Alice and Cedric
@@ -1921,6 +1923,7 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("Expects the 403 introduced by linagora/esn-sabre#594 (attendee override changing an occurrence). Re-enable once that PR is merged.")
     @Test
     void attendeeRemovingExistingOverrideWithoutExdateShouldBeRejected() {
         // Given Bob creates a recurring event with one override and invites Alice and Cedric
