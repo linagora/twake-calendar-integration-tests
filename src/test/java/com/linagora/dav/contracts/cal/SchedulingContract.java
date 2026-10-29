@@ -40,6 +40,7 @@ import java.util.stream.Stream;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -1832,8 +1833,9 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("Expects the 403 introduced by linagora/esn-sabre#594 (attendee override changing an occurrence). Re-enable once that PR is merged.")
     @Test
-    void attendeeCreatingNewOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
+    void attendeeCreatingNewOverrideChangingOccurrenceShouldBeRejected() {
         // Given Bob creates a recurring master event (no override) and invites Alice and Cedric
         String organizerEventUid = "event-" + UUID.randomUUID();
         String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
@@ -1899,16 +1901,19 @@ public abstract class SchedulingContract {
                 .replace("{bobEmail}", bob.email())
                 .replace("{aliceEmail}", alice.email())
                 .replace("{cedricEmail}", cedric.email()));
-        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs);
+        // Then the server rejects the attendee scheduling object change
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceUpdatedCalendarEventIcs))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object")
+            .hasMessageContaining("Attendees are not allowed to change DTSTART");
 
-        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
-            .contains(overrideRecurrenceIdLine)
-            .contains(aliceLocalOverrideSummaryLine));
-
-        // Then Bob and Cedric calendars keep no override occurrence
+        // And Alice, Bob and Cedric calendars keep no override occurrence
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                    .doesNotContain(overrideRecurrenceIdLine)
+                    .doesNotContain(aliceLocalOverrideSummaryLine);
                 assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
                     .doesNotContain(overrideRecurrenceIdLine)
                     .doesNotContain(aliceLocalOverrideSummaryLine);
@@ -1918,8 +1923,9 @@ public abstract class SchedulingContract {
             });
     }
 
+    @Disabled("Expects the 403 introduced by linagora/esn-sabre#594 (attendee override changing an occurrence). Re-enable once that PR is merged.")
     @Test
-    void attendeeRemovingExistingOverrideShouldNotPropagateToOrganizerAndOtherAttendees() {
+    void attendeeRemovingExistingOverrideWithoutExdateShouldBeRejected() {
         // Given Bob creates a recurring event with one override and invites Alice and Cedric
         String organizerEventUid = "event-" + UUID.randomUUID();
         String overrideRecurrenceIdLine = "RECURRENCE-ID:20351006T090000Z";
@@ -1972,7 +1978,7 @@ public abstract class SchedulingContract {
             .contains(overrideRecurrenceIdLine)
             .contains("SUMMARY:Occurrence from organizer"));
 
-        // When Alice removes the existing override from her own copy
+        // When Alice removes the existing override from her own copy, reverting the occurrence to the master
         String aliceMasterOnlyIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -1996,17 +2002,19 @@ public abstract class SchedulingContract {
             .replace("{bobEmail}", bob.email())
             .replace("{aliceEmail}", alice.email())
             .replace("{cedricEmail}", cedric.email());
-        calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceMasterOnlyIcs);
+        // Then the server rejects the attendee scheduling object change
+        assertThatThrownBy(() -> calDavClient.upsertCalendarEvent(alice, aliceCalendarEventUri, aliceMasterOnlyIcs))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Unexpected status code: 403 when create/update calendar object")
+            .hasMessageContaining("Attendees are not allowed to change DTSTART");
 
-        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
-            .doesNotContain(overrideRecurrenceIdLine)
-            .doesNotContain("SUMMARY:Occurrence from organizer")
-            .contains("SUMMARY:" + masterSummary));
-
-        // Then Bob and Cedric calendars keep organizer override unchanged
+        // And Alice, Bob and Cedric calendars keep organizer override unchanged
         calmlyAwait
             .during(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(alice, aliceCalendarEventUri))
+                    .contains(overrideRecurrenceIdLine)
+                    .contains("SUMMARY:Occurrence from organizer");
                 assertThat(calDavClient.getCalendarEvent(bob, bobCalendarEventUri))
                     .contains(overrideRecurrenceIdLine)
                     .contains("SUMMARY:Occurrence from organizer");
