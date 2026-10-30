@@ -22,11 +22,11 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
-import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
-import static org.apache.http.HttpStatus.SC_NO_CONTENT;
-import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
+import static org.apache.http.HttpStatus.SC_NO_CONTENT;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
@@ -49,8 +49,9 @@ import java.util.stream.StreamSupport;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -154,6 +155,124 @@ public abstract class CalendarSharingContract {
             .request("PROPPATCH", subscribedCalendar.asUri().toString())
         .then()
             .statusCode(SC_FORBIDDEN);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"calendars/{bob}/public-source", "calendars/{bob}/{bob}/../public-source"})
+    protected void creatingXmlSubscriptionShouldReadOnlyTheResolvedPublicCalendar(String source) throws Exception {
+        // Given Alice may read Bob's public calendar, but not his private calendar.
+        String privateEventUid = givenBobHasPrivateAndPublicSourceCalendars();
+        CalendarURL subscription = new CalendarURL(alice.id(), "checked-source");
+
+        // When Alice subscribes to the public calendar, directly or through private/../public.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                <d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+                  <d:set><d:prop>
+                    <d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>
+                    <d:displayname>Public calendar subscription</d:displayname>
+                    <cs:source><d:href>{source}</d:href></cs:source>
+                  </d:prop></d:set>
+                </d:mkcol>
+                """.replace("{source}", source.replace("{bob}", bob.id())))
+        .when()
+            .request("MKCOL", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_CREATED);
+
+        // Then the subscription exposes only the public calendar's events.
+        assertSubscriptionReadsOnlyPublicCalendar(subscription, privateEventUid);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"calendars/{bob}/public-source", "calendars/{bob}/{bob}/../public-source"})
+    protected void updatingXmlSubscriptionSourceShouldReadOnlyTheResolvedPublicCalendar(String source) throws Exception {
+        // Given Alice has a subscription to her own calendar and Bob has public and private calendars.
+        String privateEventUid = givenBobHasPrivateAndPublicSourceCalendars();
+        CalendarURL subscription = calDavClient.subscribeToSharedCalendar(alice, SubscribedCalendarRequest.builder()
+            .id("checked-source")
+            .sourceUserId(alice.id())
+            .name("Own calendar subscription")
+            .build());
+
+        // When Alice changes the source to Bob's public calendar, directly or through private/../public.
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+                  <d:set><d:prop>
+                    <cs:source><d:href>{source}</d:href></cs:source>
+                  </d:prop></d:set>
+                </d:propertyupdate>
+                """.replace("{source}", source.replace("{bob}", bob.id())))
+        .when()
+            .request("PROPPATCH", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+        assertThat(XMLUtil.extractByXPath(responseBody, "//d:propstat[d:prop/cs:source]/d:status",
+            Map.of("d", "DAV:", "cs", "http://calendarserver.org/ns/"))).contains(" 200 ");
+
+        // Then the subscription exposes only the public calendar's events.
+        assertSubscriptionReadsOnlyPublicCalendar(subscription, privateEventUid);
+    }
+
+    private String givenBobHasPrivateAndPublicSourceCalendars() {
+        String privateEventUid = createEventInBobPrivateCalendar();
+        CalendarURL publicCalendar = calDavClient.createNewCalendar(bob, "public-source", "Public source", 1);
+        calDavClient.updateCalendarAcl(bob, publicCalendar, "{DAV:}read");
+        calDavClient.upsertCalendarEvent(bob, publicCalendar, "public-source-event", """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//Subscription source regression//EN
+            BEGIN:VEVENT
+            UID:public-source-event
+            DTSTAMP:20261030T000000Z
+            DTSTART:20271030T100000Z
+            DTEND:20271030T110000Z
+            SUMMARY:Public source meeting
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("\n", "\r\n"));
+
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(CalendarURL.from(bob.id()).eventHref(privateEventUid))
+        .then()
+            .statusCode(SC_FORBIDDEN);
+        return privateEventUid;
+    }
+
+    private void assertSubscriptionReadsOnlyPublicCalendar(CalendarURL subscription, String privateEventUid) {
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:prop><c:calendar-data/></d:prop>
+                  <c:filter>
+                    <c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"/></c:comp-filter>
+                  </c:filter>
+                </c:calendar-query>
+                """)
+        .when()
+            .request("REPORT", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+        assertPrivateCalendarNotExposed(responseBody, privateEventUid);
+        assertThat(responseBody).contains("public-source-event", "Public source meeting");
+
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(subscription.eventHref(privateEventUid))
+        .then()
+            .statusCode(SC_NOT_FOUND);
     }
 
     @Test
