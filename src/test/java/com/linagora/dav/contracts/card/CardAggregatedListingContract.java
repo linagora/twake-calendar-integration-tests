@@ -20,6 +20,7 @@ package com.linagora.dav.contracts.card;
 
 import static io.restassured.RestAssured.given;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_NO_CONTENT;
 import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,6 +49,7 @@ import com.linagora.dav.CardDavClient;
 import com.linagora.dav.CardDavClient.DelegationRight;
 import com.linagora.dav.CardDavClient.PublicRight;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.VCardContact;
 
@@ -386,6 +388,32 @@ public abstract class CardAggregatedListingContract {
     }
 
     @Test
+    void disabledDelegatedDomainAddressBookShouldNotBeIncluded() {
+        // GIVEN a dedicated domain whose domain address book has a contact
+        TestDomain domain = newDomain();
+        OpenPaasUser domainAlice = newDomainUser(domain.name());
+        OpenPaasUser domainAdmin = newDomainUser(domain.name());
+        cardDavClient.createDomainAddressBook(domain.id(), domain.technicalToken());
+        String domainContactUid = addDomainContact(domain, "Domain", "Contact");
+        // AND a domain administrator delegates the domain address book to Alice
+        promoteDomainAdmin(domain, domainAdmin);
+        cardDavClient.grantDomainBookDelegation(domainAdmin, domain.id(), "dab", domainAlice, DelegationRight.READ);
+        // AND Alice has a contact of her own
+        addContact(domainAlice, "contacts", "anna", "Anna", "Zed");
+        assertThat(listContacts(domainAlice, Map.of("sort", "fn", "limit", 50)).getList(ITEM_HREFS, String.class))
+            .containsExactly(
+                "/addressbooks/" + domainAlice.id() + "/contacts/anna.vcf",
+                "/addressbooks/" + domain.id() + "/dab/" + domainContactUid + ".vcf");
+
+        // WHEN the domain administrator disables the domain address book
+        cardDavClient.updateAddressBookState(domainAdmin, domain.id(), "dab", "disabled");
+
+        // THEN Alice's contacts listing leaves the disabled delegated domain address book out
+        assertThat(uids(listContacts(domainAlice, Map.of("sort", "fn", "limit", 50))))
+            .containsExactly("anna");
+    }
+
+    @Test
     void domainAddressBookShouldNotBeIncludedWhenMembersCannotReadIt() {
         // GIVEN a dedicated domain whose domain address book grants no right to its members and has a contact
         TestDomain domain = newDomain();
@@ -560,6 +588,16 @@ public abstract class CardAggregatedListingContract {
         cardDavClient.upsertDomainContact(domain.id(), uid,
             VCardContact.builder().firstName(firstName).lastName(lastName).build().toVCardPayload(uid), domain.technicalToken());
         return uid;
+    }
+
+    private void promoteDomainAdmin(TestDomain domain, OpenPaasUser user) {
+        given()
+            .baseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()
+                .getServiceUri(DockerTwakeCalendarSetup.DockerService.CALENDAR_SIDE_ADMIN, "http")
+                .toString())
+            .put("/domains/" + domain.name() + "/admins/" + user.email())
+            .then()
+            .statusCode(SC_NO_CONTENT);
     }
 
     private OpenPaasUser newDomainUser(String domainName) {
