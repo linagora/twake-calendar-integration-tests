@@ -309,6 +309,23 @@ public class CardDavClient {
             }
             """.replace("{newName}", newName);
 
+        updateAddressBookProperties(user, baseId, addressBookId, payload, "renaming");
+    }
+
+    /**
+     * @param state {@code enabled} or {@code disabled}, only applies to group address books
+     */
+    public void updateAddressBookState(OpenPaasUser user, String baseId, String addressBookId, String state) {
+        String payload = """
+            {
+                "state": "{state}"
+            }
+            """.replace("{state}", state);
+
+        updateAddressBookProperties(user, baseId, addressBookId, payload, "updating the state of");
+    }
+
+    private void updateAddressBookProperties(OpenPaasUser user, String baseId, String addressBookId, String payload, String action) {
         client.headers(headers -> user.impersonatedBasicAuth(headers)
                 .add(HttpHeaderNames.CONTENT_TYPE, "application/json;charset=UTF-8")
                 .add(HttpHeaderNames.ACCEPT, "application/json, text/plain, */*"))
@@ -322,9 +339,9 @@ public class CardDavClient {
                 return responseContent.asString(StandardCharsets.UTF_8)
                     .switchIfEmpty(Mono.just(StringUtils.EMPTY))
                     .flatMap(errorBody -> Mono.error(new RuntimeException("""
-                        Unexpected status code: %d when renaming address book '%s' of base '%s'
+                        Unexpected status code: %d when %s address book '%s' of base '%s'
                         %s
-                        """.formatted(response.status().code(), addressBookId, baseId, errorBody))));
+                        """.formatted(response.status().code(), action, addressBookId, baseId, errorBody))));
             }).block();
     }
 
