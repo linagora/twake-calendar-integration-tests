@@ -34,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.w3c.dom.Node;
 import org.xmlunit.assertj3.XmlAssert;
 import org.xmlunit.diff.ComparisonResult;
@@ -1079,29 +1080,9 @@ public abstract class CardDavContract {
             .statusCode(201);
     }
 
-    @Test
-    void proppatchShouldUpdateDisplayName() {
-        OpenPaasUser testUser = dockerExtension().newTestUser();
-
-        given()
-            .header("Authorization", testUser.impersonatedBasicAuth())
-            .body("""
-                <d:propertyupdate xmlns:d="DAV:">
-                  <d:set>
-                    <d:prop>
-                      <d:displayname>New Address Book Name</d:displayname>
-                    </d:prop>
-                  </d:set>
-                </d:propertyupdate>
-                """)
-        .when()
-            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
-        .then()
-            .statusCode(207);
-    }
-
-    @Test
-    void proppatchShouldReturnOldValue() {
+    @ParameterizedTest
+    @ValueSource(strings = {"contacts", "collected"})
+    void proppatchShouldRefuseDisplayNameOnProtectedAddressBook(String addressBook) {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         String responseBody = given()
@@ -1116,7 +1097,7 @@ public abstract class CardDavContract {
                 </d:propertyupdate>
                 """)
         .when()
-            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/" + addressBook)
         .then()
             .statusCode(207)
             .extract().asString();
@@ -1126,25 +1107,27 @@ public abstract class CardDavContract {
                 <?xml version="1.0"?>
                 <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
                   <d:response>
-                    <d:href>/addressbooks/{testUserId}/contacts</d:href>
+                    <d:href>/addressbooks/{testUserId}/{addressBook}</d:href>
                     <d:propstat>
                       <d:prop>
                         <d:displayname/>
                       </d:prop>
-                      <d:status>HTTP/1.1 200 OK</d:status>
+                      <d:status>HTTP/1.1 403 Forbidden</d:status>
                     </d:propstat>
                   </d:response>
                 </d:multistatus>
                 """
-                .replace("{testUserId}", testUser.id()))
+                .replace("{testUserId}", testUser.id())
+                .replace("{addressBook}", addressBook))
             .ignoreWhitespace()
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(IGNORE_GETLASTMODIFIED)
             .areSimilar();
     }
 
-    @Test
-    void propfindShouldRetrieveUpdatedDisplayName() {
+    @ParameterizedTest
+    @ValueSource(strings = {"contacts", "collected"})
+    void propfindShouldNotRetrieveRefusedDisplayNameOnProtectedAddressBook(String addressBook) {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
         given()
@@ -1159,7 +1142,7 @@ public abstract class CardDavContract {
                 </d:propertyupdate>
                 """.getBytes(StandardCharsets.UTF_8))
         .when()
-            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/contacts")
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/" + addressBook)
         .then()
             .statusCode(207);
 
@@ -1205,7 +1188,7 @@ public abstract class CardDavContract {
                     <d:href>/addressbooks/{testUserId}/contacts/</d:href>
                     <d:propstat>
                       <d:prop>
-                        <d:displayname>New Address Book Name</d:displayname>
+                        <d:displayname/>
                       </d:prop>
                       <d:status>HTTP/1.1 200 OK</d:status>
                     </d:propstat>
