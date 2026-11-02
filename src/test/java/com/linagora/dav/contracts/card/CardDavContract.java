@@ -442,7 +442,7 @@ public abstract class CardDavContract {
         .when()
             .request("MKCOL", "/addressbooks/awesome")
         .then()
-            .statusCode(405);
+            .statusCode(403);
     }
 
     @Test
