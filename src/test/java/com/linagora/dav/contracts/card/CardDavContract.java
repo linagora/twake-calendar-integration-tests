@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -420,6 +421,7 @@ public abstract class CardDavContract {
     }
 
     @Test
+    @Disabled("wait to new image containing https://github.com/linagora/esn-sabre/pull/649")
     void creatingAddressBookShouldNotBeAllowedOutOfUserRoot() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
 
