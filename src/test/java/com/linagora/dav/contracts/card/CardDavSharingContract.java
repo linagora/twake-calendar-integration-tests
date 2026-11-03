@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -609,10 +610,12 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
+    @Disabled("Wait for a new image containing https://github.com/linagora/esn-sabre/pull/661")
     public void cannotDeleteContactInCopiedAddressBookWhenNotAuthorized() {
         String addressBook = "collected";
         String copiedAddressBook = "new book";
 
+        // GIVEN Bob publishes his address book as read/write and Alice subscribes to it
         cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
         cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
 
@@ -621,13 +624,21 @@ public abstract class CardDavSharingContract {
             .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
             .findAny().get();
 
+        // AND Alice creates a contact through her subscription
         String vcardUid = "test-contact-uid";
         byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
         cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
 
+        // AND Bob republishes his address book as read only
         cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
 
-        cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid);
+        // WHEN Alice deletes the contact through her subscription
+        // THEN the deletion is rejected
+        assertThatThrownBy(() -> cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid))
+            .hasMessageContaining("403 when deleting contact");
+
+        // AND the contact is still in Bob's address book
+        assertThat(cardDavClient.getContacts(bob, bob.id(), addressBook)).contains("John Doe");
     }
 
     @Test
