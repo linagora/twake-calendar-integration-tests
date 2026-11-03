@@ -502,4 +502,41 @@ public abstract class RecurrenceValidationContract {
             .statusCode(SC_BAD_REQUEST)
             .body(containsString("EXDATE date-time form (UTC) must match DTSTART date-time form (TZID:Europe/Paris)"));
     }
+
+    @Test
+    void shouldRejectOverrideWhenMasterIsNotRecurring() {
+        // Given the original fuzz fixture: its master has neither RRULE nor RDATE.
+        String uid = UUID.randomUUID().toString();
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Linagora//Twake Calendar//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20250101T000000Z
+            DTSTART:20250101T100000Z
+            DTEND:20250101T110000Z
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20250101T000000Z
+            RECURRENCE-ID:20250101T100000Z
+            DTSTART:20250105T140000Z
+            DTEND:20250105T150000Z
+            RRULE:FREQ=DAILY;COUNT=2
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid).replace("\n", "\r\n");
+
+        // When PUT uses strict handling (configured in setUp).
+        given()
+            .contentType("text/calendar")
+            .body(ics)
+        .when()
+            .put("/calendars/" + user.id() + "/" + user.id() + "/" + uid + ".ics")
+        // Then the non-recurring master is rejected before occurrence indexing.
+        .then()
+            .statusCode(SC_BAD_REQUEST)
+            .body(containsString("has no matching recurring master VEVENT"));
+    }
 }

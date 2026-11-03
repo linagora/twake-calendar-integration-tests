@@ -26,6 +26,8 @@ import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+import static org.apache.http.HttpStatus.SC_CREATED;
+import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
 import static org.xmlunit.diff.ComparisonResult.SIMILAR;
@@ -3267,5 +3269,69 @@ public abstract class CalDavContract {
                     </C:free-busy-query>
                     """),
                     Map.of("Accept", "application/xml", "Content-Type", "application/xml", "Depth", "0")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"RRULE:FREQ=DAILY;COUNT=2", "RDATE:20250106T140000Z"})
+    protected void timeRangeReportShouldFindOverridesOwnRecurrence(String overrideRecurrence) {
+        // Given an override whose own recurrence extends beyond the recurring master.
+        // This checks compatibility with Sabre's post-filter, not RFC semantics.
+        String uid = UUID.randomUUID().toString();
+        String calendarPath = "/calendars/" + testUser.id() + "/" + testUser.id() + "/";
+        String objectPath = calendarPath + uid + ".ics";
+        String ics = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Linagora//Twake Calendar//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20250101T000000Z
+            DTSTART:20250101T100000Z
+            DTEND:20250101T110000Z
+            RRULE:FREQ=DAILY;COUNT=2
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20250101T000000Z
+            RECURRENCE-ID:20250101T100000Z
+            DTSTART:20250105T140000Z
+            DTEND:20250105T150000Z
+            {overrideRecurrence}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid)
+            .replace("{overrideRecurrence}", overrideRecurrence)
+            .replace("\n", "\r\n");
+
+        given(authenticatedRequest)
+            .contentType("text/calendar")
+            .header("Prefer", "handling=strict")
+            .body(ics)
+        .when()
+            .put(objectPath)
+        .then()
+            .statusCode(SC_CREATED);
+
+        // When REPORT targets the override's second occurrence on January 6.
+        given(authenticatedRequest)
+            .header("Depth", "1")
+            .body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:prop><d:getetag/></d:prop>
+                  <c:filter>
+                    <c:comp-filter name="VCALENDAR">
+                      <c:comp-filter name="VEVENT">
+                        <c:time-range start="20250106T140000Z" end="20250106T150000Z"/>
+                      </c:comp-filter>
+                    </c:comp-filter>
+                  </c:filter>
+                </c:calendar-query>
+                """)
+        .when()
+            .request("REPORT", calendarPath)
+        // Then the occurrence index must not discard the matching object.
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .body("multistatus.response.href", is(objectPath));
     }
 }
