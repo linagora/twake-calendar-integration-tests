@@ -431,27 +431,34 @@ public abstract class CardDavSharingContract {
 
     @Test
     void copiedAddressBookShouldNoLongerExistWhenOriginalAddressBookIsHidden() {
+        // Given Alice subscribes to Bob's publicly readable address book.
         String addressBook = "collected";
         String copiedAddressBook = "new book";
         cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
-
         cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+        AddressBookURL subscription = cardDavClient.findSubscribedAddressBook(alice, bob.id(), addressBook).orElseThrow();
 
+        // When Bob unpublishes the source and Alice lists her address books.
         cardDavClient.setHiddenPublicRight(bob, bob.id(), addressBook);
-
         String response = given()
-            .headers("Authorization", alice.impersonatedBasicAuth())
+            .header("Authorization", alice.impersonatedBasicAuth())
             .queryParam("contactsCount", true)
             .queryParam("inviteStatus", 2)
             .queryParam("personal", true)
             .queryParam("shared", true)
             .queryParam("subscribed", true)
-            .when()
+        .when()
             .get("/addressbooks/" + alice.id())
-            .then()
+        .then()
+            .statusCode(SC_OK)
             .extract().asString();
 
-        assertThat(response).doesNotContain("\"openpaas:source\":\"\\/addressbooks\\/" + bob.id() + "\\/collected.json\"");
+        // Then only Alice's personal books remain; the revoked subscription is not advertised.
+        assertThatJson(response).inPath("_embedded.dav:addressbook[*]._links.self.href")
+            .isArray().containsExactlyInAnyOrder(
+                "/addressbooks/" + alice.id() + "/contacts.json",
+                "/addressbooks/" + alice.id() + "/collected.json")
+            .doesNotContain(subscription.asUri() + ".json");
     }
 
     @Test
@@ -612,33 +619,51 @@ public abstract class CardDavSharingContract {
     @Test
     @Disabled("Wait for a new image containing https://github.com/linagora/esn-sabre/pull/661")
     public void cannotDeleteContactInCopiedAddressBookWhenNotAuthorized() {
+        // Given Alice subscribes while Bob's address book is publicly writable.
         String addressBook = "collected";
-        String copiedAddressBook = "new book";
-
-        // GIVEN Bob publishes his address book as read/write and Alice subscribes to it
         cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ_WRITE);
-        cardDavClient.subscribe(alice, bob.id(), addressBook, copiedAddressBook);
+        cardDavClient.subscribe(alice, bob.id(), addressBook, "Bob's contacts");
+        AddressBookURL subscription = cardDavClient.findSubscribedAddressBook(alice, bob.id(), addressBook).orElseThrow();
+        String uid = "test-contact-uid";
+        byte[] card = """
+            BEGIN:VCARD
+            VERSION:3.0
+            UID:test-contact-uid
+            FN:John Doe
+            END:VCARD
+            """.getBytes(StandardCharsets.UTF_8);
+        cardDavClient.upsertContact(alice, subscription.addressBookId(), uid, card);
+        String contactPath = subscription.asUri() + "/" + uid + ".vcf";
 
-        AddressBookURL addressBookURL = cardDavClient.findUserAddressBooks(alice)
-            .collectList().block().stream()
-            .filter(url -> !ImmutableSet.of("collected", "contacts").contains(url.addressBookId()))
-            .findAny().get();
-
-        // AND Alice creates a contact through her subscription
-        String vcardUid = "test-contact-uid";
-        byte[] vcardPayload = "BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD".getBytes(StandardCharsets.UTF_8);
-        cardDavClient.upsertContact(alice, addressBookURL.addressBookId(), vcardUid, vcardPayload);
-
-        // AND Bob republishes his address book as read only
+        // When Bob downgrades the source to read-only, Alice can still read the contact she created.
         cardDavClient.setPublicRight(bob, bob.id(), addressBook, PublicRight.READ);
+        String visibleCard = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/vcard")
+        .when()
+            .get(contactPath)
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        assertThat(visibleCard).contains("FN:John Doe");
 
-        // WHEN Alice deletes the contact through her subscription
-        // THEN the deletion is rejected
-        assertThatThrownBy(() -> cardDavClient.deleteContact(alice, alice.id(), addressBookURL.addressBookId(), vcardUid))
-            .hasMessageContaining("403 when deleting contact");
-
-        // AND the contact is still in Bob's address book
-        assertThat(cardDavClient.getContacts(bob, bob.id(), addressBook)).contains("John Doe");
+        // Then the previous write rights cannot be used to update or delete the source contact.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body(new String(card, StandardCharsets.UTF_8).replace("John Doe", "Changed Contact"))
+        .when()
+            .put(contactPath)
+        .then()
+            .statusCode(SC_FORBIDDEN);
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .delete(contactPath)
+        .then()
+            .statusCode(SC_FORBIDDEN);
+        assertThat(cardDavClient.getContacts(bob, bob.id(), addressBook))
+            .contains("John Doe").doesNotContain("Changed Contact");
     }
 
     @Test
@@ -835,4 +860,5 @@ public abstract class CardDavSharingContract {
                 && !href.equals("/addressbooks/" + alice.id() + "/")))
             .hasSize(1);
     }
+
 }
