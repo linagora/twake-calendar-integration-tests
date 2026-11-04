@@ -61,6 +61,7 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.JsonCalendarData;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarProvisioningService;
@@ -71,6 +72,7 @@ import com.rabbitmq.client.Channel;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
+import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
 
 public abstract class CalendarSharingContract {
@@ -3731,5 +3733,80 @@ public abstract class CalendarSharingContract {
         assertThat(responseBody)
             .contains(sharedCalendarPath)
             .contains("<d:write/>", "<d:read/>");
+    }
+
+    @Test
+    protected void subscriptionSyncShouldReportSourceChangesWithSubscriptionHrefs() throws Exception {
+        // Given Alice has synchronized the three events in Bob's public calendar.
+        calDavClient.updateCalendarAcl(bob, "{DAV:}read");
+        CalendarURL subscription = calDavClient.subscribeToSharedCalendar(alice, SubscribedCalendarRequest.builder()
+            .id("source-sync")
+            .sourceUserId(bob.id())
+            .name("Bob's calendar")
+            .build());
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake Calendar//Integration tests//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20300401T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Original meeting
+            END:VEVENT
+            END:VCALENDAR
+            """;
+        calDavClient.upsertCalendarEvent(bob, "updated", event.replace("{uid}", "updated"));
+        calDavClient.upsertCalendarEvent(bob, "deleted", event.replace("{uid}", "deleted"));
+        calDavClient.upsertCalendarEvent(bob, "unchanged", event.replace("{uid}", "unchanged"));
+        String initialBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+            .body("""
+                {"sync-token":"http://sabre.io/ns/sync/1"}
+                """)
+        .when()
+            .request("REPORT", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+        JsonCalendarData initial = JsonCalendarData.from(initialBody);
+        assertThat(initial.items()).hasSize(3);
+        assertThat(initial.syncToken()).isNotBlank();
+
+        // When Bob updates, deletes and creates events in the source after that token.
+        calDavClient.upsertCalendarEvent(bob, "updated", event.replace("{uid}", "updated")
+            .replace("Original meeting", "Rescheduled meeting"));
+        calDavClient.deleteCalendarEvent(bob, "deleted");
+        calDavClient.upsertCalendarEvent(bob, "created", event.replace("{uid}", "created"));
+        String changesBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType(ContentType.JSON)
+            .accept(ContentType.JSON)
+            .body("""
+                {"sync-token":"{token}"}
+                """.replace("{token}", initial.syncToken()))
+        .when()
+            .request("REPORT", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+
+        // Then only the changes are returned, with hrefs under Alice's subscription.
+        JsonCalendarData changes = JsonCalendarData.from(changesBody);
+        assertThat(changes.syncToken()).isNotEqualTo(initial.syncToken());
+        assertThat(changes.items()).extracting(JsonCalendarData.DavItem::href).containsExactlyInAnyOrder(
+            subscription.eventHref("updated").getPath(),
+            subscription.eventHref("deleted").getPath(),
+            subscription.eventHref("created").getPath());
+        assertThat(changes.items()).filteredOn(item -> item.status() == SC_NOT_FOUND)
+            .extracting(JsonCalendarData.DavItem::href).containsExactly(subscription.eventHref("deleted").getPath());
+        assertThat(changes.items()).filteredOn(item -> item.status() == SC_OK).hasSize(2);
+        // Sync returns hrefs and statuses; clients fetch the changed event separately.
+        assertThatCalendar(calDavClient.getCalendarEvent(alice, subscription.eventHref("updated")))
+            .ignoringProperties(Property.DTSTAMP, Property.CREATED, Property.LAST_MODIFIED)
+            .isEqualTo(event.replace("{uid}", "updated").replace("Original meeting", "Rescheduled meeting"));
     }
 }
