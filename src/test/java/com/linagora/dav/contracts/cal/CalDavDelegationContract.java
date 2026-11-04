@@ -27,6 +27,8 @@ import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -539,6 +541,85 @@ public abstract class CalDavDelegationContract {
     }
 
     private static final String INITIAL_SYNC_TOKEN = "http://sabre.io/ns/sync/1";
+
+    @ParameterizedTest
+    @CsvSource({"PRIVATE, false", "PRIVATE, true", "CONFIDENTIAL, false", "CONFIDENTIAL, true"})
+    protected void calendarQueryShouldMatchOnlyVisiblePrivateEventProperties(String classification, boolean viaDelegation) throws Exception {
+        // Given Bob can read Alice's calendar, but only the Busy placeholder of her private event.
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent(classification);
+        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ);
+        CalendarURL calendar = viaDelegation
+            ? calDavClient.findDelegatedCalendar(bob, alice.id())
+            : CalendarURL.from(alice.id());
+
+        String query = """
+            <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+              <d:prop><d:getetag/><c:calendar-data/></d:prop>
+              <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">
+                <c:prop-filter name="SUMMARY"><c:text-match>{summary}</c:text-match></c:prop-filter>
+              </c:comp-filter></c:comp-filter></c:filter>
+            </c:calendar-query>
+            """;
+
+        // When Bob searches for the hidden summary, the matching href must not reveal it.
+        byte[] hiddenMatch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Depth", "1")
+            .body(query.replace("{summary}", "Sprint planning"))
+        .when()
+            .request("REPORT", calendar.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asByteArray();
+        assertThat(XMLUtil.extractEventIdsFromXml(hiddenMatch)).isEmpty();
+
+        // Then searching the visible placeholder finds the event, with its details still redacted.
+        byte[] visibleMatch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Depth", "1")
+            .body(query.replace("{summary}", "Busy"))
+        .when()
+            .request("REPORT", calendar.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asByteArray();
+        assertThat(XMLUtil.extractEventIdsFromXml(visibleMatch)).containsExactly(eventUid);
+        assertThatDoesNotLeakPrivateEventDetails(new String(visibleMatch, StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"COPY, PRIVATE", "MOVE, PRIVATE", "COPY, CONFIDENTIAL", "MOVE, CONFIDENTIAL"})
+    protected void delegateCannotTransferHiddenPrivateEventToOwnCalendar(String method, String classification) {
+        // Given even a write delegate cannot read the full details of Alice's classified event.
+        String eventUid = givenAlicePrivateSourceCalendarWithEvent(classification);
+        calDavClient.grantDelegation(alice, alice.id(), bob, DelegationRight.READ_WRITE);
+        CalendarURL delegated = calDavClient.findDelegatedCalendar(bob, alice.id());
+        String original = calDavClient.getCalendarEvent(alice, URI.create(aliceSourceEventPath(eventUid)));
+        String destination = CalendarURL.from(bob.id()).eventHref(eventUid).getPath();
+
+        // When Bob tries to transfer the stored event into his own calendar.
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Destination", destination)
+        .when()
+            .request(method, delegated.eventHref(eventUid).getPath())
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then no unredacted copy exists and a refused MOVE has not removed the source.
+        given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+        .when()
+            .get(destination)
+        .then()
+            .statusCode(SC_NOT_FOUND);
+        assertThatCalendar(calDavClient.getCalendarEvent(alice, URI.create(aliceSourceEventPath(eventUid))))
+            .isEqualTo(original);
+    }
 
     private String givenAlicePrivateSourceCalendarWithEvent(String eventClass) {
         calDavClient.updateCalendarAcl(alice, "");
