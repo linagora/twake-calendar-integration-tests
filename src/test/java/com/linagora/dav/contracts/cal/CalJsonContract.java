@@ -4390,4 +4390,108 @@ public abstract class CalJsonContract {
             END:VCALENDAR
             """.replace("${uid}", uid);
     }
+
+    @Test
+    protected void reportShouldSkipRecurringSeriesWithoutOccurrenceInRequestedRange() throws Exception {
+        // Given a two-day series spans the requested day without any occurrence on that day.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String recurringUid = UUID.randomUUID().toString();
+        String regularUid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake Calendar//Integration tests//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20300401T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            SUMMARY:Meeting
+            END:VEVENT
+            END:VCALENDAR
+            """;
+        calDavClient.upsertCalendarEvent(alice, recurringUid, event.replace("{uid}", recurringUid)
+            .replace("SUMMARY:Meeting", "SUMMARY:Meeting\nRRULE:FREQ=DAILY;INTERVAL=2;COUNT=3"));
+        calDavClient.upsertCalendarEvent(alice, regularUid, event.replace("{uid}", regularUid)
+            .replace("20300411", "20300412"));
+
+        // When the JSON report expands events during the gap between two occurrences.
+        String response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"match":{"start":"20300412T000000Z","end":"20300413T000000Z"}}
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then the unrelated meeting remains visible and the empty series contributes no item.
+        assertThat(EventData.from(response)).containsExactly(new EventData(regularUid,
+            "2030-04-12T10:00:00Z", "2030-04-12T11:00:00Z", Optional.empty()));
+    }
+
+    @Test
+    protected void reportShouldFindLaterRdateOccurrenceOutsideMasterTimeRange() throws Exception {
+        // Given a recurring event uses RDATE only, with a later occurrence a month after its master.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(alice, uid, """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake Calendar//Integration tests//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20300401T080000Z
+            DTSTART:20300411T100000Z
+            DTEND:20300411T110000Z
+            RDATE:20300511T100000Z
+            SUMMARY:Monthly appointment
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid));
+
+        // When the report searches only around the later RDATE, MongoDB must keep the series candidate.
+        String response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"match":{"start":"20300511T000000Z","end":"20300512T000000Z"}}
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then the later occurrence is returned with its actual start and end.
+        assertThat(EventData.from(response)).containsExactly(new EventData(uid,
+            "2030-05-11T10:00:00Z", "2030-05-11T11:00:00Z", Optional.of("2030-05-11T10:00:00Z")));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true, false", "false, true"})
+    protected void freeBusyOnlyCalendarListingShouldExposeOnlyItsLink(boolean publicListing, boolean withFreeBusy) {
+        // Given Bob publishes only free/busy access to his personal calendar.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        calDavClient.updateCalendarAcl(bob, "{urn:ietf:params:xml:ns:caldav}read-free-busy");
+
+        // When Alice discovers Bob's public calendars, including rights if available.
+        String response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sharedPublic", publicListing)
+            .queryParam("withFreeBusy", withFreeBusy)
+            .queryParam("withRights", true)
+        .when()
+            .get("/calendars/" + bob.id())
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then discovery provides the URL for free/busy queries without leaking metadata or ACLs.
+        assertThatJson(response).inPath("_embedded.dav:calendar").isEqualTo("""
+            [{"_links":{"self":{"href":"/calendars/{bob}/{bob}.json"}}}]
+            """.replace("{bob}", bob.id()));
+    }
 }
