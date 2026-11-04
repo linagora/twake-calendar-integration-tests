@@ -34,7 +34,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -617,7 +616,6 @@ public abstract class CardDavSharingContract {
     }
 
     @Test
-    @Disabled("Wait for a new image containing https://github.com/linagora/esn-sabre/pull/661")
     public void cannotDeleteContactInCopiedAddressBookWhenNotAuthorized() {
         // Given Alice subscribes while Bob's address book is publicly writable.
         String addressBook = "collected";
