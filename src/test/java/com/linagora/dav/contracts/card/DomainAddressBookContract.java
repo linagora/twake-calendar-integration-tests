@@ -19,6 +19,10 @@
 package com.linagora.dav.contracts.card;
 
 import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
+import static org.apache.http.HttpStatus.SC_NO_CONTENT;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
@@ -31,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
@@ -913,5 +918,45 @@ public abstract class DomainAddressBookContract {
             .get("/addressbooks/" + domainId)
             .then()
             .extract().asString();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"COPY", "MOVE"})
+    protected void domainAdminCannotTransferPersonalContactIntoDomainMembersBook(String method) {
+        // Given a domain admin owns a card, but domain-members writes belong to technical users.
+        given(extension().webAdminRequestSpecification())
+        .when()
+            .put("/domains/" + domainName + "/admins/" + openPaasUser.email())
+        .then()
+            .statusCode(SC_NO_CONTENT);
+        cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(openPaasUser, "contacts", uid, VCardContact.builder()
+            .firstName("Personal").lastName("Contact").build().toVCardPayload(uid));
+        String source = "/addressbooks/" + openPaasUser.id() + "/contacts/" + uid + ".vcf";
+        String destination = "/addressbooks/" + domainId + "/domain-members/" + uid + ".vcf";
+
+        // When the admin tries COPY or MOVE instead of the guarded PUT endpoint.
+        given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .header("Destination", destination)
+        .when()
+            .request(method, source)
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then the personal card survives and no domain member was injected.
+        given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+        .when()
+            .get(source)
+        .then()
+            .statusCode(SC_OK);
+        given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+        .when()
+            .get(destination)
+        .then()
+            .statusCode(SC_NOT_FOUND);
     }
 }
