@@ -1,3 +1,7 @@
+import org.jenkinsci.plugins.workflow.steps.FlowInterruptedException
+
+def failedTestSummary = ''
+
 // Separate working directories keep compilation, Surefire reports and test-run.log
 // independent. Docker images are built once; Testcontainers allocates each JVM's stack.
 def runTestBranch(String branch, String tests) {
@@ -76,7 +80,60 @@ pipeline {
 
     post {
         always {
-            deleteDir() /* clean up our workspace */
+            script {
+                try {
+                    if (env.CHANGE_ID && currentBuild.currentResult != 'SUCCESS') {
+                        // Read reports before deleteDir; retain only Markdown for the final notification.
+                        try {
+                            failedTestSummary = sh(label: 'Summarize failed tests', returnStdout: true,
+                                script: 'python3 ci/summarize-test-failures.py').trim()
+                        } catch (FlowInterruptedException interrupted) {
+                            throw interrupted
+                        } catch (Exception ignored) {
+                            failedTestSummary = '> Failed test details are unavailable. See the build log.'
+                            echo 'WARNING: Could not summarize failed tests.'
+                        }
+                    }
+                } finally {
+                    deleteDir() /* clean up our workspace even if summary collection is interrupted */
+                }
+            }
+        }
+        cleanup {
+            script {
+                if (env.CHANGE_ID) {
+                    // Report the final result after all stages and other post actions.
+                    try {
+                        def result = currentBuild.currentResult
+                        def icons = [SUCCESS: '✅', FAILURE: '❌', UNSTABLE: '⚠️', ABORTED: '⏹️', NOT_BUILT: '⏭️']
+                        def body = "${icons[result] ?: 'ℹ️'} Jenkins pipeline finished: **${result}**."
+                        if (failedTestSummary) {
+                            body += "\n\n${failedTestSummary}"
+                        }
+                        body += '\n---\n*Generated automatically*'
+                        withEnv(["PR_COMMENT_JSON=${groovy.json.JsonOutput.toJson([body: body])}"]) {
+                            withCredentials([usernamePassword(credentialsId: 'github', usernameVariable: 'GITHUB_USERNAME', passwordVariable: 'GITHUB_TOKEN')]) {
+                                def status = sh(label: 'Comment Jenkins result on PR', returnStatus: true, script: '''
+                                    set +x
+                                    printf '%s' "$PR_COMMENT_JSON" | curl --fail --silent --show-error \\
+                                        --connect-timeout 10 --max-time 30 -o /dev/null -X POST \\
+                                        -H "Authorization: Bearer $GITHUB_TOKEN" \\
+                                        -H "Content-Type: application/json" \\
+                                        --data-binary @- \\
+                                        "https://api.github.com/repos/linagora/twake-calendar-integration-tests/issues/$CHANGE_ID/comments"
+                                ''')
+                                if (status != 0) {
+                                    echo "WARNING: Could not post Jenkins result to PR (curl exit ${status})."
+                                }
+                            }
+                        }
+                    } catch (FlowInterruptedException interrupted) {
+                        throw interrupted
+                    } catch (Exception ignored) {
+                        echo 'WARNING: Could not post Jenkins result to PR.'
+                    }
+                }
+            }
         }
     }
 }
