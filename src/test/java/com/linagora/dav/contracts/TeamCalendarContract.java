@@ -21,6 +21,9 @@ package com.linagora.dav.contracts;
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_NO_CONTENT;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.anyOf;
@@ -42,14 +45,20 @@ import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.OpenPaaSTeamCalendar;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TestUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Updates;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
+import reactor.core.publisher.Mono;
 
 public abstract class TeamCalendarContract {
     private static final Map<String, String> DAV_NAMESPACES = Map.of(
@@ -62,6 +71,7 @@ public abstract class TeamCalendarContract {
           </d:prop>
         </d:propfind>""";
     private static final String PUBLIC_READ_RIGHT = "{DAV:}read";
+    private static final int DECLINED_INVITE_STATUS = 3;
 
     private CalDavClient calDavClient;
 
@@ -380,6 +390,109 @@ public abstract class TeamCalendarContract {
         assertThat(reportResponse.body().asString())
             .as("Team calendar should contain the event created by the write-enabled %s".formatted(role))
             .contains(eventUid);
+    }
+
+    @ParameterizedTest(name = "via delegated calendar: {0}")
+    @ValueSource(booleans = {false, true})
+    protected void memberCannotUpdateTeamEventToAnotherStoredUid(boolean viaDelegation) {
+        // Given two distinct events in a team calendar where Alice has write access.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaaSTeamCalendar team = newTeamCalendar("uid-conflict", "UID conflict");
+        CalendarURL delegated = delegateTeamCalendarTo(team, alice, DelegationRight.READ_WRITE);
+        CalendarURL canonical = CalendarURL.from(team.id());
+        String firstUid = UUID.randomUUID().toString();
+        String secondUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(alice, delegated, firstUid, calendarData(firstUid, "First meeting"));
+        calDavClient.upsertCalendarEvent(alice, delegated, secondUid, calendarData(secondUid, "Second meeting"));
+        CalendarURL writeCalendar = viaDelegation ? delegated : canonical;
+        String first = calDavClient.getCalendarEvent(alice, canonical.eventHref(firstUid));
+
+        // When Alice edits an event while keeping its UID, the update remains allowed.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(first.replace("SUMMARY:First meeting", "SUMMARY:Updated meeting"))
+        .when()
+            .put(writeCalendar.eventHref(firstUid))
+        .then()
+            .statusCode(SC_NO_CONTENT);
+        String updatedFirst = calDavClient.getCalendarEvent(alice, canonical.eventHref(firstUid));
+        String second = calDavClient.getCalendarEvent(alice, canonical.eventHref(secondUid));
+
+        // When the same object tries to take the other event's UID.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(updatedFirst.replace("UID:" + firstUid, "UID:" + secondUid))
+        .when()
+            .put(writeCalendar.eventHref(firstUid))
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then both stored events retain their own UID and contents.
+        assertThatCalendar(calDavClient.getCalendarEvent(alice, canonical.eventHref(firstUid))).isEqualTo(updatedFirst);
+        assertThatCalendar(calDavClient.getCalendarEvent(alice, canonical.eventHref(secondUid))).isEqualTo(second);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"team", "resource"})
+    protected void declinedShareeLosesDelegatedRightsOnSourceCalendar(String calendarType) {
+        // Given Alice can read and write a team or resource source calendar.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        boolean resourceCalendar = calendarType.equals("resource");
+        String ownerId = resourceCalendar
+            ? dockerExtension().twakeCalendarProvisioningService()
+                .createResource("declined-" + UUID.randomUUID(), "Shared resource", dockerExtension().newTestUser()).block().id()
+            : newTeamCalendar("declined", "Private team").id();
+        String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
+        calDavClient.grantDelegation(ownerId, alice, DelegationRight.READ_WRITE, token);
+        CalendarURL source = CalendarURL.from(ownerId);
+        CalendarURL delegated = calDavClient.findDelegatedCalendar(alice, ownerId);
+        String uid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(alice, delegated, uid, calendarData(uid, "Private meeting"));
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .get(source.eventHref(uid))
+        .then()
+            .statusCode(SC_OK);
+
+        // When her share is DECLINED. The JSON invite-reply API only exposes accepted/noresponse,
+        // so seed the declined state directly while retaining the original READ_WRITE access level.
+        String mongoUri = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerService.MONGO, "mongodb").toString();
+        try (MongoClient mongo = MongoClients.create(mongoUri)) {
+            long modified = Mono.from(mongo.getDatabase("sabre").getCollection("calendarinstances")
+                .updateOne(Filters.and(
+                    Filters.eq("principaluri", "principals/users/" + alice.id()),
+                    Filters.eq("uri", delegated.calendarId())),
+                    Updates.set("share_invitestatus", DECLINED_INVITE_STATUS)))
+                .block().getModifiedCount();
+            assertThat(modified).isEqualTo(1);
+        }
+
+        // Then the source URL retains only public rights: a resource is readable, a private team calendar is not.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .get(source.eventHref(uid))
+        .then()
+            .statusCode(resourceCalendar ? SC_OK : SC_FORBIDDEN);
+        // Neither source calendar grants edit or delete access through the declined share.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(calendarData(uid, "Changed after decline"))
+        .when()
+            .put(source.eventHref(uid))
+        .then()
+            .statusCode(SC_FORBIDDEN);
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+        .when()
+            .delete(source.eventHref(uid))
+        .then()
+            .statusCode(SC_FORBIDDEN);
     }
 
     @Test
