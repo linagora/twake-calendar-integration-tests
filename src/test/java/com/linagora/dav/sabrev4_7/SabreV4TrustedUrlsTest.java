@@ -20,6 +20,7 @@ package com.linagora.dav.sabrev4_7;
 
 import static com.linagora.dav.TestUtil.awaitAtMost;
 import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
@@ -39,6 +40,7 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalendarURL;
@@ -218,6 +220,25 @@ class SabreV4TrustedUrlsTest {
 
         // Then the property is removed, including any derived video property
         assertLinkPropertiesAbsent(stored, untrustedLink);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "..CONFERENCE;VALUE=URI;FEATURE=VIDEO:https://evil.test/room",
+        "..X-OPENPAAS-VIDEOCONFERENCE:https://evil.test/room",
+        "..ATTACH:https://evil.test/file.pdf",
+        "..ATTACH;VALUE=BINARY;ENCODING=BASE64:dGVzdA=="
+    })
+    void configuredBasesShouldFilterPropertiesAfterSabreRepairsTheirNames(String repairedProperty) {
+        // Given an untrusted property whose name Sabre repairs before applying the link policy.
+        String uid = UUID.randomUUID().toString();
+        String trustedAttachment = "ATTACH;VALUE=URI:https://tung-drive.linagora.com/agenda.pdf";
+        // When CalDAV repairs and stores the event with trusted-base filtering enabled.
+        String stored = putAndGet(DavResource.EVENT, uid, trustedAttachment + "\n" + repairedProperty, SC_CREATED);
+
+        // Then the trusted attachment survives and the repaired untrusted link or binary data is absent.
+        assertThat(stored.lines()).contains("UID:" + uid, trustedAttachment);
+        assertThat(stored).doesNotContain(StringUtils.substringAfter(repairedProperty, ":"));
     }
 
     @ParameterizedTest(name = "{1} in {0}")
