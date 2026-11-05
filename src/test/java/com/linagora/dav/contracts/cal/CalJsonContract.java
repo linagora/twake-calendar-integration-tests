@@ -28,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +39,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -4432,9 +4435,10 @@ public abstract class CalJsonContract {
             "2030-04-12T10:00:00Z", "2030-04-12T11:00:00Z", Optional.empty()));
     }
 
-    @Test
-    protected void reportShouldFindLaterRdateOccurrenceOutsideMasterTimeRange() throws Exception {
-        // Given a recurring event uses RDATE only, with a later occurrence a month after its master.
+    @ParameterizedTest
+    @ValueSource(strings = {"20300311", "20300511"})
+    protected void reportShouldFindRdateOccurrenceOutsideMasterTimeRange(String occurrenceDate) throws Exception {
+        // Given an RDATE-only series has an occurrence before or after its master.
         OpenPaasUser alice = dockerExtension().newTestUser();
         String uid = UUID.randomUUID().toString();
         calDavClient.upsertCalendarEvent(alice, uid, """
@@ -4446,27 +4450,79 @@ public abstract class CalJsonContract {
             DTSTAMP:20300401T080000Z
             DTSTART:20300411T100000Z
             DTEND:20300411T110000Z
-            RDATE:20300511T100000Z
+            RDATE:{occurrenceDate}T100000Z
             SUMMARY:Monthly appointment
             END:VEVENT
             END:VCALENDAR
-            """.replace("{uid}", uid));
+            """.replace("{uid}", uid).replace("{occurrenceDate}", occurrenceDate));
 
-        // When the report searches only around the later RDATE, MongoDB must keep the series candidate.
+        // When the report searches outside DTSTART, MongoDB must still select the series.
         String response = given()
             .header("Authorization", alice.impersonatedBasicAuth())
             .body("""
-                {"match":{"start":"20300511T000000Z","end":"20300512T000000Z"}}
-                """)
+                {"match":{"start":"{date}T090000Z","end":"{date}T120000Z"}}
+                """.replace("{date}", occurrenceDate))
         .when()
             .request("REPORT", CalendarURL.from(alice.id()).asUri().toString())
         .then()
             .statusCode(SC_OK)
             .extract().asString();
 
-        // Then the later occurrence is returned with its actual start and end.
+        // Then the requested occurrence is returned with its actual start and end.
+        String isoDate = LocalDate.parse(occurrenceDate, DateTimeFormatter.BASIC_ISO_DATE).toString();
         assertThat(EventData.from(response)).containsExactly(new EventData(uid,
-            "2030-05-11T10:00:00Z", "2030-05-11T11:00:00Z", Optional.of("2030-05-11T10:00:00Z")));
+            isoDate + "T10:00:00Z", isoDate + "T11:00:00Z", Optional.of(isoDate + "T10:00:00Z")));
+    }
+
+    @ParameterizedTest(name = "override only: {0}")
+    @ValueSource(booleans = {false, true})
+    protected void singleEventReportShouldKeepDurationOccurrenceOverlappingRangeStart(boolean overrideOnly) {
+        // Given a two-hour occurrence crosses midnight, either in a series or as a single invited occurrence.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake Calendar//Integration tests//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20350101T080000Z
+            DTSTART:20350119T230000Z
+            DURATION:PT2H
+            {recurrence}
+            SUMMARY:Late meeting
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid)
+            .replace("{recurrence}", overrideOnly
+                ? "RECURRENCE-ID:20350119T230000Z"
+                : "RRULE:FREQ=DAILY;COUNT=2");
+        calDavClient.upsertCalendarEvent(alice, uid, event);
+
+        // When expansion starts during the occurrence, after its DTSTART.
+        String response = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {"match":{"start":"20350120T000000Z","end":"20350120T020000Z"}}
+                """)
+        .when()
+            .request("REPORT", CalendarURL.from(alice.id()).eventHref(uid).toString())
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+
+        // Then expansion keeps exactly that occurrence, including its duration and recurrence identity.
+        assertThatJson(response).inPath("data[2]").isArray().hasSize(1);
+        assertThatJson(response).when(Option.IGNORING_ARRAY_ORDER, Option.IGNORING_EXTRA_ARRAY_ITEMS)
+            .inPath("data[2][0][1]")
+            .isEqualTo("""
+                [
+                  ["uid", {}, "text", "{uid}"],
+                  ["dtstart", {}, "date-time", "2035-01-19T23:00:00Z"],
+                  ["duration", {}, "duration", "PT2H"],
+                  ["recurrence-id", {}, "date-time", "2035-01-19T23:00:00Z"]
+                ]
+                """.replace("{uid}", uid));
     }
 
     @ParameterizedTest
