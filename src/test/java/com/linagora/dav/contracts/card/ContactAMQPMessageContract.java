@@ -19,6 +19,7 @@
 package com.linagora.dav.contracts.card;
 
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
+import static com.linagora.dav.TestUtil.TWAKE_CALENDAR_TOKEN_HEADER;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -28,12 +29,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.linagora.dav.AddressBookURL;
 import com.linagora.dav.CardDavClient;
@@ -64,7 +65,6 @@ public abstract class ContactAMQPMessageContract {
     private static final String DELETED_EXCHANGE = "sabre:contact:deleted";
 
     private final ConditionFactory awaitAtMost = awaitEvery500Millis().atMost(30, TimeUnit.SECONDS);
-    private final Map<String, List<String>> receivedMessages = new HashMap<>();
 
     private CardDavClient cardDavClient;
 
@@ -204,13 +204,12 @@ public abstract class ContactAMQPMessageContract {
         cardDavClient.upsertContact(user, "collected", uid, vcard(uid, "John Doe"));
 
         // Then the message carries the current sync token of the address book and the stored etag of the card
-        assertThat(awaitMessagesOfCard(queue, uid, 1)).singleElement()
-            .satisfies(message -> assertCardMessage(message, cardMessage(
-                "addressbooks/" + user.id() + "/collected/" + uid + ".vcf",
-                "principals/users/" + user.id(),
-                vcard(uid, "John Doe"),
-                syncToken(user, user.id(), "collected"),
-                etag(user, user.id(), "collected", uid))));
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/users/" + user.id(), cardMessage(
+            "addressbooks/" + user.id() + "/collected/" + uid + ".vcf",
+            "principals/users/" + user.id(),
+            vcard(uid, "John Doe"),
+            syncToken(user, user.id(), "collected"),
+            etag(user, user.id(), "collected", uid)));
     }
 
     @Test
@@ -228,17 +227,16 @@ public abstract class ContactAMQPMessageContract {
         // Then the message carries a sync token higher than the creation one, which is the current one, and the new etag
         long tokenAfterUpdate = syncToken(user, user.id(), "collected");
         assertThat(tokenAfterUpdate).isGreaterThan(tokenAfterCreation);
-        assertThat(awaitMessagesOfCard(queue, uid, 1)).singleElement()
-            .satisfies(message -> assertCardMessage(message, cardMessage(
-                "addressbooks/" + user.id() + "/collected/" + uid + ".vcf",
-                "principals/users/" + user.id(),
-                vcard(uid, "John Doe Updated"),
-                tokenAfterUpdate,
-                etag(user, user.id(), "collected", uid))));
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/users/" + user.id(), cardMessage(
+            "addressbooks/" + user.id() + "/collected/" + uid + ".vcf",
+            "principals/users/" + user.id(),
+            vcard(uid, "John Doe Updated"),
+            tokenAfterUpdate,
+            etag(user, user.id(), "collected", uid)));
     }
 
     @Test
-    void deletedMessagesShouldCarryAHigherSyncTokenThanTheLastUpdateAndTheEtagOfTheDeletedCard() throws IOException {
+    void deletedMessageShouldCarryAHigherSyncTokenThanTheLastUpdateAndTheEtagOfTheDeletedCard() throws IOException {
         // Given an updated contact, and a queue listening to the deleted contacts
         OpenPaasUser user = dockerExtension().newTestUser();
         String queue = newQueueBoundTo(DELETED_EXCHANGE);
@@ -251,61 +249,179 @@ public abstract class ContactAMQPMessageContract {
         // When the user deletes that contact
         cardDavClient.deleteContact(user, "collected", uid);
 
-        // Then both deleted messages carry a sync token higher than the last update one, which is the current one, and the etag of the deleted card
+        // Then a single message is published, with the card data of the deleted card, its etag, and a sync token higher than the last update one, which is the current one
         long tokenAfterDeletion = syncToken(user, user.id(), "collected");
         assertThat(tokenAfterDeletion).isGreaterThan(tokenAfterUpdate);
-        String path = "addressbooks/" + user.id() + "/collected/" + uid + ".vcf";
-        List<String> messages = awaitMessagesOfCard(queue, uid, 2);
-        assertCardMessage(messages.get(0), cardMessage(path, "principals/users/" + user.id(),
-            vcard(uid, "John Doe Updated"), tokenAfterDeletion, etagBeforeDeletion));
-        assertCardMessage(messages.get(1), revisionMessage(path, tokenAfterDeletion, etagBeforeDeletion));
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/users/" + user.id(),
+            cardMessage("addressbooks/" + user.id() + "/collected/" + uid + ".vcf", "principals/users/" + user.id(),
+                vcard(uid, "John Doe Updated"), tokenAfterDeletion, etagBeforeDeletion));
     }
 
     @Test
-    void messagesForASubscribedAddressBookShouldCarryTheSyncTokenOfTheSourceAndTheEtag() throws IOException {
-        // Given Alice subscribes to Bob's public address book and listens to contact changes
+    void creatingAContactOfASubscribedAddressBookShouldPublishMessagesForTheSourceAndTheSubscriber() throws IOException {
+        // Given Alice subscribes to the public address book of Bob, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
         cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ);
         cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
         String subscribedBook = otherAddressBookOf(alice);
-        String queue = newQueueBoundTo(CREATED_EXCHANGE, UPDATED_EXCHANGE, DELETED_EXCHANGE);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE);
         String uid = UUID.randomUUID().toString();
 
         // When Bob creates a contact in that address book
         cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, both with the sync token of the source address book and the card etag
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + bob.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void updatingAContactOfASubscribedAddressBookShouldPublishMessagesForTheSourceAndTheSubscriber() throws IOException {
+        // Given Alice subscribes to the public address book of Bob, which holds a contact, and a queue listening to the updated contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
         long tokenAfterCreation = syncToken(bob, bob.id(), "contacts");
-        String etag = etag(bob, bob.id(), "contacts", uid);
+        String etagAfterCreation = etag(bob, bob.id(), "contacts", uid);
+        String queue = newQueueBoundTo(UPDATED_EXCHANGE);
 
-        // Then the message for Alice carries the sync token of the source address book and the card etag
-        String subscribedPath = "addressbooks/" + alice.id() + "/" + subscribedBook + "/" + uid + ".vcf";
-        String sourcePath = "addressbooks/" + bob.id() + "/contacts/" + uid + ".vcf";
-        assertCardMessage(awaitMessagesOfCard(queue, uid, 2).get(1), cardMessage(subscribedPath, "principals/users/" + bob.id(),
-            vcard(uid, "John Doe"), tokenAfterCreation, etag).put("sourcePath", sourcePath));
-
-        // When Bob updates that contact, the source revision changes
+        // When Bob updates that contact
         cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe Updated"));
-        long tokenAfterUpdate = syncToken(bob, bob.id(), "contacts");
-        String updatedEtag = etag(bob, bob.id(), "contacts", uid);
 
-        // Then Alice's notification carries the updated card and the source's new token and ETag
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, both with the new card data, the new etag and a higher sync token
+        long tokenAfterUpdate = syncToken(bob, bob.id(), "contacts");
+        String etagAfterUpdate = etag(bob, bob.id(), "contacts", uid);
         assertThat(tokenAfterUpdate).isGreaterThan(tokenAfterCreation);
-        assertThat(updatedEtag).isNotEqualTo(etag);
-        assertCardMessage(awaitMessagesOfCard(queue, uid, 4).get(3), cardMessage(subscribedPath, "principals/users/" + bob.id(),
-            vcard(uid, "John Doe Updated"), tokenAfterUpdate, updatedEtag).put("sourcePath", sourcePath));
+        assertThat(etagAfterUpdate).isNotEqualTo(etagAfterCreation);
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + bob.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate));
+    }
+
+    @Test
+    void deletingAContactOfASubscribedAddressBookShouldPublishAFullMessageForTheSourceAndTheSubscriber() throws IOException {
+        // Given Alice subscribes to the public address book of Bob, which holds a contact, and a queue listening to the deleted contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        long tokenBeforeDeletion = syncToken(bob, bob.id(), "contacts");
+        String etag = etag(bob, bob.id(), "contacts", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
 
         // When Bob deletes that contact
         cardDavClient.deleteContact(bob, "contacts", uid);
 
-        // Then Alice's deletion notification carries the new source token and the last stored ETag
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, both with the card data and a higher sync token
         long tokenAfterDeletion = syncToken(bob, bob.id(), "contacts");
-        assertThat(tokenAfterDeletion).isGreaterThan(tokenAfterUpdate);
-        assertCardMessage(awaitMessagesOfCard(queue, uid, 7).get(6),
-            revisionMessage(subscribedPath, tokenAfterDeletion, updatedEtag).put("sourcePath", sourcePath));
+        assertThat(tokenAfterDeletion).isGreaterThan(tokenBeforeDeletion);
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + bob.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe"), tokenAfterDeletion, etag));
     }
 
     @Test
-    void writeThroughADelegatedAddressBookShouldCarryTheSyncTokenOfTheSourceAndTheEtag() throws IOException {
+    void writingThroughAWritableSubscriptionShouldPublishMessagesForTheOtherSubscribers() throws IOException {
+        // Given Alice and Carol subscribe to the address book Bob published with write access, and a queue listening to the contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser carol = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        cardDavClient.subscribe(carol, bob.id(), "contacts", "Bob contacts");
+        String aliceBook = otherAddressBookOf(alice);
+        String carolBook = otherAddressBookOf(carol);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE, UPDATED_EXCHANGE, DELETED_EXCHANGE);
+        String uid = UUID.randomUUID().toString();
+
+        // When Alice creates, updates, then deletes a contact through her subscription
+        cardDavClient.upsertContact(alice, alice.id(), aliceBook, uid, vcard(uid, "John Doe"));
+        long tokenAfterCreation = syncToken(bob, bob.id(), "contacts");
+        String etagAfterCreation = etag(bob, bob.id(), "contacts", uid);
+        cardDavClient.upsertContact(alice, alice.id(), aliceBook, uid, vcard(uid, "John Doe Updated"));
+        long tokenAfterUpdate = syncToken(bob, bob.id(), "contacts");
+        String etagAfterUpdate = etag(bob, bob.id(), "contacts", uid);
+        cardDavClient.deleteContact(alice, alice.id(), aliceBook, uid);
+
+        // Then Carol gets a message on her path for each of the three writes, with Carol as owner and Alice as connected user
+        assertExactMessages(awaitMessagesOnPath(queue, "addressbooks/" + carol.id() + "/" + carolBook + "/" + uid + ".vcf", 3), "principals/users/" + alice.id(),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe"), tokenAfterCreation, etagAfterCreation),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), syncToken(bob, bob.id(), "contacts"), etagAfterUpdate));
+    }
+
+    @Test
+    void creatingAContactThroughAWritableSubscriptionShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
+        // Given Alice subscribes to the address book Bob published with write access, and a queue listening to the created contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE);
+        String uid = UUID.randomUUID().toString();
+
+        // When Alice creates a contact through her subscription
+        cardDavClient.upsertContact(alice, alice.id(), subscribedBook, uid, vcard(uid, "John Doe"));
+
+        // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void updatingAContactThroughAWritableSubscriptionShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
+        // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the updated contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String queue = newQueueBoundTo(UPDATED_EXCHANGE);
+
+        // When Alice updates that contact through her subscription
+        cardDavClient.upsertContact(alice, alice.id(), subscribedBook, uid, vcard(uid, "John Doe Updated"));
+
+        // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void deletingAContactThroughAWritableSubscriptionShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
+        // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the deleted contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String etag = etag(bob, bob.id(), "contacts", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When Alice deletes that contact through her subscription
+        cardDavClient.deleteContact(alice, alice.id(), subscribedBook, uid);
+
+        // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag));
+    }
+
+    @Test
+    void creatingAContactThroughADelegatedAddressBookShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book to Alice with write access, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
@@ -314,17 +430,206 @@ public abstract class ContactAMQPMessageContract {
         String queue = newQueueBoundTo(CREATED_EXCHANGE);
         String uid = UUID.randomUUID().toString();
 
-        // When Alice creates a contact through the delegated address book
+        // When Alice creates a contact through her delegated address book
         cardDavClient.upsertContact(alice, alice.id(), delegatedBook, uid, vcard(uid, "John Doe"));
 
-        // Then the message, whose path and owner are those of the delegated address book of Alice, carries the current sync token of the address book of Bob and the card etag
-        assertThat(awaitMessagesOfCard(queue, uid, 1)).singleElement()
-            .satisfies(message -> assertCardMessage(message, cardMessage(
-                "addressbooks/" + alice.id() + "/" + delegatedBook + "/" + uid + ".vcf",
-                "principals/users/" + alice.id(),
-                vcard(uid, "John Doe"),
-                syncToken(bob, bob.id(), "contacts"),
-                etag(bob, bob.id(), "contacts", uid))));
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void updatingAContactThroughADelegatedAddressBookShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
+        // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the updated contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ_WRITE);
+        String delegatedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String queue = newQueueBoundTo(UPDATED_EXCHANGE);
+
+        // When Alice updates that contact through her delegated address book
+        cardDavClient.upsertContact(alice, alice.id(), delegatedBook, uid, vcard(uid, "John Doe Updated"));
+
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe Updated"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void writingThroughADelegatedAddressBookShouldPublishMessagesForTheOtherDelegates() throws IOException {
+        // Given Bob delegates his address book to Alice and Carol with write access, and a queue listening to the contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        OpenPaasUser carol = dockerExtension().newTestUser();
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ_WRITE);
+        cardDavClient.grantDelegation(bob, "contacts", carol, DelegationRight.READ_WRITE);
+        String aliceBook = otherAddressBookOf(alice);
+        String carolBook = otherAddressBookOf(carol);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE, UPDATED_EXCHANGE, DELETED_EXCHANGE);
+        String uid = UUID.randomUUID().toString();
+
+        // When Alice creates, updates, then deletes a contact through her delegated address book
+        cardDavClient.upsertContact(alice, alice.id(), aliceBook, uid, vcard(uid, "John Doe"));
+        long tokenAfterCreation = syncToken(bob, bob.id(), "contacts");
+        String etagAfterCreation = etag(bob, bob.id(), "contacts", uid);
+        cardDavClient.upsertContact(alice, alice.id(), aliceBook, uid, vcard(uid, "John Doe Updated"));
+        long tokenAfterUpdate = syncToken(bob, bob.id(), "contacts");
+        String etagAfterUpdate = etag(bob, bob.id(), "contacts", uid);
+        cardDavClient.deleteContact(alice, alice.id(), aliceBook, uid);
+
+        // Then Carol gets a message on her path for each of the three writes, with Carol as owner and Alice as connected user
+        assertExactMessages(awaitMessagesOnPath(queue, "addressbooks/" + carol.id() + "/" + carolBook + "/" + uid + ".vcf", 3), "principals/users/" + alice.id(),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe"), tokenAfterCreation, etagAfterCreation),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), syncToken(bob, bob.id(), "contacts"), etagAfterUpdate));
+    }
+
+    @Test
+    void deletingAContactThroughADelegatedAddressBookShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
+        // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the deleted contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ_WRITE);
+        String delegatedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String etag = etag(bob, bob.id(), "contacts", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When Alice deletes that contact through her delegated address book
+        cardDavClient.deleteContact(alice, alice.id(), delegatedBook, uid);
+
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag));
+    }
+
+    @Test
+    void creatingAContactOfAWritableSubscribedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
+        // Given Alice subscribes to the address book Bob published with write access, and a queue listening to the created contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE);
+        String uid = UUID.randomUUID().toString();
+
+        // When Alice creates a contact through the path of Bob
+        cardDavClient.upsertContact(alice, bob.id(), "contacts", uid, vcard(uid, "John Doe"));
+
+        // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner, and Alice is the connected user of both
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void updatingAContactOfAWritableSubscribedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
+        // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the updated contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String queue = newQueueBoundTo(UPDATED_EXCHANGE);
+
+        // When Alice updates that contact through the path of Bob
+        cardDavClient.upsertContact(alice, bob.id(), "contacts", uid, vcard(uid, "John Doe Updated"));
+
+        // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner, and Alice is the connected user of both
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void deletingAContactOfAWritableSubscribedAddressBookThroughTheSourcePathShouldPublishFullMessagesForTheSourceAndTheSubscription() throws IOException {
+        // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the deleted contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ_WRITE);
+        cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
+        String subscribedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String etag = etag(bob, bob.id(), "contacts", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When Alice deletes that contact through the path of Bob
+        cardDavClient.deleteContact(alice, bob.id(), "contacts", uid);
+
+        // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner, and Alice is the connected user of both
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag));
+    }
+
+    @Test
+    void creatingAContactOfADelegatedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
+        // Given Bob delegates his address book to Alice with write access, and a queue listening to the created contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ_WRITE);
+        String delegatedBook = otherAddressBookOf(alice);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE);
+        String uid = UUID.randomUUID().toString();
+
+        // When Alice creates a contact through the path of Bob
+        cardDavClient.upsertContact(alice, bob.id(), "contacts", uid, vcard(uid, "John Doe"));
+
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, and Alice is the connected user of both
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void updatingAContactOfADelegatedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
+        // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the updated contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ_WRITE);
+        String delegatedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String queue = newQueueBoundTo(UPDATED_EXCHANGE);
+
+        // When Alice updates that contact through the path of Bob
+        cardDavClient.upsertContact(alice, bob.id(), "contacts", uid, vcard(uid, "John Doe Updated"));
+
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, and Alice is the connected user of both
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe Updated"),
+                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+    }
+
+    @Test
+    void deletingAContactOfADelegatedAddressBookThroughTheSourcePathShouldPublishFullMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
+        // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the deleted contacts
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser alice = dockerExtension().newTestUser();
+        cardDavClient.grantDelegation(bob, "contacts", alice, DelegationRight.READ_WRITE);
+        String delegatedBook = otherAddressBookOf(alice);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe"));
+        String etag = etag(bob, bob.id(), "contacts", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When Alice deletes that contact through the path of Bob
+        cardDavClient.deleteContact(alice, bob.id(), "contacts", uid);
+
+        // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, both with the card data
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
+            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe"),
+                syncToken(bob, bob.id(), "contacts"), etag));
     }
 
     @Test
@@ -342,13 +647,12 @@ public abstract class ContactAMQPMessageContract {
         cardDavClient.upsertDomainContact(domainId, uid, vcard(uid, "John Doe"), technicalToken);
 
         // Then the message carries the current sync token of the address book and the stored etag of the card
-        assertThat(awaitMessagesOfCard(queue, uid, 1)).singleElement()
-            .satisfies(message -> assertCardMessage(message, cardMessage(
-                "addressbooks/" + domainId + "/dab/" + uid + ".vcf",
-                "principals/domains/" + domainId,
-                vcard(uid, "John Doe"),
-                syncToken(member, domainId, "dab"),
-                etag(member, domainId, "dab", uid))));
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/technicalUser", cardMessage(
+            "addressbooks/" + domainId + "/dab/" + uid + ".vcf",
+            "principals/domains/" + domainId,
+            vcard(uid, "John Doe"),
+            syncToken(member, domainId, "dab"),
+            etag(member, domainId, "dab", uid)));
     }
 
     @Test
@@ -366,13 +670,85 @@ public abstract class ContactAMQPMessageContract {
         cardDavClient.upsertDomainMemberContact(domainId, uid, vcard(uid, "John Doe"), technicalToken);
 
         // Then the message carries the current sync token of the address book and the stored etag of the card
-        assertThat(awaitMessagesOfCard(queue, uid, 1)).singleElement()
-            .satisfies(message -> assertCardMessage(message, cardMessage(
-                "addressbooks/" + domainId + "/domain-members/" + uid + ".vcf",
-                "principals/domains/" + domainId,
-                vcard(uid, "John Doe"),
-                syncToken(member, domainId, "domain-members"),
-                etag(member, domainId, "domain-members", uid))));
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/technicalUser", cardMessage(
+            "addressbooks/" + domainId + "/domain-members/" + uid + ".vcf",
+            "principals/domains/" + domainId,
+            vcard(uid, "John Doe"),
+            syncToken(member, domainId, "domain-members"),
+            etag(member, domainId, "domain-members", uid)));
+    }
+
+    @Test
+    void deletingAContactOfADomainAddressBookShouldPublishAMessageOwnedByTheDomain() throws IOException {
+        // Given a domain address book holding a contact, and a queue listening to the deleted contacts
+        String domainName = "domain-" + UUID.randomUUID() + ".test";
+        String domainId = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(domainName).getObjectId("_id").toString();
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken(domainId);
+        OpenPaasUser member = dockerExtension().twakeCalendarProvisioningService().createUser("user_" + UUID.randomUUID(), domainName).block();
+        cardDavClient.createDomainAddressBook(domainId, technicalToken);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertDomainContact(domainId, uid, vcard(uid, "John Doe"), technicalToken);
+        String etag = etag(member, domainId, "dab", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When that contact is deleted
+        given()
+            .header(TWAKE_CALENDAR_TOKEN_HEADER, technicalToken)
+        .when()
+            .delete("/addressbooks/" + domainId + "/dab/" + uid + ".vcf")
+        .then()
+            .statusCode(204);
+
+        // Then a single message is published, owned by the domain, with the sync token following the deletion and the etag of the deleted card
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/technicalUser",
+            cardMessage("addressbooks/" + domainId + "/dab/" + uid + ".vcf", "principals/domains/" + domainId,
+                vcard(uid, "John Doe"), syncToken(member, domainId, "dab"), etag));
+    }
+
+    @Test
+    void deletingAContactOfADomainMembersAddressBookShouldPublishAMessageOwnedByTheDomain() throws IOException {
+        // Given a domain members address book holding a contact, and a queue listening to the deleted contacts
+        String domainName = "domain-" + UUID.randomUUID() + ".test";
+        String domainId = dockerExtension().twakeCalendarProvisioningService().createDomainIfNotExists(domainName).getObjectId("_id").toString();
+        String technicalToken = dockerExtension().twakeCalendarProvisioningService().generateToken(domainId);
+        OpenPaasUser member = dockerExtension().twakeCalendarProvisioningService().createUser("user_" + UUID.randomUUID(), domainName).block();
+        cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertDomainMemberContact(domainId, uid, vcard(uid, "John Doe"), technicalToken);
+        String etag = etag(member, domainId, "domain-members", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When that contact is deleted
+        cardDavClient.deleteContactDomainMembers(domainId, uid, technicalToken);
+
+        // Then a single message is published, owned by the domain, with the sync token following the deletion and the etag of the deleted card
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/technicalUser",
+            cardMessage("addressbooks/" + domainId + "/domain-members/" + uid + ".vcf", "principals/domains/" + domainId,
+                vcard(uid, "John Doe"), syncToken(member, domainId, "domain-members"), etag));
+    }
+
+    @Test
+    void movingAContactToAnotherAddressBookShouldPublishADeletedMessageForTheSource() throws IOException {
+        // Given a contact in the collected address book, and a queue listening to the deleted contacts
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+        cardDavClient.upsertContact(user, "collected", uid, vcard(uid, "John Doe"));
+        String etag = etag(user, user.id(), "collected", uid);
+        String queue = newQueueBoundTo(DELETED_EXCHANGE);
+
+        // When the user moves that contact to the contacts address book
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Destination", "/addressbooks/" + user.id() + "/contacts/" + uid + ".vcf")
+        .when()
+            .request("MOVE", "/addressbooks/" + user.id() + "/collected/" + uid + ".vcf")
+        .then()
+            .statusCode(201);
+
+        // Then a single message is published, with the source path, the sync token of the source address book and the etag of the moved card
+        assertExactMessages(awaitMessagesOfCard(queue, uid, 1), "principals/users/" + user.id(),
+            cardMessage("addressbooks/" + user.id() + "/collected/" + uid + ".vcf", "principals/users/" + user.id(),
+                vcard(uid, "John Doe"), syncToken(user, user.id(), "collected"), etag));
     }
 
     private String otherAddressBookOf(OpenPaasUser user) {
@@ -408,8 +784,26 @@ public abstract class ContactAMQPMessageContract {
             .put("etag", etag);
     }
 
-    private void assertCardMessage(String actual, ObjectNode expected) {
-        assertThatJson(actual).when(Option.IGNORING_EXTRA_FIELDS).isEqualTo(expected.toString());
+    private ObjectNode[] sourceAndMirrorMessages(OpenPaasUser bob, OpenPaasUser alice, String mirrorBook, String uid, byte[] vcard, long syncToken, String etag) {
+        return new ObjectNode[] {
+            cardMessage("addressbooks/" + bob.id() + "/contacts/" + uid + ".vcf", "principals/users/" + bob.id(), vcard, syncToken, etag),
+            mirrorMessage(bob, alice, mirrorBook, uid, vcard, syncToken, etag)
+        };
+    }
+
+    private ObjectNode mirrorMessage(OpenPaasUser bob, OpenPaasUser mirrorOwner, String mirrorBook, String uid, byte[] vcard, long syncToken, String etag) {
+        return cardMessage("addressbooks/" + mirrorOwner.id() + "/" + mirrorBook + "/" + uid + ".vcf", "principals/users/" + mirrorOwner.id(), vcard, syncToken, etag)
+            .put("sourcePath", "addressbooks/" + bob.id() + "/contacts/" + uid + ".vcf");
+    }
+
+    private void assertExactMessages(List<String> actual, String connectedUser, ObjectNode... expected) {
+        ArrayNode expectedMessages = OBJECT_MAPPER.createArrayNode();
+        for (ObjectNode message : expected) {
+            expectedMessages.add(message.deepCopy().put("connectedUser", connectedUser));
+        }
+        assertThatJson("[" + String.join(",", actual) + "]")
+            .when(Option.IGNORING_ARRAY_ORDER)
+            .isEqualTo(expectedMessages.toString());
     }
 
     private long syncToken(OpenPaasUser user, String baseId, String addressBook) {
@@ -454,16 +848,23 @@ public abstract class ContactAMQPMessageContract {
     }
 
     /**
-     * All the messages about that card received so far, including the ones read by a previous call: tests of the same
-     * JVM share the exchanges, hence the filtering.
+     * Tests of the same JVM share the exchanges, hence the filtering on the card.
      */
     private List<String> awaitMessagesOfCard(String queue, String uid, int expectedCount) {
-        List<String> messages = receivedMessages.computeIfAbsent(queue, ignored -> new ArrayList<>());
+        return awaitMessages(queue, expectedCount, path -> path.endsWith("/" + uid + ".vcf"));
+    }
+
+    private List<String> awaitMessagesOnPath(String queue, String path, int expectedCount) {
+        return awaitMessages(queue, expectedCount, path::equals);
+    }
+
+    private List<String> awaitMessages(String queue, int expectedCount, Predicate<String> pathFilter) {
+        List<String> messages = new ArrayList<>();
         awaitAtMost.untilAsserted(() -> {
             GetResponse delivery;
             while ((delivery = dockerExtension().getChannel().basicGet(queue, true)) != null) {
                 String body = new String(delivery.getBody(), StandardCharsets.UTF_8);
-                if (body.contains(uid + ".vcf")) {
+                if (pathFilter.test(OBJECT_MAPPER.readTree(body).get("path").asText())) {
                     messages.add(body);
                 }
             }
