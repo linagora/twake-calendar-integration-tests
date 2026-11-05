@@ -3273,9 +3273,8 @@ public abstract class CalDavContract {
 
     @ParameterizedTest
     @ValueSource(strings = {"RRULE:FREQ=DAILY;COUNT=2", "RDATE:20250106T140000Z"})
-    protected void timeRangeReportShouldFindOverridesOwnRecurrence(String overrideRecurrence) {
-        // Given an override whose own recurrence extends beyond the recurring master.
-        // This checks compatibility with Sabre's post-filter, not RFC semantics.
+    protected void timeRangeReportShouldIgnoreOverridesOwnRecurrence(String overrideRecurrence) {
+        // Given an override carrying its own recurrence, which RFC 4791 section 9.6.5 makes a single instance.
         String uid = UUID.randomUUID().toString();
         String calendarPath = "/calendars/" + testUser.id() + "/" + testUser.id() + "/";
         String objectPath = calendarPath + uid + ".ics";
@@ -3312,7 +3311,28 @@ public abstract class CalDavContract {
         .then()
             .statusCode(SC_CREATED);
 
-        // When REPORT targets the override's second occurrence on January 6.
+        // When REPORT targets the override's own instance on January 5, it is found.
+        given(authenticatedRequest)
+            .header("Depth", "1")
+            .body("""
+                <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:prop><d:getetag/></d:prop>
+                  <c:filter>
+                    <c:comp-filter name="VCALENDAR">
+                      <c:comp-filter name="VEVENT">
+                        <c:time-range start="20250105T140000Z" end="20250105T150000Z"/>
+                      </c:comp-filter>
+                    </c:comp-filter>
+                  </c:filter>
+                </c:calendar-query>
+                """)
+        .when()
+            .request("REPORT", calendarPath)
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .body("multistatus.response.href", is(objectPath));
+
+        // When REPORT targets the recurrence the override carries on January 6, nothing is found.
         given(authenticatedRequest)
             .header("Depth", "1")
             .body("""
@@ -3329,9 +3349,8 @@ public abstract class CalDavContract {
                 """)
         .when()
             .request("REPORT", calendarPath)
-        // Then the occurrence index must not discard the matching object.
         .then()
             .statusCode(SC_MULTI_STATUS)
-            .body("multistatus.response.href", is(objectPath));
+            .body("multistatus.response.size()", is(0));
     }
 }
