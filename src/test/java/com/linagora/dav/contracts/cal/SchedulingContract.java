@@ -22,6 +22,7 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitPresent;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_FORBIDDEN;
 import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.linagora.dav.CalDavClient;
@@ -1920,6 +1922,74 @@ public abstract class SchedulingContract {
                     .doesNotContain(overrideRecurrenceIdLine)
                     .doesNotContain(aliceLocalOverrideSummaryLine);
             });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SUMMARY", "LOCATION", "DTSTART"})
+    protected void attendeeCannotHideAnOccurrenceChangeBehindDuplicateOverrides(String property) {
+        // Given Bob invites Alice to a recurring meeting without explicit overrides.
+        String uid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake Calendar//Integration tests//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20351001T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            SUMMARY:Daily meeting
+            LOCATION:Room A
+            ORGANIZER:mailto:{organizer}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{attendee}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid)
+            .replace("{organizer}", bob.email())
+            .replace("{attendee}", alice.email());
+        calDavClient.upsertCalendarEvent(bob, uid, event);
+        URI attendeeEvent = CalendarURL.from(alice.id()).eventHref(awaitFirstEventId(alice));
+        URI organizerEvent = CalendarURL.from(bob.id()).eventHref(uid);
+        String attendeeBefore = calDavClient.getCalendarEvent(alice, attendeeEvent);
+        String organizerBefore = calDavClient.getCalendarEvent(bob, organizerEvent);
+        String override = """
+            BEGIN:VEVENT
+            UID:{uid}
+            RECURRENCE-ID:20351006T090000Z
+            DTSTAMP:20351001T080000Z
+            DTSTART:20351006T090000Z
+            DTEND:20351006T100000Z
+            SUMMARY:Daily meeting
+            LOCATION:Room A
+            ORGANIZER:mailto:{organizer}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{attendee}
+            END:VEVENT
+            """.replace("{uid}", uid)
+            .replace("{organizer}", bob.email())
+            .replace("{attendee}", alice.email());
+        String changed = switch (property) {
+            case "SUMMARY" -> override.replace("SUMMARY:Daily meeting", "SUMMARY:Changed by attendee");
+            case "LOCATION" -> override.replace("LOCATION:Room A", "LOCATION:Room B");
+            case "DTSTART" -> override.replace("DTSTART:20351006T090000Z", "DTSTART:20351006T093000Z");
+            default -> throw new IllegalArgumentException(property);
+        };
+        // The guard must inspect the first duplicate too: readers may use it instead of the last one.
+        String updated = attendeeBefore.replace("END:VCALENDAR", changed + override + "END:VCALENDAR");
+
+        // When Alice submits an edited override followed by an unchanged copy of the same occurrence.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(updated)
+        .when()
+            .put(attendeeEvent)
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then neither the attendee copy nor the organizer's meeting is modified.
+        assertThatCalendar(calDavClient.getCalendarEvent(alice, attendeeEvent)).isEqualTo(attendeeBefore);
+        assertThatCalendar(calDavClient.getCalendarEvent(bob, organizerEvent)).isEqualTo(organizerBefore);
     }
 
     @Test
