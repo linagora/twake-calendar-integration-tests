@@ -263,13 +263,13 @@ public abstract class ContactAMQPMessageContract {
 
     @Test
     void messagesForASubscribedAddressBookShouldCarryTheSyncTokenOfTheSourceAndTheEtag() throws IOException {
-        // Given Alice subscribes to the public address book of Bob, and a queue listening to the created and deleted contacts
+        // Given Alice subscribes to Bob's public address book and listens to contact changes
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser alice = dockerExtension().newTestUser();
         cardDavClient.setPublicRight(bob, bob.id(), "contacts", PublicRight.READ);
         cardDavClient.subscribe(alice, bob.id(), "contacts", "Bob contacts");
         String subscribedBook = otherAddressBookOf(alice);
-        String queue = newQueueBoundTo(CREATED_EXCHANGE, DELETED_EXCHANGE);
+        String queue = newQueueBoundTo(CREATED_EXCHANGE, UPDATED_EXCHANGE, DELETED_EXCHANGE);
         String uid = UUID.randomUUID().toString();
 
         // When Bob creates a contact in that address book
@@ -283,12 +283,25 @@ public abstract class ContactAMQPMessageContract {
         assertCardMessage(awaitMessagesOfCard(queue, uid, 2).get(1), cardMessage(subscribedPath, "principals/users/" + bob.id(),
             vcard(uid, "John Doe"), tokenAfterCreation, etag).put("sourcePath", sourcePath));
 
+        // When Bob updates that contact, the source revision changes
+        cardDavClient.upsertContact(bob, "contacts", uid, vcard(uid, "John Doe Updated"));
+        long tokenAfterUpdate = syncToken(bob, bob.id(), "contacts");
+        String updatedEtag = etag(bob, bob.id(), "contacts", uid);
+
+        // Then Alice's notification carries the updated card and the source's new token and ETag
+        assertThat(tokenAfterUpdate).isGreaterThan(tokenAfterCreation);
+        assertThat(updatedEtag).isNotEqualTo(etag);
+        assertCardMessage(awaitMessagesOfCard(queue, uid, 4).get(3), cardMessage(subscribedPath, "principals/users/" + bob.id(),
+            vcard(uid, "John Doe Updated"), tokenAfterUpdate, updatedEtag).put("sourcePath", sourcePath));
+
         // When Bob deletes that contact
         cardDavClient.deleteContact(bob, "contacts", uid);
 
-        // Then the last of the three deleted messages, the one for Alice, carries the sync token of the source address book following the deletion, and the etag of the deleted card
-        assertCardMessage(awaitMessagesOfCard(queue, uid, 5).get(4),
-            revisionMessage(subscribedPath, syncToken(bob, bob.id(), "contacts"), etag).put("sourcePath", sourcePath));
+        // Then Alice's deletion notification carries the new source token and the last stored ETag
+        long tokenAfterDeletion = syncToken(bob, bob.id(), "contacts");
+        assertThat(tokenAfterDeletion).isGreaterThan(tokenAfterUpdate);
+        assertCardMessage(awaitMessagesOfCard(queue, uid, 7).get(6),
+            revisionMessage(subscribedPath, tokenAfterDeletion, updatedEtag).put("sourcePath", sourcePath));
     }
 
     @Test
