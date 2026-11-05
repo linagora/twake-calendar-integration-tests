@@ -18,9 +18,12 @@
 
 package com.linagora.dav.contracts.cal;
 
+import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
+import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -31,6 +34,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -40,6 +45,7 @@ import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaasUser;
 
+import io.restassured.RestAssured;
 import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class SearchAMQPMessageContract {
@@ -52,6 +58,8 @@ public abstract class SearchAMQPMessageContract {
 
     @BeforeEach
     void setUp() {
+        RestAssured.reset();
+        RestAssured.requestSpecification = dockerExtension().davRequestSpecification();
         calDavClient = new CalDavClient(dockerExtension().davHttpClient());
     }
 
@@ -786,59 +794,83 @@ public abstract class SearchAMQPMessageContract {
             .replace("{dtend}", dtend);
     }
 
-    @Test
-    protected void itipRequestShouldResultInEventInDefaultCalendar() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"event-", "../external/meeting-"})
+    protected void itipRequestShouldPublishStoredEventPathInDefaultCalendar(String uidPrefix) throws Exception {
+        // Given Cedric sends Bob an invitation whose UID may contain slashes.
         OpenPaasUser bob = dockerExtension().newTestUser();
         OpenPaasUser cedric = dockerExtension().newTestUser();
+        String uid = uidPrefix + UUID.randomUUID();
+        BlockingQueue<JsonNode> messages = listenToFreshQueue("itip-stored-path-", "calendar:event:request");
 
-        // GIVEN Cedric and Bob
-        String eventUid = "event-" + UUID.randomUUID();
+        // When the invitation is delivered to Bob's default calendar.
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()),
+            invitationRequest(uid, cedric, bob, "NEEDS-ACTION")).block();
+
+        // Then the realtime notification points to the actual stored event and contains its contents.
+        String expectedPrefix = "/calendars/" + bob.id() + "/" + bob.id() + "/";
+        awaitAtMost.untilAsserted(() -> assertThat(messages).singleElement().satisfies(message -> {
+            String eventPath = message.path("eventPath").asText();
+            String rawEvent = message.path("rawEvent").asText();
+            assertThat(eventPath).startsWith(expectedPrefix).endsWith(".ics");
+            assertThat(rawEvent).contains("UID:" + uid);
+            String stored = given()
+                .header("Authorization", bob.impersonatedBasicAuth())
+            .when()
+                .get(eventPath)
+            .then()
+                .statusCode(SC_OK)
+                .extract().asString();
+            assertThatCalendar(rawEvent).isEqualTo(stored);
+        }));
+    }
+
+    @Test
+    protected void itipRequestShouldNotPublishAnEventThatWasNotStored() throws Exception {
+        // Given an invitation update for Bob who already declined and has no local copy.
+        OpenPaasUser bob = dockerExtension().newTestUser();
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        String uid = UUID.randomUUID().toString();
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:request", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
+        BlockingQueue<JsonNode> messages = listenToQueue();
+
+        // When delivery processes the update without recreating the declined event.
+        calDavClient.sendITIPRequest(bob, URI.create("/calendars/" + bob.id()),
+            invitationRequest(uid, cedric, bob, "DECLINED")).block();
+
+        // Then no notification announces an event path that does not exist.
+        assertThat(calDavClient.findFirstEventId(bob)).isEmpty();
+        awaitAtMost.during(1, TimeUnit.SECONDS).untilAsserted(() -> assertThat(messages).isEmpty());
+    }
+
+    private String invitationRequest(String uid, OpenPaasUser organizer, OpenPaasUser attendee, String partStat) {
         String ics = """
             BEGIN:VCALENDAR
             VERSION:2.0
-            PRODID:-//Example Corp.//CalDAV Client//EN
-            CALSCALE:GREGORIAN
+            PRODID:-//Twake Calendar//Integration tests//EN
             METHOD:REQUEST
             BEGIN:VEVENT
-            UID:%s
-            DTSTAMP:20251003T080000Z
-            DTSTART:20251005T090000Z
-            DTEND:20251005T100000Z
-            SUMMARY:Meeting from Cedric
-            ORGANIZER;CN=Cedric:mailto:%s
-            ATTENDEE;CN=Bob;PARTSTAT=NEEDS-ACTION:mailto:%s
+            UID:{uid}
+            DTSTAMP:20350101T080000Z
+            DTSTART:20350105T090000Z
+            DTEND:20350105T100000Z
+            SUMMARY:Meeting invitation
+            ORGANIZER:mailto:{organizer}
+            ATTENDEE;PARTSTAT={partStat}:mailto:{attendee}
             END:VEVENT
             END:VCALENDAR
-            """.formatted(eventUid, cedric.email(), bob.email());
-
-        // WHEN sends an ITIP REQUEST to Bob
-        String bobCalendarUri = "/calendars/" + bob.id();
-        String body = ITIPJsonBodyRequest.builder()
+            """.replace("{uid}", uid)
+            .replace("{organizer}", organizer.email())
+            .replace("{attendee}", attendee.email())
+            .replace("{partStat}", partStat);
+        return ITIPJsonBodyRequest.builder()
             .ical(ics)
-            .sender(cedric.email())
-            .recipient(bob.email())
-            .uid(eventUid)
+            .sender(organizer.email())
+            .recipient(attendee.email())
+            .uid(uid)
             .method("REQUEST")
             .buildJson();
-
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
-        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
-        BlockingQueue<JsonNode> messages = listenToQueue();
-
-        calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), body).block();
-
-        String expectedPrefix = "/calendars/" + bob.id() + "/" + bob.id() + "/";
-
-        // THEN we have a search indexing message targeting Bob's default calendar.
-        awaitAtMost.untilAsserted(() ->
-            assertThat(messages)
-                .anySatisfy(message -> {
-                    String eventPath = message.path("eventPath").asText();
-                    assertThat(eventPath)
-                        .startsWith(expectedPrefix)
-                        .endsWith(".ics");
-                    assertThat(message.path("rawEvent").asText()).contains("UID:" + eventUid);
-                }));
     }
 
     @Test
