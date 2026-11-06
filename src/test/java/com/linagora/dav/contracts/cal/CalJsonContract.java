@@ -1499,13 +1499,13 @@ public abstract class CalJsonContract {
                                                 ],
                                                 [
                                                     "dtstart",
-                                                    {},
+                                                    {"tzid": "Europe/Paris"},
                                                     "date",
                                                     "2025-03-01"
                                                 ],
                                                 [
                                                     "dtend",
-                                                    {},
+                                                    {"tzid": "Europe/Paris"},
                                                     "date",
                                                     "2025-03-02"
                                                 ],
@@ -1649,13 +1649,13 @@ public abstract class CalJsonContract {
                                                 ],
                                                 [
                                                     "dtstart",
-                                                    {},
+                                                    {"tzid": "Europe/Paris"},
                                                     "date",
                                                     "2025-03-01"
                                                 ],
                                                 [
                                                     "dtend",
-                                                    {},
+                                                    {"tzid": "Europe/Paris"},
                                                     "date",
                                                     "2025-03-02"
                                                 ],
@@ -1913,13 +1913,13 @@ public abstract class CalJsonContract {
                                 ],
                                 [
                                     "dtstart",
-                                    {},
+                                    {"tzid": "Europe/Paris"},
                                     "date",
                                     "2025-03-01"
                                 ],
                                 [
                                     "dtend",
-                                    {},
+                                    {"tzid": "Europe/Paris"},
                                     "date",
                                     "2025-03-02"
                                 ],
