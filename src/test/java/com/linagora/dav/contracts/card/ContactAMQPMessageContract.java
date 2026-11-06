@@ -38,7 +38,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
@@ -237,7 +236,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletedMessageShouldCarryAHigherSyncTokenThanTheLastUpdateAndTheEtagOfTheDeletedCard() throws IOException {
         // Given an updated contact, and a queue listening to the deleted contacts
         OpenPaasUser user = dockerExtension().newTestUser();
@@ -260,7 +258,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void creatingAContactOfASubscribedAddressBookShouldPublishMessagesForTheSourceAndTheSubscriber() throws IOException {
         // Given Alice subscribes to the public address book of Bob, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -281,7 +278,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void updatingAContactOfASubscribedAddressBookShouldPublishMessagesForTheSourceAndTheSubscriber() throws IOException {
         // Given Alice subscribes to the public address book of Bob, which holds a contact, and a queue listening to the updated contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -308,7 +304,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactOfASubscribedAddressBookShouldPublishAFullMessageForTheSourceAndTheSubscriber() throws IOException {
         // Given Alice subscribes to the public address book of Bob, which holds a contact, and a queue listening to the deleted contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -333,7 +328,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void writingThroughAWritableSubscriptionShouldPublishMessagesForTheOtherSubscribers() throws IOException {
         // Given Alice and Carol subscribe to the address book Bob published with write access, and a queue listening to the contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -364,7 +358,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void creatingAContactThroughAWritableSubscriptionShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
         // Given Alice subscribes to the address book Bob published with write access, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -385,7 +378,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void updatingAContactThroughAWritableSubscriptionShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
         // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the updated contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -407,7 +399,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactThroughAWritableSubscriptionShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
         // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the deleted contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -430,7 +421,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void creatingAContactThroughADelegatedAddressBookShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book to Alice with write access, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -450,7 +440,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void updatingAContactThroughADelegatedAddressBookShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the updated contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -471,7 +460,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void writingThroughADelegatedAddressBookShouldPublishMessagesForTheOtherDelegates() throws IOException {
         // Given Bob delegates his address book to Alice and Carol with write access, and a queue listening to the contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -501,7 +489,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactThroughADelegatedAddressBookShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the deleted contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -523,7 +510,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void creatingAContactOfAWritableSubscribedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
         // Given Alice subscribes to the address book Bob published with write access, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -544,7 +530,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void updatingAContactOfAWritableSubscribedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheSubscription() throws IOException {
         // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the updated contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -566,7 +551,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactOfAWritableSubscribedAddressBookThroughTheSourcePathShouldPublishFullMessagesForTheSourceAndTheSubscription() throws IOException {
         // Given Alice subscribes to the address book Bob published with write access, which holds a contact, and a queue listening to the deleted contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -589,7 +573,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void creatingAContactOfADelegatedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book to Alice with write access, and a queue listening to the created contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -609,7 +592,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void updatingAContactOfADelegatedAddressBookThroughTheSourcePathShouldPublishMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the updated contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -630,7 +612,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactOfADelegatedAddressBookThroughTheSourcePathShouldPublishFullMessagesForTheSourceAndTheDelegatedAddressBook() throws IOException {
         // Given Bob delegates his address book, which holds a contact, to Alice with write access, and a queue listening to the deleted contacts
         OpenPaasUser bob = dockerExtension().newTestUser();
@@ -698,7 +679,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactOfADomainAddressBookShouldPublishAMessageOwnedByTheDomain() throws IOException {
         // Given a domain address book holding a contact, and a queue listening to the deleted contacts
         String domainName = "domain-" + UUID.randomUUID() + ".test";
@@ -726,7 +706,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void deletingAContactOfADomainMembersAddressBookShouldPublishAMessageOwnedByTheDomain() throws IOException {
         // Given a domain members address book holding a contact, and a queue listening to the deleted contacts
         String domainName = "domain-" + UUID.randomUUID() + ".test";
@@ -749,7 +728,6 @@ public abstract class ContactAMQPMessageContract {
     }
 
     @Test
-    @Disabled("wait to new image")
     void movingAContactToAnotherAddressBookShouldPublishADeletedMessageForTheSource() throws IOException {
         // Given a contact in the collected address book, and a queue listening to the deleted contacts
         OpenPaasUser user = dockerExtension().newTestUser();
