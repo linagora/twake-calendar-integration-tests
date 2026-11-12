@@ -149,7 +149,8 @@ public abstract class ContactAMQPMessageContract {
             {
               "path" : "addressbooks/{userId}/collected/{vcardUid}.vcf",
               "owner" : "principals/users/{userId}",
-              "carddata" : "BEGIN:VCARD\\nVERSION:3.0\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\nUID:{vcardUid}\\nFN:John Doe Updated\\nEMAIL;TYPE=Work:john.doe@example.com\\nEND:VCARD\\n"
+              "carddata" : "BEGIN:VCARD\\nVERSION:3.0\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\nUID:{vcardUid}\\nFN:John Doe Updated\\nEMAIL;TYPE=Work:john.doe@example.com\\nEND:VCARD\\n",
+              "oldcarddata" : "BEGIN:VCARD\\nVERSION:3.0\\nPRODID:-//Sabre//Sabre VObject 4.1.3//EN\\nUID:{vcardUid}\\nFN:John Doe\\nEMAIL;TYPE=Work:john.doe@example.com\\nEND:VCARD\\n"
             }
             """.replace("{userId}", testUser.id())
             .replace("{vcardUid}", vcardUid);
@@ -232,7 +233,8 @@ public abstract class ContactAMQPMessageContract {
             "principals/users/" + user.id(),
             vcard(uid, "John Doe Updated"),
             tokenAfterUpdate,
-            etag(user, user.id(), "collected", uid)));
+            etag(user, user.id(), "collected", uid))
+            .put("oldcarddata", new String(vcard(uid, "John Doe"), StandardCharsets.UTF_8)));
     }
 
     @Test
@@ -300,7 +302,8 @@ public abstract class ContactAMQPMessageContract {
         assertThat(tokenAfterUpdate).isGreaterThan(tokenAfterCreation);
         assertThat(etagAfterUpdate).isNotEqualTo(etagAfterCreation);
         assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + bob.id(),
-            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate));
+            withOldCardData(vcard(uid, "John Doe"),
+                sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate)));
     }
 
     @Test
@@ -353,7 +356,8 @@ public abstract class ContactAMQPMessageContract {
         // Then Carol gets a message on her path for each of the three writes, with Carol as owner and Alice as connected user
         assertExactMessages(awaitMessagesOnPath(queue, "addressbooks/" + carol.id() + "/" + carolBook + "/" + uid + ".vcf", 3), "principals/users/" + alice.id(),
             mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe"), tokenAfterCreation, etagAfterCreation),
-            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate)
+                .put("oldcarddata", new String(vcard(uid, "John Doe"), StandardCharsets.UTF_8)),
             mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), syncToken(bob, bob.id(), "contacts"), etagAfterUpdate));
     }
 
@@ -394,8 +398,9 @@ public abstract class ContactAMQPMessageContract {
 
         // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner
         assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
-            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"),
-                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+            withOldCardData(vcard(uid, "John Doe"),
+                sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"),
+                    syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid))));
     }
 
     @Test
@@ -455,8 +460,9 @@ public abstract class ContactAMQPMessageContract {
 
         // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner
         assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
-            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe Updated"),
-                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+            withOldCardData(vcard(uid, "John Doe"),
+                sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe Updated"),
+                    syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid))));
     }
 
     @Test
@@ -484,7 +490,8 @@ public abstract class ContactAMQPMessageContract {
         // Then Carol gets a message on her path for each of the three writes, with Carol as owner and Alice as connected user
         assertExactMessages(awaitMessagesOnPath(queue, "addressbooks/" + carol.id() + "/" + carolBook + "/" + uid + ".vcf", 3), "principals/users/" + alice.id(),
             mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe"), tokenAfterCreation, etagAfterCreation),
-            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate),
+            mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), tokenAfterUpdate, etagAfterUpdate)
+                .put("oldcarddata", new String(vcard(uid, "John Doe"), StandardCharsets.UTF_8)),
             mirrorMessage(bob, carol, carolBook, uid, vcard(uid, "John Doe Updated"), syncToken(bob, bob.id(), "contacts"), etagAfterUpdate));
     }
 
@@ -546,8 +553,9 @@ public abstract class ContactAMQPMessageContract {
 
         // Then one message has the source path with Bob as owner, and one the path of the subscription with Alice as owner, and Alice is the connected user of both
         assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
-            sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"),
-                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+            withOldCardData(vcard(uid, "John Doe"),
+                sourceAndMirrorMessages(bob, alice, subscribedBook, uid, vcard(uid, "John Doe Updated"),
+                    syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid))));
     }
 
     @Test
@@ -607,8 +615,9 @@ public abstract class ContactAMQPMessageContract {
 
         // Then one message has the source path with Bob as owner, and one the path of Alice with Alice as owner, and Alice is the connected user of both
         assertExactMessages(awaitMessagesOfCard(queue, uid, 2), "principals/users/" + alice.id(),
-            sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe Updated"),
-                syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid)));
+            withOldCardData(vcard(uid, "John Doe"),
+                sourceAndMirrorMessages(bob, alice, delegatedBook, uid, vcard(uid, "John Doe Updated"),
+                    syncToken(bob, bob.id(), "contacts"), etag(bob, bob.id(), "contacts", uid))));
     }
 
     @Test
@@ -789,6 +798,13 @@ public abstract class ContactAMQPMessageContract {
             cardMessage("addressbooks/" + bob.id() + "/contacts/" + uid + ".vcf", "principals/users/" + bob.id(), vcard, syncToken, etag),
             mirrorMessage(bob, alice, mirrorBook, uid, vcard, syncToken, etag)
         };
+    }
+
+    private ObjectNode[] withOldCardData(byte[] oldVcard, ObjectNode... messages) {
+        for (ObjectNode message : messages) {
+            message.put("oldcarddata", new String(oldVcard, StandardCharsets.UTF_8));
+        }
+        return messages;
     }
 
     private ObjectNode mirrorMessage(OpenPaasUser bob, OpenPaasUser mirrorOwner, String mirrorBook, String uid, byte[] vcard, long syncToken, String etag) {
