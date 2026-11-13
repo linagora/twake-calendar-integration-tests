@@ -22,19 +22,23 @@ import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.TestUtil.awaitPresent;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
 import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
 import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
 
+import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -48,6 +52,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
@@ -56,6 +62,7 @@ import com.linagora.dav.CalendarUtil.CalendarExtractor;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.JsonCalendarEventData;
 import com.linagora.dav.OpenPaasUser;
+import com.linagora.dav.XMLUtil;
 
 import io.restassured.RestAssured;
 import io.restassured.response.Response;
@@ -190,6 +197,101 @@ public abstract class SchedulingContract {
         // And scheduling is bypassed: Bob never receives a copy
         calmlyAwait.during(5, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(calDavClient.findFirstEventId(bob)).isEmpty());
+    }
+
+    @ParameterizedTest(name = "forged REQUEST must preserve the {0} copy")
+    @ValueSource(strings = {"organizer", "attendee"})
+    protected void requestFromUnrelatedUserListingStoredOrganizerAsAttendeeShouldNotOverwritePersonalEvent(String victimRole) throws IOException {
+        RestAssured.requestSpecification.contentType("text/calendar; charset=utf-8")
+            .accept("text/calendar");
+        OpenPaasUser organizer = bob;
+        OpenPaasUser attendee = alice;
+        OpenPaasUser attacker = cedric;
+        String queueName = "organizer-handover-security-" + UUID.randomUUID();
+        extension().getChannel().queueDeclare(queueName, false, true, true, null);
+        extension().getChannel().queueBind(queueName, "calendar:event:notificationEmail:send", "");
+        BlockingQueue<JsonNode> notifications = AmqpTestHelper.listenToQueue(extension().getChannel(), queueName);
+
+        // Given a real invitation, with no calendar shared with the unrelated attacker
+        String eventUid = "forged-handover-" + UUID.randomUUID();
+        String original = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20351003T080000Z
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            SEQUENCE:0
+            SUMMARY:Board meeting
+            LOCATION:Original meeting room
+            DESCRIPTION:Original agenda
+            ORGANIZER:mailto:{organizer}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{attendee}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", eventUid)
+            .replace("{organizer}", organizer.email())
+            .replace("{attendee}", attendee.email());
+        calDavClient.upsertCalendarEvent(organizer, eventUid, original);
+        URI attendeeEventUri = awaitCalendarObjectUriByEventUid(
+            attendee, CalendarURL.from(attendee.id()), eventUid);
+        awaitNotification(notifications, organizer, attendee, eventUid);
+
+        OpenPaasUser victim = victimRole.equals("organizer") ? organizer : attendee;
+        URI victimEventUri = victimRole.equals("organizer")
+            ? CalendarURL.from(organizer.id()).eventHref(eventUid) : attendeeEventUri;
+        String before = calDavClient.getCalendarEvent(victim, victimEventUri);
+        List<String> inboxBefore = inboxEntries(victim);
+        String forged = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20351004T080000Z
+            DTSTART:20351006T140000Z
+            DTEND:20351006T150000Z
+            SEQUENCE:1
+            SUMMARY:Forged organizer handover
+            LOCATION:Attacker meeting room
+            DESCRIPTION:Attacker agenda
+            ORGANIZER:mailto:{attacker}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{organizer}
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:{attendee}
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", eventUid)
+            .replace("{attacker}", attacker.email())
+            .replace("{organizer}", organizer.email())
+            .replace("{attendee}", attendee.email());
+
+        // The attacker's principal cannot write directly to the victim's calendar
+        given()
+            .header("Authorization", attacker.impersonatedBasicAuth())
+            .body(forged)
+        .when()
+            .put(victimEventUri.toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // When the attacker PUTs the known UID into their own personal calendar
+        given()
+            .header("Authorization", attacker.impersonatedBasicAuth())
+            .body(forged)
+        .when()
+            .put(CalendarURL.from(attacker.id()).eventHref(eventUid).toString())
+        .then()
+            .statusCode(SC_CREATED);
+
+        // Notifications are published after POST /itip completes, so this waits for actual delivery.
+        // The former organizer is an ATTENDEE, exercising the sabre-vobject handover exception (#812).
+        awaitNotification(notifications, attacker, victim, eventUid);
+
+        // Then neither the stored event nor the scheduling inbox may be changed by the forged REQUEST
+        assertThatCalendar(calDavClient.getCalendarEvent(victim, victimEventUri)).isEqualTo(before);
+        assertThat(inboxEntries(victim)).containsExactlyInAnyOrderElementsOf(inboxBefore);
     }
 
     @Test
@@ -5037,6 +5139,34 @@ public abstract class SchedulingContract {
         assertThat(calendarObjectUrisByEventUid(alice, CalendarURL.from(alice.id()), eventUid))
             .as("Alice's declined event must not reappear when another attendee updates partstat (issue-347)")
             .hasSize(0);
+    }
+
+    private void awaitNotification(BlockingQueue<JsonNode> notifications, OpenPaasUser sender, OpenPaasUser recipient, String eventUid) {
+        awaitAtMost.untilAsserted(() -> assertThat(notifications).anySatisfy(message -> {
+            assertThat(message.path("method").asText()).isEqualTo("REQUEST");
+            assertThat(message.path("senderEmail").asText()).isEqualTo(sender.email());
+            assertThat(message.path("recipientEmail").asText()).isEqualTo(recipient.email());
+            assertThat(message.path("event").asText()).contains("UID:" + eventUid);
+        }));
+    }
+
+    private List<String> inboxEntries(OpenPaasUser user) {
+        String response = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .contentType("application/xml")
+            .accept("application/xml")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop><d:getetag/></d:prop>
+                </d:propfind>
+                """)
+        .when()
+            .request("PROPFIND", "/calendars/" + user.id() + "/inbox/")
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asString();
+        return XMLUtil.extractCalendarHrefsFromPropfind(response);
     }
 
     private String awaitFirstEventId(OpenPaasUser user) {
