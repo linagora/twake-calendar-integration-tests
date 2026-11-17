@@ -72,6 +72,15 @@ public class DockerTwakeCalendarSetup {
     }
 
     public DockerTwakeCalendarSetup(String sabreVersion, Map<String, ?> sabreSettings) {
+        this(sabreVersion, sabreSettings, Map.of());
+    }
+
+    /**
+     * @param sabreEnvironment variables of the sabre container that its start script reads
+     *                         (the nginx configuration), as opposed to the settings of config.json.
+     *                         Only the ones declared in docker-twake-calendar-setup.yml reach it.
+     */
+    public DockerTwakeCalendarSetup(String sabreVersion, Map<String, ?> sabreSettings, Map<String, String> sabreEnvironment) {
         try {
             environment = new ComposeContainer(
                 new File(DockerTwakeCalendarSetup.class.getResource("/docker-twake-calendar-setup.yml").toURI()))
@@ -89,6 +98,7 @@ public class DockerTwakeCalendarSetup {
                 .withEnv("SABRE_CONFIG_JSON", createSabreConfig(sabreSettings))
                 .withLogConsumer(DockerService.SABRE_DAV.serviceName(), log -> System.out.print("[esn-sabre] " + log.getUtf8String()))
                 .withLogConsumer(DockerService.CALENDAR_SIDE.serviceName(), log -> System.out.print("[twake-calendar-side-service] " + log.getUtf8String()));
+            sabreEnvironment.forEach(environment::withEnv);
         } catch (URISyntaxException e) {
             throw new RuntimeException("Failed to initialize Twake Calendar Setup from docker compose.", e);
         }

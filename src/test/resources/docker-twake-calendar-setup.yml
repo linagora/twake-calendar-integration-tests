@@ -72,5 +72,10 @@ services:
       - SABRE_CONFIG_JSON=${SABRE_CONFIG_JSON}
       - OPENPASS_BASIC_AUTH=YWRtaW5Ab3Blbi1wYWFzLm9yZzpzZWNyZXQ=
       - LDAP_BASE_WITH_MAIL=ou=users,dc=open-paas.org,dc=lng
+      # Kerberos, off unless DockerTwakeCalendarSetup sets them (see SabreV4KerberosTest)
+      - KERBEROS_ENABLED=${KERBEROS_ENABLED:-false}
+      - KERBEROS_SERVICE_PRINCIPAL=${KERBEROS_SERVICE_PRINCIPAL:-}
+      - KERBEROS_REALM_DOMAINS=${KERBEROS_REALM_DOMAINS:-}
+      - KERBEROS_KEYTAB_BASE64=${KERBEROS_KEYTAB_BASE64:-}
     networks:
       - emaily

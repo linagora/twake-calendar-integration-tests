@@ -117,6 +117,13 @@
             <version>4.5.0</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <!-- Embedded KDC issuing the tickets of SabreV4KerberosTest -->
+            <groupId>org.apache.kerby</groupId>
+            <artifactId>kerb-simplekdc</artifactId>
+            <version>2.1.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

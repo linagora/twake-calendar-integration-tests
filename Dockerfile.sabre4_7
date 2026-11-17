@@ -8,3 +8,7 @@ COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /var/www/
 RUN grep -q 'SABRE_CONFIG_JSON' /var/www/scripts/start.sh || \
     sed -i 's@^sh /var/www/scripts/generate_config.sh > /var/www/config.json$@if [ -n "${SABRE_CONFIG_JSON:-}" ]; then printf "%s" "$SABRE_CONFIG_JSON" > /var/www/config.json; else sh /var/www/scripts/generate_config.sh > /var/www/config.json; fi@' /var/www/scripts/start.sh
 RUN grep -q 'SABRE_CONFIG_JSON' /var/www/scripts/start.sh
+
+# Installs the Kerberos keytab passed as KERBEROS_KEYTAB_BASE64, then runs start.sh.
+COPY src/test/resources/sabre-it-start.sh /var/www/scripts/sabre-it-start.sh
+CMD ["bash", "/var/www/scripts/sabre-it-start.sh"]
