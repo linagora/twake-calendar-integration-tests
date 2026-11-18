@@ -33,6 +33,9 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.xmlunit.assertj3.XmlAssert;
 
+import com.linagora.dav.CalDavClient;
+import com.linagora.dav.CalDavClient.DelegationRight;
+import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtensionV4_7;
 import com.linagora.dav.KerberosKdc;
 import com.linagora.dav.OpenPaasUser;
@@ -60,6 +63,9 @@ public class SabreV4KerberosTest {
 
     private OpenPaasUser user;
     private String principal;
+    // Another user, without ticket: the owner of the calendars the user tries to access
+    private OpenPaasUser alice;
+    private CalDavClient calDavClient;
 
     @BeforeAll
     static void startKdcAndSabre() throws Exception {
@@ -91,6 +97,9 @@ public class SabreV4KerberosTest {
         user = extension.newTestUser();
         principal = StringUtils.substringBefore(user.email(), "@");
         kdc.createPrincipal(principal);
+
+        alice = extension.newTestUser();
+        calDavClient = new CalDavClient(extension.davHttpClient());
     }
 
     @Test
@@ -298,6 +307,170 @@ public class SabreV4KerberosTest {
         // Then Sabre ignores them: nginx sets the parameter, which no header can
         response.then()
             .statusCode(401);
+    }
+
+    @Test
+    void ticketShouldNotGiveAccessToThePrivateCalendarOfAnotherUser() throws Exception {
+        // Given an event in the private calendar of Alice
+        String uid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//Kerberos test//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20261117T090000Z
+            DTSTART:20261120T090000Z
+            DTEND:20261120T100000Z
+            SUMMARY:Alice only
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid).replace("\n", "\r\n");
+        calDavClient.updateCalendarAcl(alice, "");
+        calDavClient.upsertCalendarEvent(alice, uid, event);
+        String path = CalendarURL.from(alice.id()).eventHref(uid).toString();
+
+        // When the user reads, modifies and deletes it with tickets
+        Response read = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+        .when()
+            .get(path);
+        Response modification = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+            .contentType("text/calendar")
+            .body(event.replace("SUMMARY:Alice only", "SUMMARY:Modified with a ticket"))
+        .when()
+            .put(path);
+        Response deletion = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+        .when()
+            .delete(path);
+
+        // Then Sabre, not nginx: the tickets are valid, forbids each of them, and the
+        // event of Alice is left untouched
+        for (Response response : new Response[] {read, modification, deletion}) {
+            assertThat(response.statusCode()).isEqualTo(403);
+            XmlAssert.assertThat(response.asString())
+                .withNamespaceContext(Map.of("d", "DAV:", "s", "http://sabredav.org/ns"))
+                .valueByXPath("/d:error/s:exception").isEqualTo("Sabre\\DAVACL\\Exception\\NeedPrivileges");
+        }
+        assertThat(calDavClient.getCalendarEvent(alice, CalendarURL.from(alice.id()).eventHref(uid)))
+            .isEqualTo(event);
+    }
+
+    @Test
+    void ticketShouldOnlyReadACalendarSharedInReadOnly() throws Exception {
+        // Given an event in the private calendar of Alice, shared in read only with the user
+        String uid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//Kerberos test//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20261117T090000Z
+            DTSTART:20261120T090000Z
+            DTEND:20261120T100000Z
+            SUMMARY:Shared in read only
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid).replace("\n", "\r\n");
+        calDavClient.updateCalendarAcl(alice, "");
+        calDavClient.upsertCalendarEvent(alice, uid, event);
+        calDavClient.grantDelegation(alice, alice.id(), user, DelegationRight.READ);
+        String delegatedPath = calDavClient.findDelegatedCalendar(user, alice.id()).eventHref(uid).toString();
+
+        // When the user reads it, then modifies it, through the shared calendar with tickets
+        Response read = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+        .when()
+            .get(delegatedPath);
+        Response modification = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+            .contentType("text/calendar")
+            .body(event.replace("SUMMARY:Shared in read only", "SUMMARY:Modified with a ticket"))
+        .when()
+            .put(delegatedPath);
+
+        // Then the user reads the event but cannot modify it
+        assertThat(read.statusCode()).isEqualTo(200);
+        assertThat(read.asString()).isEqualTo(event);
+        assertThat(modification.statusCode()).isEqualTo(403);
+        XmlAssert.assertThat(modification.asString())
+            .withNamespaceContext(Map.of("d", "DAV:", "s", "http://sabredav.org/ns"))
+            .valueByXPath("/d:error/s:exception").isEqualTo("Sabre\\DAVACL\\Exception\\NeedPrivileges");
+        assertThat(calDavClient.getCalendarEvent(alice, CalendarURL.from(alice.id()).eventHref(uid)))
+            .isEqualTo(event);
+    }
+
+    @Test
+    void ticketShouldWriteACalendarSharedInReadWrite() throws Exception {
+        // Given the private calendar of Alice, shared in read write with the user
+        calDavClient.updateCalendarAcl(alice, "");
+        calDavClient.grantDelegation(alice, alice.id(), user, DelegationRight.READ_WRITE);
+        CalendarURL delegatedCalendar = calDavClient.findDelegatedCalendar(user, alice.id());
+        String uid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//Kerberos test//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20261117T090000Z
+            DTSTART:20261120T090000Z
+            DTEND:20261120T100000Z
+            SUMMARY:Created with a ticket
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid).replace("\n", "\r\n");
+
+        // When the user creates an event through the shared calendar with a ticket
+        Response creation = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+            .contentType("text/calendar")
+            .body(event)
+        .when()
+            .put(delegatedCalendar.eventHref(uid).toString());
+
+        // Then the event lands in the calendar of Alice
+        assertThat(creation.statusCode()).isEqualTo(201);
+        assertThat(calDavClient.getCalendarEvent(alice, CalendarURL.from(alice.id()).eventHref(uid)))
+            .isEqualTo(event);
+    }
+
+    @Test
+    void ticketShouldNotReadACalendarOnceItsShareIsRevoked() throws Exception {
+        // Given an event in the private calendar of Alice, shared with the user then revoked
+        String uid = UUID.randomUUID().toString();
+        String event = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Twake//Kerberos test//EN
+            BEGIN:VEVENT
+            UID:{uid}
+            DTSTAMP:20261117T090000Z
+            DTSTART:20261120T090000Z
+            DTEND:20261120T100000Z
+            SUMMARY:No longer shared
+            END:VEVENT
+            END:VCALENDAR
+            """.replace("{uid}", uid).replace("\n", "\r\n");
+        calDavClient.updateCalendarAcl(alice, "");
+        calDavClient.upsertCalendarEvent(alice, uid, event);
+        calDavClient.grantDelegation(alice, alice.id(), user, DelegationRight.READ_WRITE);
+        calDavClient.revokeDelegation(alice, alice.id(), user);
+
+        // When the user reads it with a ticket
+        Response read = given()
+            .header("Authorization", kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL))
+        .when()
+            .get(CalendarURL.from(alice.id()).eventHref(uid).toString());
+
+        // Then Sabre forbids it
+        assertThat(read.statusCode()).isEqualTo(403);
+        XmlAssert.assertThat(read.asString())
+            .withNamespaceContext(Map.of("d", "DAV:", "s", "http://sabredav.org/ns"))
+            .valueByXPath("/d:error/s:exception").isEqualTo("Sabre\\DAVACL\\Exception\\NeedPrivileges");
     }
 
     private static void assertSabreError(String responseBody, String exception, String message) {
