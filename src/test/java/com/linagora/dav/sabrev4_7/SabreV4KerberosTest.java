@@ -38,6 +38,7 @@ import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.DockerTwakeCalendarExtensionV4_7;
 import com.linagora.dav.KerberosKdc;
+import com.linagora.dav.LdapDirectory;
 import com.linagora.dav.OpenPaasUser;
 
 import io.restassured.RestAssured;
@@ -46,8 +47,9 @@ import io.restassured.response.Response;
 /**
  * Kerberos (SPNEGO) authentication, https://github.com/linagora/esn-sabre/issues/483.
  *
- * Tickets come from an embedded KDC, realm TWAKE.TEST, mapped to open-paas.org: the
- * principal "{local part}@TWAKE.TEST" authenticates the user "{local part}@open-paas.org".
+ * Tickets come from an embedded KDC, realm TWAKE.TEST, mapped to open-paas.org. Sabre has
+ * an LDAP directory: the principal "{name}@TWAKE.TEST" authenticates the user whose address
+ * is the mail of the directory entry "uid={name}", https://github.com/linagora/esn-sabre/issues/859.
  */
 
 public class SabreV4KerberosTest {
@@ -60,6 +62,7 @@ public class SabreV4KerberosTest {
 
     private static KerberosKdc kdc;
     private static DockerTwakeCalendarExtensionV4_7 extension;
+    private static LdapDirectory directory;
 
     private OpenPaasUser user;
     private String principal;
@@ -94,23 +97,28 @@ public class SabreV4KerberosTest {
             .contentType("application/xml");
         RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 
+        directory = LdapDirectory.of(extension.getDockerTwakeCalendarSetupSingleton());
+
+        // A principal named unlike the address of the user: only the directory links them
         user = extension.newTestUser();
-        principal = StringUtils.substringBefore(user.email(), "@");
+        principal = "krb_" + UUID.randomUUID();
         kdc.createPrincipal(principal);
+        directory.addPerson(LdapDirectory.USERS, principal, user.email());
 
         alice = extension.newTestUser();
         calDavClient = new CalDavClient(extension.davHttpClient());
     }
 
     @Test
-    void ticketShouldAuthenticateTheUserOfTheMappedDomain() throws Exception {
-        // Given a ticket of "{local part}@TWAKE.TEST", the realm mapped to open-paas.org
+    void ticketShouldAuthenticateTheUserOfItsDirectoryEntry() throws Exception {
+        // Given a ticket of "{name}@TWAKE.TEST", the realm mapped to open-paas.org, whose
+        // directory entry "uid={name}" has the address of the user as mail
         String ticket = kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
 
         // When it is sent to Sabre
         Response response = propfind(ticket);
 
-        // Then Sabre authenticates the user "{local part}@open-paas.org"
+        // Then Sabre authenticates the user
         String responseBody = response.then()
             .statusCode(207)
             .extract().asString();
@@ -253,9 +261,10 @@ public class SabreV4KerberosTest {
 
     @Test
     void principalWithoutUserShouldBeForbidden() throws Exception {
-        // Given a valid ticket of a principal matching no user
+        // Given a valid ticket of a principal whose directory entry has the mail of no user
         String unknown = "unknown-" + UUID.randomUUID();
         kdc.createPrincipal(unknown);
+        directory.addPerson(LdapDirectory.USERS, unknown, unknown + "@open-paas.org");
         String ticket = kdc.negotiateHeader(unknown, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
 
         // When it is sent to Sabre
@@ -307,6 +316,123 @@ public class SabreV4KerberosTest {
         // Then Sabre ignores them: nginx sets the parameter, which no header can
         response.then()
             .statusCode(401);
+    }
+
+    @Test
+    void principalWithoutDirectoryEntryShouldBeForbidden() throws Exception {
+        // Given a valid ticket of a principal named after the local part of the address of
+        // the user, but without directory entry
+        String localPart = StringUtils.substringBefore(user.email(), "@");
+        kdc.createPrincipal(localPart);
+        String ticket = kdc.negotiateHeader(localPart, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
+
+        // When it is sent to Sabre
+        Response response = propfind(ticket);
+
+        // Then Sabre forbids it: the address is never guessed from the name of the principal
+        String responseBody = response.then()
+            .statusCode(403)
+            .extract().asString();
+
+        assertSabreError(responseBody, "Sabre\\DAV\\Exception\\Forbidden",
+            "checkKerberos: Unable to find " + localPart + "@" + KerberosKdc.REALM + " which is valid for auth");
+    }
+
+    @Test
+    void principalNamedAfterAnotherUserShouldAuthenticateTheUserOfItsDirectoryEntry() throws Exception {
+        // Given a valid ticket of a principal named after the local part of the address of
+        // Alice, whose directory entry has the address of the user as mail
+        String aliceLocalPart = StringUtils.substringBefore(alice.email(), "@");
+        kdc.createPrincipal(aliceLocalPart);
+        directory.addPerson(LdapDirectory.USERS, aliceLocalPart, user.email());
+        String ticket = kdc.negotiateHeader(aliceLocalPart, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
+
+        // When it is sent to Sabre
+        Response response = propfind(ticket);
+
+        // Then Sabre authenticates the user, not Alice
+        String responseBody = response.then()
+            .statusCode(207)
+            .extract().asString();
+
+        XmlAssert.assertThat(responseBody)
+            .and("""
+                <?xml version="1.0"?>
+                <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:response>
+                    <d:href>/</d:href>
+                    <d:propstat>
+                      <d:prop>
+                        <d:current-user-principal>
+                          <d:href>/principals/users/{userId}/</d:href>
+                        </d:current-user-principal>
+                      </d:prop>
+                      <d:status>HTTP/1.1 200 OK</d:status>
+                    </d:propstat>
+                  </d:response>
+                </d:multistatus>
+                """
+                .replace("{userId}", user.id()))
+            .ignoreWhitespace()
+            .ignoreChildNodesOrder()
+            .areSimilar();
+    }
+
+    @Test
+    void principalWithSeveralDirectoryEntriesShouldBeForbidden() throws Exception {
+        // Given a valid ticket of the principal, which has a second directory entry
+        String otherUnit = directory.addOrganizationalUnit(LdapDirectory.USERS, "kerberos-" + UUID.randomUUID());
+        directory.addPerson(otherUnit, principal, alice.email());
+        String ticket = kdc.negotiateHeader(principal, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
+
+        // When it is sent to Sabre
+        Response response = propfind(ticket);
+
+        // Then Sabre forbids it rather than picking one of them
+        String responseBody = response.then()
+            .statusCode(403)
+            .extract().asString();
+
+        assertSabreError(responseBody, "Sabre\\DAV\\Exception\\Forbidden", "checkKerberos: no unique directory entry");
+    }
+
+    @Test
+    void principalWhoseMailIsOutsideTheMappedDomainShouldBeForbidden() throws Exception {
+        // Given a valid ticket of a principal whose directory entry has a mail of another domain
+        String outsider = "krb_" + UUID.randomUUID();
+        kdc.createPrincipal(outsider);
+        directory.addPerson(LdapDirectory.USERS, outsider, outsider + "@other.org");
+        String ticket = kdc.negotiateHeader(outsider, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
+
+        // When it is sent to Sabre
+        Response response = propfind(ticket);
+
+        // Then Sabre forbids it: TWAKE.TEST is only mapped to open-paas.org
+        String responseBody = response.then()
+            .statusCode(403)
+            .extract().asString();
+
+        assertSabreError(responseBody, "Sabre\\DAV\\Exception\\Forbidden", "checkKerberos: mail outside the realm domain");
+    }
+
+    @Test
+    void principalNameNotInLowerCaseShouldBeForbidden() throws Exception {
+        // Given a valid ticket of a principal whose name is not in lower case, with a directory
+        // entry: "uid" matches ignoring case, so "Krb_x" and "krb_x" would reach the same user
+        String mixedCase = "Krb_" + UUID.randomUUID();
+        kdc.createPrincipal(mixedCase);
+        directory.addPerson(LdapDirectory.USERS, mixedCase, user.email());
+        String ticket = kdc.negotiateHeader(mixedCase, KerberosKdc.SABRE_SERVICE_PRINCIPAL);
+
+        // When it is sent to Sabre
+        Response response = propfind(ticket);
+
+        // Then Sabre forbids it
+        String responseBody = response.then()
+            .statusCode(403)
+            .extract().asString();
+
+        assertSabreError(responseBody, "Sabre\\DAV\\Exception\\Forbidden", "checkKerberos: principal name not lower case");
     }
 
     @Test
