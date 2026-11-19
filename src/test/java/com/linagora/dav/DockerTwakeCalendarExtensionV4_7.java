@@ -53,6 +53,10 @@ public class DockerTwakeCalendarExtensionV4_7 extends DockerTwakeCalendarExtensi
         return new DockerTwakeCalendarExtensionV4_7(new DockerTwakeCalendarSetup(SABRE_V4_7, settings));
     }
 
+    public static DockerTwakeCalendarExtensionV4_7 withSabreEnvironment(Map<String, String> environment) {
+        return new DockerTwakeCalendarExtensionV4_7(new DockerTwakeCalendarSetup(SABRE_V4_7, Map.of(), environment));
+    }
+
     private DockerTwakeCalendarExtensionV4_7(DockerTwakeCalendarSetup setup) {
         dockerTwakeCalendarSetup = setup;
         dockerTwakeCalendarSetup.start();
