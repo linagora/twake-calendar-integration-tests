@@ -2128,16 +2128,17 @@ public abstract class CalJsonContract {
         .then()
             .extract().asString();
 
-        // One busy period per occurrence of the window, all carrying the uid of
-        // the master event: 2030-04-12 as scheduled, 2030-04-13 skipped by the
+        // One busy period per occurrence of the window, none exposing the uid of
+        // the event (https://github.com/linagora/esn-sabre/issues/555):
+        // 2030-04-12 as scheduled, 2030-04-13 skipped by the
         // EXDATE and 2030-04-14 at the time of its override.
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
             .isEqualTo(String.format("""
                 {"start":"20300412T000000","end":"20300415T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
-                    {"uid":"%s","start":"20300412T030000Z","end":"20300412T040000Z"},
-                    {"uid":"%s","start":"20300414T080000Z","end":"20300414T090000Z"}]}]}]}
-                """, alice.id(), alice.id(), eventUid, eventUid));
+                    {"start":"20300412T030000Z","end":"20300412T040000Z"},
+                    {"start":"20300414T080000Z","end":"20300414T090000Z"}]}]}]}
+                """, alice.id(), alice.id()));
     }
 
     // https://github.com/linagora/esn-sabre/issues/466
@@ -2191,7 +2192,7 @@ public abstract class CalJsonContract {
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+            .isEqualTo(expectedSingleBusyPeriod(alice));
     }
 
     // https://github.com/linagora/esn-sabre/issues/466
@@ -2216,7 +2217,7 @@ public abstract class CalJsonContract {
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+            .isEqualTo(expectedSingleBusyPeriod(alice));
     }
 
     // https://github.com/linagora/esn-sabre/issues/466
@@ -2241,7 +2242,7 @@ public abstract class CalJsonContract {
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+            .isEqualTo(expectedSingleBusyPeriod(alice));
     }
 
     // https://github.com/linagora/esn-sabre/issues/466
@@ -2268,7 +2269,7 @@ public abstract class CalJsonContract {
 
         assertThatJson(body)
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
-            .isEqualTo(expectedSingleBusyPeriod(alice, eventUid));
+            .isEqualTo(expectedSingleBusyPeriod(alice));
     }
 
     // https://github.com/linagora/esn-sabre/issues/466
@@ -2305,8 +2306,8 @@ public abstract class CalJsonContract {
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
             .isEqualTo(String.format("""
                 {"start":"20300411T000000","end":"20300412T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
-                    {"uid":"%s","start":"20300411T030000Z","end":"20300411T040000Z"}]}]}]}
-                """, teamCalendar.id(), teamCalendar.id(), eventUid));
+                    {"start":"20300411T030000Z","end":"20300411T040000Z"}]}]}]}
+                """, teamCalendar.id(), teamCalendar.id()));
     }
 
     // https://github.com/linagora/esn-sabre/issues/466
@@ -2370,9 +2371,9 @@ public abstract class CalJsonContract {
             .when(Option.IGNORING_EXTRA_ARRAY_ITEMS)
             .isEqualTo(String.format("""
                 {"start":"20300411T000000","end":"20300414T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
-                    {"uid":"%s","start":"20300411T030000Z","end":"20300411T040000Z"},
-                    {"uid":"%s","start":"20300413T030000Z","end":"20300413T040000Z"}]}]}]}
-                """, alice.id(), alice.id(), eventUid, eventUid));
+                    {"start":"20300411T030000Z","end":"20300411T040000Z"},
+                    {"start":"20300413T030000Z","end":"20300413T040000Z"}]}]}]}
+                """, alice.id(), alice.id()));
     }
 
     private String postFreeBusy(OpenPaasUser requester, String userId) {
@@ -2394,11 +2395,11 @@ public abstract class CalJsonContract {
             .extract().asString();
     }
 
-    private String expectedSingleBusyPeriod(OpenPaasUser user, String eventUid) {
+    private String expectedSingleBusyPeriod(OpenPaasUser user) {
         return String.format("""
             {"start":"20300411T000000","end":"20300412T000000","users":[{"id":"%s","calendars":[{"id":"%s","busy":[
-                {"uid":"%s","start":"20300411T030000Z","end":"20300411T040000Z"}]}]}]}
-            """, user.id(), user.id(), eventUid);
+                {"start":"20300411T030000Z","end":"20300411T040000Z"}]}]}]}
+            """, user.id(), user.id());
     }
 
     @Test
