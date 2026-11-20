@@ -22,11 +22,14 @@ import static com.linagora.dav.contracts.card.CardDavContract.STRING;
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.with;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_NOT_MODIFIED;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.startsWith;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -610,6 +613,122 @@ public abstract class CardJsonContract {
                           "{DAV:}share-access": 1,
                           "{http:\\/\\/open-paas.org\\/contacts}numberOfContacts": 1
                       }""", testUser.id(), testUser.id(), testUser.id()));
+    }
+
+    @Test
+    void jsonNotModifiedShouldPreserveTheETagOfTheCachedRepresentation() {
+        // Given an existing JSON representation and the validator returned with it.
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String path = "/addressbooks/" + user.id() + "/contacts/cache.vcf";
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body(STRING.replace("\n", "\r\n"))
+        .when()
+            .put(path)
+        .then()
+            .statusCode(SC_CREATED);
+
+        String etag = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/vcard+json")
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("application/vcard+json"))
+            .extract().header("ETag");
+        assertThat(etag).isNotBlank();
+
+        // When revalidating that same representation, then 304 must retain its ETag.
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/vcard+json")
+            .header("If-None-Match", etag)
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_NOT_MODIFIED)
+            .header("ETag", is(etag));
+    }
+
+    @Test
+    void staleLegacyETagShouldTakePrecedenceOverIfModifiedSince() {
+        // Given a current Last-Modified date and an obsolete validator from before JSON ETag support.
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String path = "/addressbooks/" + user.id() + "/contacts/cache.vcf";
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body(STRING.replace("\n", "\r\n"))
+        .when()
+            .put(path)
+        .then()
+            .statusCode(SC_CREATED);
+
+        Response cached = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/vcard+json")
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("application/vcard+json"))
+            .extract().response();
+        String lastModified = cached.header("Last-Modified");
+        String staleETag = "\"obsolete-cached-representation\"";
+        assertThat(lastModified).isNotBlank();
+        assertThat(cached.header("ETag")).isNotBlank().isNotEqualTo(staleETag);
+
+        // When the ETag differs, then its condition must override the unchanged modification date.
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/vcard+json")
+            .header("If-None-Match", staleETag)
+            .header("If-Modified-Since", lastModified)
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("application/vcard+json"));
+    }
+
+    @Test
+    void preferredTextXVCardShouldStillSupportConditionalGet() {
+        // Given a client preferring the supported text/x-vcard type over jCard.
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String path = "/addressbooks/" + user.id() + "/contacts/cache.vcf";
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/vcard")
+            .body(STRING.replace("\n", "\r\n"))
+        .when()
+            .put(path)
+        .then()
+            .statusCode(SC_CREATED);
+
+        String accept = "text/x-vcard, application/vcard+json;q=0.9";
+        String etag = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept(accept)
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("text/vcard"))
+            .extract().header("ETag");
+        assertThat(etag).isNotBlank();
+
+        // When revalidating the unchanged text representation, then it must return 304.
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept(accept)
+            .header("If-None-Match", etag)
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_NOT_MODIFIED)
+            .header("ETag", is(etag));
     }
 
     @Test
