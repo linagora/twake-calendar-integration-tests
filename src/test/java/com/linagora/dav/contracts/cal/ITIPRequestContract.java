@@ -2091,7 +2091,7 @@ public abstract class ITIPRequestContract {
         inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
 
         String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
-        awaitCalendarEntries(cedric, cedricInbox, 1);
+        List<String> initialInboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 1);
 
         // AND Bob later invites Cedric to occurrence #3 (add Cedric only to occurrence #3, do not modify summary/location/description)
         String inviteForThirdOccurrence = """
@@ -2148,7 +2148,7 @@ public abstract class ITIPRequestContract {
         // Cedric receives another REQUEST (for occurrence #3)
         List<String> hrefs = awaitCalendarEntries(cedric, cedricInbox, 2);
 
-        String finalIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefs.getLast()));
+        String finalIcs = calDavClient.getCalendarEvent(cedric, newInboxItemUri(initialInboxHrefs, hrefs));
 
         // Assert: finalIcs contains the UID, both invited RECURRENCE-ID (#2, #3), and no duplicate events or VCALENDAR
         assertThat(finalIcs)
@@ -2264,7 +2264,7 @@ public abstract class ITIPRequestContract {
 
         // Cedric should initially receive one ITIP REQUEST for occurrence #2
         String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
-        awaitCalendarEntries(cedric, cedricInbox, 1);
+        List<String> initialInboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 1);
 
         // WHEN Bob updates the time and summary for that occurrence
         String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
@@ -2314,7 +2314,7 @@ public abstract class ITIPRequestContract {
             .as("Cedric should receive an ITIP update for the modified occurrence")
             .hasSize(2);
 
-        URI latestInboxUri = URI.create(inboxAfterUpdate.getLast());
+        URI latestInboxUri = newInboxItemUri(initialInboxHrefs, inboxAfterUpdate);
         String actualInboxIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
         String expectedInboxIcs = """
             BEGIN:VCALENDAR
@@ -2371,7 +2371,7 @@ public abstract class ITIPRequestContract {
 
         // Ensure Cedric received the initial REQUEST for occurrence #2
         String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
-        awaitCalendarEntries(cedric, cedricInbox, 1);
+        List<String> initialInboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 1);
 
         // WHEN Bob updates only the location for that occurrence
         String updateLocationIcs = """
@@ -2417,7 +2417,7 @@ public abstract class ITIPRequestContract {
 
         // THEN Cedric receives an iTIP REQUEST reflecting the new location
         List<String> hrefsFromPropfind = awaitCalendarEntries(cedric, cedricInbox, 2);
-        URI latestInboxUri = URI.create(hrefsFromPropfind.getLast());
+        URI latestInboxUri = newInboxItemUri(initialInboxHrefs, hrefsFromPropfind);
         String updatedIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
 
         assertThat(updatedIcs)
@@ -2437,7 +2437,7 @@ public abstract class ITIPRequestContract {
 
         // Cedric should receive the initial REQUEST for the recurrence
         String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
-        awaitCalendarEntries(cedric, cedricInbox, 1);
+        List<String> initialInboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 1);
 
         // WHEN Bob deletes the entire recurring event
         String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
@@ -2445,7 +2445,7 @@ public abstract class ITIPRequestContract {
 
         // THEN Cedric receives an iTIP CANCEL (without RECURRENCE-ID)
         List<String> inboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 2); // initial REQUEST + CANCEL
-        URI latestInboxUri = URI.create(inboxHrefs.getLast());
+        URI latestInboxUri = newInboxItemUri(initialInboxHrefs, inboxHrefs);
         String cancelIcs = calDavClient.getCalendarEvent(cedric, latestInboxUri);
 
         assertThat(cancelIcs)
@@ -2468,7 +2468,7 @@ public abstract class ITIPRequestContract {
         String eventUid = "event-" + UUID.randomUUID();
         createRecurringEvent(bob, eventUid);
         inviteAttendeeForSecondOccurrence(bob, cedric, eventUid);
-        awaitCalendarEntries(cedric, "/calendars/" + cedric.id() + "/inbox", 1);
+        List<String> initialInboxHrefs = awaitCalendarEntries(cedric, "/calendars/" + cedric.id() + "/inbox", 1);
 
         // WHEN Bob deletes that occurrence from his calendar
         String bobEventUri = "/calendars/" + bob.id() + "/" + bob.id() + "/" + eventUid + ".ics";
@@ -2504,7 +2504,7 @@ public abstract class ITIPRequestContract {
             .as("Cedric should receive an ITIP CANCEL for the deleted occurrence")
             .hasSize(2);
 
-        URI cancelUri = URI.create(hrefs.getLast());
+        URI cancelUri = newInboxItemUri(initialInboxHrefs, hrefs);
         String cancelIcs = calDavClient.getCalendarEvent(cedric, cancelUri);
 
         assertThat(cancelIcs)
@@ -2573,7 +2573,7 @@ public abstract class ITIPRequestContract {
         calDavClient.upsertCalendarEvent(bob, URI.create(bobEventUri), inviteCedricForTwoOccurrencesIcs);
 
         String cedricInbox = "/calendars/" + cedric.id() + "/inbox";
-        awaitCalendarEntries(cedric, cedricInbox, 1);
+        List<String> initialInboxHrefs = awaitCalendarEntries(cedric, cedricInbox, 1);
 
         // WHEN Bob deletes only occurrence #2
         String updateIcsWithExdate = """
@@ -2619,7 +2619,7 @@ public abstract class ITIPRequestContract {
 
         // THEN Cedric receives a REQUEST update reflecting only the remaining occurrence (#3)
         List<String> hrefs = awaitCalendarEntries(cedric, cedricInbox, 2); // 1 initial REQUEST + 1 update after deletion
-        String cancelIcs = calDavClient.getCalendarEvent(cedric, URI.create(hrefs.getLast()));
+        String cancelIcs = calDavClient.getCalendarEvent(cedric, newInboxItemUri(initialInboxHrefs, hrefs));
 
         assertThat(cancelIcs)
             .as("Cedric should receive a REQUEST iTIP update (remaining occurrence only, no CANCEL)")
@@ -2783,6 +2783,17 @@ public abstract class ITIPRequestContract {
         calDavClient.upsertCalendarEvent(organizer, URI.create(eventUri), inviteIcs);
     }
 
+    private URI newInboxItemUri(List<String> initialHrefs, List<String> currentHrefs) {
+        // PROPFIND response order does not indicate when an inbox item was created.
+        List<String> newHrefs = currentHrefs.stream()
+            .filter(href -> !initialHrefs.contains(href))
+            .toList();
+        assertThat(newHrefs)
+            .as("Expected exactly one new iTIP inbox message")
+            .hasSize(1);
+        return URI.create(newHrefs.getFirst());
+    }
+
     private List<String> awaitCalendarEntries(OpenPaasUser attendee, String collectionPath, int expectedCount) {
         return TestUtil.awaitCalendarEntries(extension().davRequestSpecification(), attendee, collectionPath, expectedCount);
     }
@@ -2906,6 +2917,8 @@ public abstract class ITIPRequestContract {
 
         String bobCalendarUri = "/calendars/" + bob.id();
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
+        List<String> initialInboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 1);
 
         // Verify the event exists initially
         List<String> initialHrefs = awaitCalendarEntries(bob, "/calendars/" + bob.id() + "/" + bob.id(), 1);
@@ -2951,9 +2964,8 @@ public abstract class ITIPRequestContract {
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), cancelBody).block();
 
         // THEN Bob’s inbox should receive the CANCEL iTIP
-        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
         List<String> inboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 2); // REQUEST + CANCEL
-        String cancelInboxIcs = calDavClient.getCalendarEvent(bob, URI.create(inboxHrefs.getLast()));
+        String cancelInboxIcs = calDavClient.getCalendarEvent(bob, newInboxItemUri(initialInboxHrefs, inboxHrefs));
 
         assertThat(cancelInboxIcs)
             .as("Inbox should contain Yahoo CANCEL even with duplicated STATUS")
@@ -3009,6 +3021,8 @@ public abstract class ITIPRequestContract {
 
         String bobCalendarUri = "/calendars/" + bob.id();
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), requestBody).block();
+        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
+        List<String> initialInboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 1);
 
         // Verify event exists before update
         List<String> beforeUpdate = awaitCalendarEntries(bob, "/calendars/" + bob.id() + "/" + bob.id(), 1);
@@ -3053,9 +3067,8 @@ public abstract class ITIPRequestContract {
         calDavClient.sendITIPRequest(bob, URI.create(bobCalendarUri), updateBody).block();
 
         // THEN: Inbox should have both original and updated REQUESTs
-        String bobInboxUri = "/calendars/" + bob.id() + "/inbox";
         List<String> inboxHrefs = awaitCalendarEntries(bob, bobInboxUri, 2);
-        String updatedInboxIcs = calDavClient.getCalendarEvent(bob, URI.create(inboxHrefs.getLast()));
+        String updatedInboxIcs = calDavClient.getCalendarEvent(bob, newInboxItemUri(initialInboxHrefs, inboxHrefs));
 
         assertThat(updatedInboxIcs)
             .as("Yahoo duplicated STATUS should still allow update REQUEST")
