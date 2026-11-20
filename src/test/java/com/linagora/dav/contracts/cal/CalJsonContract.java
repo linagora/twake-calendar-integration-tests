@@ -20,11 +20,16 @@ package com.linagora.dav.contracts.cal;
 
 import static com.linagora.dav.contracts.cal.CalDavContract.ICS_1;
 import static com.linagora.dav.contracts.cal.CalDavContract.ICS_2;
+import static com.linagora.dav.contracts.cal.CalDavContract.ICS_3_A;
 import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_CREATED;
+import static org.apache.http.HttpStatus.SC_NOT_MODIFIED;
 import static org.apache.http.HttpStatus.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.startsWith;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -1760,6 +1765,84 @@ public abstract class CalJsonContract {
             .put("/calendars/" + testUser.id() + "/" + testUser.id() + "/1111632f-9917-4efc-b78f-243be5403074")
         .then()
             .statusCode(204);
+    }
+
+    @Test
+    void jsonNotModifiedShouldPreserveTheETagOfTheCachedRepresentation() {
+        // Given an existing JSON representation and the validator returned with it.
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String path = "/calendars/" + user.id() + "/" + user.id() + "/cache.ics";
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(ICS_3_A)
+        .when()
+            .put(path)
+        .then()
+            .statusCode(SC_CREATED);
+
+        String etag = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/calendar+json")
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("application/calendar+json"))
+            .extract().header("ETag");
+        assertThat(etag).isNotBlank();
+
+        // When revalidating that same representation, then 304 must retain its ETag.
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/calendar+json")
+            .header("If-None-Match", etag)
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_NOT_MODIFIED)
+            .header("ETag", is(etag));
+    }
+
+    @Test
+    void staleLegacyETagShouldTakePrecedenceOverIfModifiedSince() {
+        // Given a current Last-Modified date and an obsolete validator from before JSON ETag support.
+        OpenPaasUser user = dockerExtension().newTestUser();
+        String path = "/calendars/" + user.id() + "/" + user.id() + "/cache.ics";
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(ICS_3_A)
+        .when()
+            .put(path)
+        .then()
+            .statusCode(SC_CREATED);
+
+        Response cached = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/calendar+json")
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("application/calendar+json"))
+            .extract().response();
+        String lastModified = cached.header("Last-Modified");
+        String staleETag = "\"obsolete-cached-representation\"";
+        assertThat(lastModified).isNotBlank();
+        assertThat(cached.header("ETag")).isNotBlank().isNotEqualTo(staleETag);
+
+        // When the ETag differs, then its condition must override the unchanged modification date.
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .accept("application/calendar+json")
+            .header("If-None-Match", staleETag)
+            .header("If-Modified-Since", lastModified)
+        .when()
+            .get(path)
+        .then()
+            .statusCode(SC_OK)
+            .header("Content-Type", startsWith("application/calendar+json"));
     }
 
     @Test
