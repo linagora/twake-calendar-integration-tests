@@ -2141,4 +2141,99 @@ public abstract class CardDavContract {
             .withDifferenceEvaluator(IGNORE_ETAG)
             .areSimilar();
     }
+
+    @Test
+    void xmlMkcolWithADisplayNameHoldingElementsShouldBeRejected() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        // WHEN the user creates an address book whose display name holds child elements
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
+                <d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:set>
+                    <d:prop>
+                      <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>
+                      <d:displayname><x:y xmlns:x="urn:x"/></d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:mkcol>""")
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/complexbook")
+        // THEN it is refused
+        .then()
+            .statusCode(400);
+
+        // AND no address book was created
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "0")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/complexbook")
+        .then()
+            .statusCode(404);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "<d:displayname><x:y xmlns:x=\"urn:x\"/></d:displayname>",
+        "<card:addressbook-description><x:y xmlns:x=\"urn:x\"/></card:addressbook-description>"})
+    void xmlProppatchWithANameHoldingElementsShouldBeRejected(String property) throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        createXmlAddressBook(testUser, "plainbook");
+
+        // WHEN the user sets a display name or description holding child elements on an address book
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:set>
+                    <d:prop>%s</d:prop>
+                  </d:set>
+                </d:propertyupdate>""".formatted(property))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/plainbook")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        // THEN the property is refused with a 400 propstat
+        assertThat(XMLUtil.extractMultipleValueByXPath(responseBody, "//d:propstat/d:status", Map.of("d", "DAV:")))
+            .containsExactly("HTTP/1.1 400 Bad Request");
+
+        // AND the home of the user still lists
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
+                <d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:prop>
+                    <d:displayname/>
+                    <card:addressbook-description/>
+                  </d:prop>
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207);
+    }
+
+    private void createXmlAddressBook(OpenPaasUser user, String addressBookId) {
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .body("""
+                <d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:set>
+                    <d:prop>
+                      <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>
+                      <d:displayname>Plain book</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:mkcol>""")
+        .when()
+            .request("MKCOL", "/addressbooks/" + user.id() + "/" + addressBookId)
+        .then()
+            .statusCode(201);
+    }
+
 }

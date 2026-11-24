@@ -904,6 +904,47 @@ public abstract class CardDavSharingContract {
                 subscription.asUri() + "/");
     }
 
+    @Test
+    void subscriptionRenamedWithANumericJsonNameShouldReadItAsText() throws Exception {
+        // GIVEN Alice subscribes to Bob's public address book
+        cardDavClient.setPublicRight(bob, bob.id(), "collected", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "collected", "Bob's book");
+        AddressBookURL subscription = cardDavClient.findSubscribedAddressBook(alice, bob.id(), "collected").orElseThrow();
+
+        // WHEN Alice renames the subscription with a JSON number
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .body("""
+                {
+                    "dav:name": 2024
+                }""")
+        .when()
+            .request("PROPPATCH", subscription.asUri().toString())
+        .then()
+            .statusCode(204);
+
+        // THEN its name reads as the text of that number, over JSON and over XML
+        assertThat(cardDavClient.getAddressBookName(alice, subscription)).isEqualTo("2024");
+
+        String responseBody = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .contentType("application/xml")
+            .accept("application/xml")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", subscription.asUri().toString())
+        .then()
+            .statusCode(207)
+            .extract().asString();
+        assertThat(XMLUtil.extractByXPath(responseBody, "//d:displayname", Map.of("d", "DAV:"))).isEqualTo("2024");
+    }
+
     private List<String> propfindHomeHrefs(OpenPaasUser requester, OpenPaasUser homeOwner) throws Exception {
         String responseBody = given()
             .header("Authorization", requester.impersonatedBasicAuth())
