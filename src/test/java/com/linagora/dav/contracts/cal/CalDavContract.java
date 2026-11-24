@@ -2472,6 +2472,8 @@ public abstract class CalDavContract {
 
         String token = dockerExtension().twakeCalendarProvisioningService().generateToken();
 
+        // The organizer sent PARTSTAT=TENTATIVE for the resource: the resource's own answer is never taken from
+        // the organizer, its copy waits for the resource administrators (esn-sabre #912)
         String actual = calDavClient.getCalendarEvent(resource.id(), resourceEventId, token);
         assertThatCalendar(CalendarUtil.parseIcs(actual))
             .ignoringProperties(Property.PRODID)
@@ -2501,7 +2503,7 @@ public abstract class CalDavContract {
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN="Benoît TELLIER":mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
