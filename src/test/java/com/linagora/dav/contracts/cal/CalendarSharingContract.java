@@ -132,6 +132,42 @@ public abstract class CalendarSharingContract {
             .statusCode(SC_FORBIDDEN);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"text/xml ; charset=utf-8", "application/xml ; charset=utf-8", "Application/XML", "application/xml-x", "text/xmlx"})
+    protected void cannotCreateXmlSubscriptionToPrivateCalendarWhateverTheXmlContentType(String contentType) {
+        // Given Bob's source calendar is private.
+        calDavClient.updateCalendarAcl(bob, "");
+        String payload = """
+            <d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+              <d:set><d:prop>
+                <d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>
+                <d:displayname>Unauthorized subscription</d:displayname>
+                <cs:source><d:href>/calendars/{bob}/{bob}</d:href></cs:source>
+              </d:prop></d:set>
+            </d:mkcol>
+            """.replace("{bob}", bob.id());
+        CalendarURL subscription = new CalendarURL(alice.id(), "private-source");
+
+        // When Alice creates the subscription through MKCOL with a Content-Type variant Sabre reads as XML.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType(contentType)
+            .body(payload.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .request("MKCOL", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_FORBIDDEN);
+
+        // Then no subscription was stored.
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .header("Depth", "0")
+        .when()
+            .request("PROPFIND", subscription.asUri().toString())
+        .then()
+            .statusCode(SC_NOT_FOUND);
+    }
+
     @Test
     protected void cannotRetargetXmlSubscriptionToPrivateCalendar() {
         // Given Bob's calendar is private and Alice subscribes to her own calendar.
