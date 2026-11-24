@@ -24,3 +24,10 @@ Categories: UX, UI, Product, Architecture, Infra, Tech.
 - Decided by: Benoit Tellier, [linagora/esn-sabre#911](https://github.com/linagora/esn-sabre/pull/911)
 - Why: the server used to answer such a token "nothing changed" (calendars) or "everything since 0" (address books), so a client holding a token from a restored database or another collection was told it was up to date and missed changes. Clients must restart a full sync on this 403 (RFC 6578 section 3.2).
 - Scope: WebDAV sync of calendars and address books (CalDavContract, CardDavContract).
+
+## 2026-11-24, [Product] A multiget answers 404 per unknown href
+
+- Decision: a `calendar-multiget` or `addressbook-multiget` returns a response with a 404 status for each href that names no resource, its collection missing included, next to the responses of the found ones; the report never fails as a whole for it.
+- Decided by: Benoit Tellier, [linagora/esn-sabre#911](https://github.com/linagora/esn-sabre/pull/911)
+- Why: RFC 4791 section 7.9 and RFC 6352 section 8.7. Before, an unknown href got no response at all, so a syncing client could not tell a deleted object from a dropped answer, and an href of a deleted collection failed the whole report with 404. Clients must read the 404 response as "this object is gone".
+- Scope: CalDAV and CardDAV multiget REPORTs (CalDavContract, CardDavContract).

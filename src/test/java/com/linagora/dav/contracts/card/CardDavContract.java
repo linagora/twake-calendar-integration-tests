@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
@@ -2264,4 +2265,56 @@ public abstract class CardDavContract {
             .statusCode(201);
     }
 
+    @Test
+    void addressbookMultigetShouldAnswer404ForAnUnknownHref() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String addressBook = "/addressbooks/" + testUser.id() + "/contacts";
+        putCard(testUser, addressBook + "/abcdef.vcf");
+
+        // WHEN the client multigets an existing card and one that does not exist
+        String responseBody = addressbookMultiget(testUser, addressBook, addressBook + "/abcdef.vcf", addressBook + "/missing.vcf");
+
+        // THEN the existing card is returned and the unknown href gets a 404 response
+        assertThat(multigetStatuses(responseBody, addressBook + "/abcdef.vcf")).containsExactly("HTTP/1.1 200 OK");
+        assertThat(multigetStatuses(responseBody, addressBook + "/missing.vcf")).containsExactly("HTTP/1.1 404 Not Found");
+    }
+
+    private void putCard(OpenPaasUser user, String href) {
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(href)
+        .then()
+            .statusCode(201);
+    }
+
+    private String addressbookMultiget(OpenPaasUser user, String addressBook, String... hrefs) {
+        String hrefElements = Stream.of(hrefs)
+            .map(href -> "<d:href>" + href + "</d:href>")
+            .collect(Collectors.joining("\n"));
+
+        return given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
+                <card:addressbook-multiget xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                  %s
+                </card:addressbook-multiget>""".formatted(hrefElements))
+        .when()
+            .request("REPORT", addressBook)
+        .then()
+            .statusCode(207)
+            .extract().asString();
+    }
+
+    private List<String> multigetStatuses(String responseBody, String href) throws Exception {
+        return XMLUtil.extractMultipleValueByXPath(responseBody,
+            "//d:response[d:href='" + href + "']/d:status | //d:response[d:href='" + href + "']/d:propstat/d:status",
+            Map.of("d", "DAV:"));
+    }
 }

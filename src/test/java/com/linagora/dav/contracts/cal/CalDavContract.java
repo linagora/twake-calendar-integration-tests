@@ -35,6 +35,7 @@ import static org.xmlunit.diff.ComparisonResult.SIMILAR;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
@@ -3381,4 +3383,53 @@ public abstract class CalDavContract {
             .body("multistatus.response.size()", is(0));
     }
 
+    @Test
+    void calendarMultigetShouldAnswer404ForAnUnknownHref() throws Exception {
+        String calendar = "/calendars/" + testUser.id() + "/" + testUser.id();
+        putIcs1(calendar + "/abcd.ics");
+
+        // WHEN the client multigets an existing event and one that does not exist
+        String responseBody = calendarMultiget(calendar, calendar + "/abcd.ics", calendar + "/missing.ics");
+
+        // THEN the existing event is returned and the unknown href gets a 404 response
+        assertThat(multigetStatuses(responseBody, calendar + "/abcd.ics")).containsExactly("HTTP/1.1 200 OK");
+        assertThat(multigetStatuses(responseBody, calendar + "/missing.ics")).containsExactly("HTTP/1.1 404 Not Found");
+    }
+
+    private void putIcs1(String href) {
+        given(authenticatedRequest)
+            .contentType("text/calendar; charset=utf-8")
+            .body(ICS_1.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(href)
+        .then()
+            .statusCode(201);
+    }
+
+    private String calendarMultiget(String calendar, String... hrefs) {
+        String hrefElements = Arrays.stream(hrefs)
+            .map(href -> "<d:href>" + href + "</d:href>")
+            .collect(Collectors.joining("\n"));
+
+        return given(authenticatedRequest)
+            .header("Depth", "1")
+            .body("""
+                <c:calendar-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                  %s
+                </c:calendar-multiget>""".formatted(hrefElements))
+        .when()
+            .request("REPORT", calendar)
+        .then()
+            .statusCode(207)
+            .extract().asString();
+    }
+
+    private List<String> multigetStatuses(String responseBody, String href) throws Exception {
+        return XMLUtil.extractMultipleValueByXPath(responseBody,
+            "//d:response[d:href='" + href + "']/d:status | //d:response[d:href='" + href + "']/d:propstat/d:status",
+            Map.of("d", "DAV:"));
+    }
 }
