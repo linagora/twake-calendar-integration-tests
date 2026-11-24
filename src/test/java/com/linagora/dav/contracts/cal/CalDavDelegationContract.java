@@ -2631,6 +2631,63 @@ public abstract class CalDavDelegationContract {
             .doesNotContain("principals/users/" + cedric.id());
     }
 
+    @ParameterizedTest(name = "{0} by {1}")
+    @CsvSource({"shared-owner, owner", "not-shared, owner", "shared-owner, delegatedAdmin", "not-shared, delegatedAdmin"})
+    protected void xmlShareRequestWithOwnerAccessLevelShouldBeRejected(String accessLevel, String requester) {
+        // Given Bob owns a calendar, which Alice administrates through her delegated copy.
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        String calendarId = UUID.randomUUID().toString();
+        calDavClient.createNewCalendar(bob, calendarId, "Calendar A", 2);
+        calDavClient.grantDelegation(bob, calendarId, alice, DelegationRight.ADMIN);
+        CalendarURL delegatedCalendar = calDavClient.findDelegatedCalendar(alice, new CalendarURL(bob.id(), calendarId));
+        boolean byOwner = requester.equals("owner");
+        OpenPaasUser sharer = byOwner ? bob : alice;
+        String sharedPath = (byOwner ? new CalendarURL(bob.id(), calendarId) : delegatedCalendar).asUri().toString();
+        String bobCalendarsBefore = calDavClient.getUserCalendarsJson(bob);
+        String aliceCalendarsBefore = calDavClient.getUserCalendarsJson(alice);
+        String cedricCalendarsBefore = calDavClient.getUserCalendarsJson(cedric);
+
+        // When the calendar is shared with Cedric at an owner access level over the XML share-resource route.
+        given()
+            .header("Authorization", sharer.impersonatedBasicAuth())
+            .contentType("application/davsharing+xml; charset=utf-8")
+            .accept("application/xml")
+            .body(xmlShareResource(cedric, accessLevel))
+        .when()
+            .post(sharedPath)
+        .then()
+            .statusCode(SC_BAD_REQUEST);
+
+        // Then no instance is created and no calendar list changes.
+        assertThat(calDavClient.getUserCalendarsJson(cedric)).isEqualTo(cedricCalendarsBefore);
+        assertThat(calDavClient.getUserCalendarsJson(bob)).isEqualTo(bobCalendarsBefore);
+        assertThat(calDavClient.getUserCalendarsJson(alice)).isEqualTo(aliceCalendarsBefore);
+
+        // And the same route still shares the calendar at a sharee access level.
+        given()
+            .header("Authorization", sharer.impersonatedBasicAuth())
+            .contentType("application/davsharing+xml; charset=utf-8")
+            .accept("application/xml")
+            .body(xmlShareResource(cedric, "read"))
+        .when()
+            .post(sharedPath)
+        .then()
+            .statusCode(anyOf(is(SC_OK), is(204)));
+        assertThat(calDavClient.findDelegatedCalendar(cedric, new CalendarURL(bob.id(), calendarId))).isNotNull();
+    }
+
+    private static String xmlShareResource(OpenPaasUser sharee, String accessLevel) {
+        return """
+            <D:share-resource xmlns:D="DAV:">
+              <D:sharee>
+                <D:href>mailto:{email}</D:href>
+                <D:share-access><D:{access}/></D:share-access>
+              </D:sharee>
+            </D:share-resource>
+            """.replace("{email}", sharee.email())
+            .replace("{access}", accessLevel);
+    }
+
     @Test
     public void ownerShouldNotBeAbleToDelegateCalendarToThemself() {
         String calendarId = UUID.randomUUID().toString();
