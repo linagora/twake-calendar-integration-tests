@@ -66,6 +66,7 @@ import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarData;
 import com.linagora.dav.JsonCalendarEventData;
@@ -74,6 +75,10 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Updates;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
@@ -81,6 +86,7 @@ import io.restassured.response.Response;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.javacrumbs.jsonunit.core.Option;
+import reactor.core.publisher.Mono;
 
 public abstract class CalDavDelegationContract {
     private static final Map<String, String> DAV_NAMESPACES = Map.of("d", "DAV:");
@@ -539,6 +545,8 @@ public abstract class CalDavDelegationContract {
         // THEN Bob cannot read the events of Alice's calendar
         assertThatCannotReadAliceSourceCalendar(bob, eventUid);
     }
+
+    private static final int DECLINED_INVITE_STATUS = 3;
 
     private static final String INITIAL_SYNC_TOKEN = "http://sabre.io/ns/sync/1";
 
@@ -1588,6 +1596,48 @@ public abstract class CalDavDelegationContract {
         awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
                 assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id())));
+    }
+
+    @Test
+    void declinedShareeShouldNotReceiveEventMessages() throws Exception {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:deleted", "");
+
+        // Given Bob shares his calendar read-only with Alice and Cedric, and Alice declined the share.
+        // The JSON invite-reply API only exposes accepted/noresponse, so seed the declined state directly.
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        calDavClient.grantDelegations(bob, bob.id(), Map.of(alice, DelegationRight.READ, cedric, DelegationRight.READ));
+        CalendarURL aliceCopy = calDavClient.findDelegatedCalendar(alice, bob.id());
+        String mongoUri = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerService.MONGO, "mongodb").toString();
+        try (MongoClient mongo = MongoClients.create(mongoUri)) {
+            long modified = Mono.from(mongo.getDatabase("sabre").getCollection("calendarinstances")
+                .updateOne(Filters.and(
+                    Filters.eq("principaluri", "principals/users/" + alice.id()),
+                    Filters.eq("uri", aliceCopy.calendarId())),
+                    Updates.set("share_invitestatus", DECLINED_INVITE_STATUS)))
+                .block().getModifiedCount();
+            assertThat(modified).isEqualTo(1);
+        }
+
+        // When Bob creates an event in the shared calendar.
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString());
+
+        // Then Cedric, who accepted, is notified on his copy, but Alice is not.
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .anySatisfy(json -> assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + cedric.id())));
+        awaitEvery500Millis().during(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(messages)
+            .noneSatisfy(json -> assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + alice.id())));
     }
 
     @Test
