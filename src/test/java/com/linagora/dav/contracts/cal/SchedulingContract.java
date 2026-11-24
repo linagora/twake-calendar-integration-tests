@@ -2231,6 +2231,41 @@ public abstract class SchedulingContract {
         assertThatCalendar(calDavClient.getCalendarEvent(bob, organizerEvent)).isEqualTo(organizerBefore);
     }
 
+    @Test
+    void attendeeTurningTheMasterIntoAnOverrideShouldBeAllowedToExcludeMoreOccurrences() {
+        // Given Bob invites Alice to a daily meeting, cancelling its second occurrence with an EXDATE
+        String uid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bob, uid, dailyMeetingWithExclusion(uid, """
+            DTSTART:20351005T090000Z
+            DTEND:20351005T100000Z
+            RRULE:FREQ=DAILY;COUNT=4
+            EXDATE:20351006T090000Z
+            """, "NEEDS-ACTION"));
+        URI attendeeEvent = CalendarURL.from(alice.id()).eventHref(awaitFirstEventId(alice));
+        awaitAtMost.untilAsserted(() -> assertThat(calDavClient.getCalendarEvent(alice, attendeeEvent)).contains("EXDATE"));
+
+        // When Alice accepts with the master turned into an override that keeps the organizer's exclusion,
+        // written in another form, and excludes one more occurrence
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("text/calendar")
+            .body(dailyMeetingWithExclusion(uid, """
+                RECURRENCE-ID:20351005T090000Z
+                DTSTART:20351005T090000Z
+                DTEND:20351005T100000Z
+                RRULE:FREQ=DAILY;COUNT=4
+                EXDATE:20351006T090000Z,20351007T090000Z
+                """, "ACCEPTED"))
+        .when()
+            .put(attendeeEvent)
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then Alice's copy holds her answer
+        assertThat(CalendarUtil.getAttendeePartStat(calDavClient.getCalendarEvent(alice, attendeeEvent), alice.email()))
+            .isEqualTo(PartStat.ACCEPTED);
+    }
+
     private String dailyMeetingWithExclusion(String uid, String timeProperties, String attendeePartStat) {
         return """
             BEGIN:VCALENDAR
