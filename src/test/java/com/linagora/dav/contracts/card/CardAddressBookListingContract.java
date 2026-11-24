@@ -449,6 +449,41 @@ public abstract class CardAddressBookListingContract {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void emptySortShouldBeIgnored(boolean withOffset) {
+        // GIVEN Alice has contacts in her "contacts" book
+        addContact(alice, "contacts", "anna", "Anna", "Zed");
+        addContact(alice, "contacts", "bob", "Bob", "Marley");
+        Map<String, Object> params = withOffset ? Map.of("limit", 2, "offset", 0) : Map.of("limit", 2);
+
+        // WHEN Alice lists them with an empty sort
+        JsonPath unsorted = listContacts(alice, alice.id(), "contacts", params);
+        Map<String, Object> withEmptySort = new HashMap<>(params);
+        withEmptySort.put("sort", "");
+        JsonPath emptySort = listContacts(alice, alice.id(), "contacts", withEmptySort);
+
+        // THEN the empty sort is no sort: the listing succeeds as if it were absent
+        assertThat(uids(emptySort)).containsExactlyInAnyOrder("anna", "bob")
+            .containsExactlyElementsOf(uids(unsorted));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void unknownSortShouldBeRejected(boolean withOffset) {
+        var request = given()
+            .headers("Authorization", alice.impersonatedBasicAuth())
+            .queryParam("sort", "unsupported")
+            .queryParam("limit", 2);
+        if (withOffset) {
+            request.queryParam("offset", 0);
+        }
+
+        request.get(contactsPath(alice.id(), "contacts"))
+            .then()
+            .statusCode(SC_BAD_REQUEST);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"offset", "search", "modifiedBefore"})
     void cursorShouldNotBeCombinedWithOffsetNorFilters(String param) {
         addContact(alice, "contacts", "anna", "Anna", "Zed");
