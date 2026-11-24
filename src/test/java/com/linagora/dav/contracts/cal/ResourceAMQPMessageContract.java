@@ -21,10 +21,13 @@ package com.linagora.dav.contracts.cal;
 import static com.linagora.dav.CalendarAssert.assertThatCalendar;
 import static com.linagora.dav.DockerTwakeCalendarExtension.QUEUE_NAME;
 import static com.linagora.dav.TestUtil.awaitEvery500Millis;
+import static io.restassured.RestAssured.given;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -32,12 +35,15 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.shaded.org.awaitility.core.ConditionFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.OpenPaaSResource;
 import com.linagora.dav.OpenPaasUser;
 
@@ -45,7 +51,8 @@ import net.javacrumbs.jsonunit.core.Option;
 
 public abstract class ResourceAMQPMessageContract {
 
-    private final ConditionFactory awaitAtMost = awaitEvery500Millis().atMost(30, TimeUnit.SECONDS);
+    private final ConditionFactory calmlyAwait = awaitEvery500Millis();
+    private final ConditionFactory awaitAtMost = calmlyAwait.atMost(30, TimeUnit.SECONDS);
 
     private CalDavClient calDavClient;
     
@@ -347,6 +354,76 @@ public abstract class ResourceAMQPMessageContract {
                         .ignoringAttendeePartStat(resource.id() + "@open-paas.org") // https://github.com/linagora/twake-calendar-integration-tests/issues/182
                         .isEqualTo(expectedEventIcs);
                 }));
+    }
+
+    @ParameterizedTest(name = "forged REPLY sent {0}")
+    @ValueSource(strings = {"through POST /itip", "with the ITIP verb"})
+    void forgedReplyInTheResourceNameShouldNotPublishAcceptedWhileTheResourceHasNotAnswered(String transport) throws IOException {
+        String queueName = "forged-resource-reply-" + UUID.randomUUID();
+        dockerExtension().getChannel().queueDeclare(queueName, false, true, true, null);
+        dockerExtension().getChannel().queueBind(queueName, "resource:calendar:event:accepted", "");
+        dockerExtension().getChannel().queueBind(queueName, "resource:calendar:event:declined", "");
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), queueName);
+
+        // Given an organizer, who is not an administrator of the projector, books it
+        OpenPaasUser organizer = dockerExtension().newTestUser();
+        OpenPaasUser attendee = dockerExtension().newTestUser();
+        OpenPaasUser resourceAdmin = dockerExtension().newTestUser();
+        OpenPaaSResource resource = dockerExtension().twakeCalendarProvisioningService()
+            .createResource("projector", "This is a projector", resourceAdmin)
+            .block();
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(organizer, eventUid, generateCalendarData(
+            eventUid,
+            organizer.email(),
+            attendee.email(),
+            "Sprint planning #01",
+            "Twake Meeting Room",
+            "This is a meeting to discuss the sprint planning for the next week.",
+            "30250411T100000",
+            "30250411T110000",
+            resource.id(),
+            "NEEDS-ACTION"));
+        awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), organizer), Optional::isPresent);
+
+        // When the organizer forges a REPLY in the projector's name, accepting the booking
+        String resourceAddress = resource.id() + "@open-paas.org";
+        String forgedReply = ITIPJsonBodyRequest.builder()
+            .ical(generateCalendarData(
+                eventUid,
+                organizer.email(),
+                attendee.email(),
+                "Sprint planning #01",
+                "Twake Meeting Room",
+                "This is a meeting to discuss the sprint planning for the next week.",
+                "30250411T100000",
+                "30250411T110000",
+                resource.id(),
+                "ACCEPTED")
+                .replace("CALSCALE:GREGORIAN", "CALSCALE:GREGORIAN\nMETHOD:REPLY"))
+            .sender(resourceAddress)
+            .recipient(organizer.email())
+            .uid(eventUid)
+            .method("REPLY")
+            .buildJson();
+        if (transport.equals("through POST /itip")) {
+            given(dockerExtension().davRequestSpecification())
+                .header("Authorization", organizer.impersonatedBasicAuth())
+                .contentType("application/json")
+                .accept("application/json")
+                .body(forgedReply.getBytes(StandardCharsets.UTF_8))
+            .when()
+                .post("/itip")
+            .then()
+                .statusCode(204);
+        } else {
+            calDavClient.sendITIPRequest(organizer, URI.create("/calendars/" + organizer.id()), forgedReply).block();
+        }
+
+        // Then no acceptance is published in the projector's name: its own copy still awaits its administrators
+        calmlyAwait.during(3, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(messages)
+                .noneSatisfy(message -> assertThat(message.path("resourceId").asText()).isEqualTo(resource.id())));
     }
 
     private BlockingQueue<JsonNode> listenToQueue() {
