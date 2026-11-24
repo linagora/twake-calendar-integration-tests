@@ -27,6 +27,7 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -39,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -48,9 +50,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.linagora.dav.AmqpTestHelper;
 import com.linagora.dav.CalDavClient;
 import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
@@ -1447,6 +1451,89 @@ public abstract class ITIPRequestContract {
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("Unexpected status code: 400");
         assertNoCounterInBobInbox(eventUid);
+    }
+
+    @ParameterizedTest(name = "COUNTER sent {0}")
+    @ValueSource(strings = {"with the ITIP verb", "via X-Http-Method-Override"})
+    void itipCounterToExternalOrganizerShouldNeverPublishTheEventAtTheRequestPathAsOldMessage(String transport) throws IOException {
+        // Given Bob keeps a meeting in his own calendar, which he shares with nobody
+        String bobEventUid = "event-" + UUID.randomUUID();
+        URI bobEventUri = URI.create("/calendars/" + bob.id() + "/" + bob.id() + "/" + bobEventUid + ".ics");
+        calDavClient.upsertCalendarEvent(bob, bobEventUri, """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:30251003T080000Z
+            DTSTART:30251005T090000Z
+            DTEND:30251005T100000Z
+            SUMMARY:Bob confidential board meeting
+            DESCRIPTION:Bob confidential acquisition agenda
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(bobEventUid));
+
+        // And Alice keeps her own copy of a meeting organized by an external address
+        String externalOrganizer = "organizer-" + UUID.randomUUID() + "@external-organizer.invalid";
+        String aliceEventUid = "event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(alice, URI.create("/calendars/" + alice.id() + "/" + alice.id() + "/" + aliceEventUid + ".ics"), """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            CALSCALE:GREGORIAN
+            BEGIN:VEVENT
+            UID:%s
+            DTSTAMP:30251003T080000Z
+            DTSTART:30251005T090000Z
+            DTEND:30251005T100000Z
+            SUMMARY:Alice external meeting
+            ORGANIZER:mailto:%s
+            ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:%s
+            END:VEVENT
+            END:VCALENDAR
+            """.formatted(aliceEventUid, externalOrganizer, alice.email()));
+
+        String queueName = "itip-counter-old-message-" + UUID.randomUUID();
+        extension().getChannel().queueDeclare(queueName, false, true, true, null);
+        extension().getChannel().queueBind(queueName, "calendar:itip:localDelivery", "");
+        BlockingQueue<JsonNode> localDeliveryMessages = AmqpTestHelper.listenToQueue(extension().getChannel(), queueName);
+
+        // When Alice sends a COUNTER of her meeting to the external organizer on the path of Bob's event
+        String counterBody = ITIPJsonBodyRequest.builder()
+            .ical(counterIcs("""
+                BEGIN:VEVENT
+                UID:%s
+                DTSTAMP:30251003T081000Z
+                DTSTART:30251005T100000Z
+                DTEND:30251005T110000Z
+                SUMMARY:Alice external meeting
+                ORGANIZER:mailto:%s
+                ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:%s
+                END:VEVENT
+                """.formatted(aliceEventUid, externalOrganizer, alice.email())))
+            .sender(alice.email())
+            .recipient(externalOrganizer)
+            .uid(aliceEventUid)
+            .method("COUNTER")
+            .buildJson();
+        calDavClient.sendITIPRequest(alice, bobEventUri, counterBody, transport.startsWith("via")).block();
+
+        // Then the COUNTER is published for the side service with Alice's own copy as the previous
+        // revision, and never Bob's event, which Alice cannot read
+        awaitAtMost.untilAsserted(() -> assertThat(localDeliveryMessages)
+            .anySatisfy(message -> {
+                assertThat(message.path("method").asText()).isEqualTo("COUNTER");
+                assertThat(message.path("uid").asText()).isEqualTo(aliceEventUid);
+                assertThat(message.toString())
+                    .doesNotContain(bobEventUid)
+                    .doesNotContain("Bob confidential board meeting")
+                    .doesNotContain("Bob confidential acquisition agenda");
+                assertThat(message.path("oldMessage").asText())
+                    .contains("UID:" + aliceEventUid)
+                    .contains("SUMMARY:Alice external meeting");
+            }));
     }
 
     private void upsertBobEventInvitingAlice(String eventUid, String timeProperties) {
