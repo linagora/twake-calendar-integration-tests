@@ -621,6 +621,133 @@ public abstract class CalDavDelegationContract {
             .isEqualTo(original);
     }
 
+    @ParameterizedTest(name = "{1} {0}")
+    @CsvSource({"VTODO, PRIVATE", "VTODO, CONFIDENTIAL", "VJOURNAL, PRIVATE", "VJOURNAL, CONFIDENTIAL"})
+    protected void privateOrConfidentialTaskOrJournalShouldBeMaskedForReadOnlySharee(String component, String classification) throws Exception {
+        // Given Alice keeps a classified task or journal in a calendar she shares read-only with Bob.
+        CalendarURL calendar = givenAliceCalendarAcceptingTasksAndJournals();
+        calDavClient.grantDelegation(alice, calendar.calendarId(), bob, DelegationRight.READ);
+        String uid = component.toLowerCase() + "-" + UUID.randomUUID();
+        String calendarData = classifiedTaskOrJournal(component, uid, classification);
+        calDavClient.upsertCalendarEvent(alice, calendar, uid, calendarData);
+
+        // When Bob gets it, he reads only the Busy placeholder.
+        String bobGet = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(calendar.eventHref(uid))
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        assertThat(bobGet).contains("BEGIN:" + component, "UID:" + uid, "SUMMARY:Busy");
+        assertThatDoesNotLeakPrivateEventDetails(bobGet);
+
+        // And a calendar-query on the hidden summary does not find it.
+        String query = """
+            <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+              <d:prop><d:getetag/><c:calendar-data/></d:prop>
+              <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="{component}">
+                <c:prop-filter name="SUMMARY"><c:text-match>{summary}</c:text-match></c:prop-filter>
+              </c:comp-filter></c:comp-filter></c:filter>
+            </c:calendar-query>
+            """.replace("{component}", component);
+        byte[] hiddenMatch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Depth", "1")
+            .body(query.replace("{summary}", "Sprint planning"))
+        .when()
+            .request("REPORT", calendar.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asByteArray();
+        assertThat(XMLUtil.extractEventIdsFromXml(hiddenMatch)).isEmpty();
+
+        // And a calendar-query on the placeholder finds it, still redacted.
+        byte[] visibleMatch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Depth", "1")
+            .body(query.replace("{summary}", "Busy"))
+        .when()
+            .request("REPORT", calendar.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asByteArray();
+        assertThat(XMLUtil.extractEventIdsFromXml(visibleMatch)).containsExactly(uid);
+        assertThatDoesNotLeakPrivateEventDetails(new String(visibleMatch, StandardCharsets.UTF_8));
+
+        // Then Alice still reads it in full.
+        String aliceGet = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(calendar.eventHref(uid))
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        assertThat(aliceGet).contains("Sprint planning #01", "Confidential information that Bob should not see",
+            "Secret Room", "Private custom property");
+    }
+
+    private CalendarURL givenAliceCalendarAcceptingTasksAndJournals() {
+        CalendarURL calendar = new CalendarURL(alice.id(), "tasks-" + UUID.randomUUID());
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .body("""
+                <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                  <D:set><D:prop>
+                    <D:displayname>Tasks and journals</D:displayname>
+                    <C:supported-calendar-component-set>
+                      <C:comp name="VEVENT"/><C:comp name="VTODO"/><C:comp name="VJOURNAL"/>
+                    </C:supported-calendar-component-set>
+                  </D:prop></D:set>
+                </C:mkcalendar>
+                """)
+        .when()
+            .request("MKCALENDAR", calendar.asUri().toString())
+        .then()
+            .statusCode(201);
+        calDavClient.updateCalendarAcl(alice, calendar, "");
+        return calendar;
+    }
+
+    private static String classifiedTaskOrJournal(String component, String uid, String classification) {
+        String alarm = component.equals("VTODO") ? """
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Secret alarm text
+            END:VALARM
+            """ : "";
+        String due = component.equals("VTODO") ? "DUE:20300411T110000Z\n" : "";
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:{component}
+            UID:{uid}
+            DTSTAMP:20300401T080000Z
+            DTSTART;X-SECRET=secret-start-parameter:20300411T100000Z
+            {due}SUMMARY:Sprint planning #01
+            DESCRIPTION:Confidential information that Bob should not see
+            LOCATION:Secret Room
+            X-PRIVATE-NOTE:Private custom property
+            CLASS:{classification}
+            {alarm}END:{component}
+            END:VCALENDAR
+            """.replace("{component}", component)
+            .replace("{uid}", uid)
+            .replace("{due}", due)
+            .replace("{classification}", classification)
+            .replace("{alarm}", alarm)
+            .replace("\n", "\r\n");
+    }
+
     private String givenAlicePrivateSourceCalendarWithEvent(String eventClass) {
         calDavClient.updateCalendarAcl(alice, "");
 
