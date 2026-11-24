@@ -81,6 +81,8 @@ public abstract class ResourceAMQPMessageContract {
         calDavClient.upsertCalendarEvent(testUser, eventUid, calendarData);
 
         String resourceEventId = awaitAtMost.until(() -> calDavClient.findFirstEventId(resource.id(), testUser), Optional::isPresent).get();
+        // The organizer sent PARTSTAT=TENTATIVE for the resource: the resource's copy keeps its own answer,
+        // NEEDS-ACTION until its administrators answer (esn-sabre #912)
         String expectedEventIcs = """
             BEGIN:VCALENDAR
             VERSION:2.0
@@ -106,7 +108,7 @@ public abstract class ResourceAMQPMessageContract {
             ORGANIZER;CN=Van Tung TRAN:mailto:{organizerEmail}
             ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Benoît TELLIER:mailto:{attendeeEmail}
             ATTENDEE;PARTSTAT=ACCEPTED;RSVP=FALSE;ROLE=CHAIR;CUTYPE=INDIVIDUAL:mailto:{organizerEmail}
-            ATTENDEE;PARTSTAT=TENTATIVE;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
+            ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=RESOURCE;CN=projector:mailto:{resourceId}@open-paas.org
             END:VEVENT
             END:VCALENDAR
             """.replace("{eventUid}", eventUid)
