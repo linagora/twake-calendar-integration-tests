@@ -17,3 +17,10 @@ Categories: UX, UI, Product, Architecture, Infra, Tech.
 - Decided by: Benoit Tellier, [linagora/esn-sabre#911](https://github.com/linagora/esn-sabre/pull/911)
 - Why: a sharee instance stored at an owner level acted as a second owner instance: full owner ACL, and deleting it destroyed the whole calendar.
 - Scope: CalDAV calendar sharing (CalDavDelegationContract).
+
+## 2026-11-24, [Product] A sync token the server never issued is refused
+
+- Decision: a `sync-collection` REPORT whose token is above the collection's current one, or is not a number, answers 403 with the `DAV:valid-sync-token` precondition, on calendars and on address books alike. The contracts assert it for tokens `999999`, `abc` and `-1`.
+- Decided by: Benoit Tellier, [linagora/esn-sabre#911](https://github.com/linagora/esn-sabre/pull/911)
+- Why: the server used to answer such a token "nothing changed" (calendars) or "everything since 0" (address books), so a client holding a token from a restored database or another collection was told it was up to date and missed changes. Clients must restart a full sync on this 403 (RFC 6578 section 3.2).
+- Scope: WebDAV sync of calendars and address books (CalDavContract, CardDavContract).

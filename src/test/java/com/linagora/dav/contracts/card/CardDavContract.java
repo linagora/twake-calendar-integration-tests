@@ -1636,6 +1636,34 @@ public abstract class CardDavContract {
             .areSimilar();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"999999", "abc", "-1"})
+    void syncCollectionWithATokenTheServerNeverIssuedShouldBeRefused(String token) {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        // WHEN the client syncs with a token above the current one, or not a number
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/%s</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """.formatted(token))
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        // THEN the token is refused rather than answered "nothing changed" or "everything changed"
+        .then()
+            .statusCode(403)
+            .extract().asString();
+
+        assertThat(responseBody).contains("valid-sync-token");
+    }
+
     @Test
     void reportSyncTokenWhenNoUpdate() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
