@@ -3396,6 +3396,20 @@ public abstract class CalDavContract {
         assertThat(multigetStatuses(responseBody, calendar + "/missing.ics")).containsExactly("HTTP/1.1 404 Not Found");
     }
 
+    @Test
+    void calendarMultigetShouldAnswer404ForAnHrefWhoseCalendarDoesNotExist() throws Exception {
+        String calendar = "/calendars/" + testUser.id() + "/" + testUser.id();
+        putIcs1(calendar + "/abcd.ics");
+        String deletedCalendarHref = "/calendars/" + testUser.id() + "/no-such-calendar/abcd.ics";
+
+        // WHEN the client multigets an existing event and one of a calendar that does not exist
+        String responseBody = calendarMultiget(calendar, calendar + "/abcd.ics", deletedCalendarHref);
+
+        // THEN the report does not fail as a whole: the existing event is returned, the other href gets a 404
+        assertThat(multigetStatuses(responseBody, calendar + "/abcd.ics")).containsExactly("HTTP/1.1 200 OK");
+        assertThat(multigetStatuses(responseBody, deletedCalendarHref)).containsExactly("HTTP/1.1 404 Not Found");
+    }
+
     private void putIcs1(String href) {
         given(authenticatedRequest)
             .contentType("text/calendar; charset=utf-8")

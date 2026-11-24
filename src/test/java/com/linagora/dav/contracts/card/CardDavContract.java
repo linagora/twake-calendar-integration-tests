@@ -2279,6 +2279,21 @@ public abstract class CardDavContract {
         assertThat(multigetStatuses(responseBody, addressBook + "/missing.vcf")).containsExactly("HTTP/1.1 404 Not Found");
     }
 
+    @Test
+    void addressbookMultigetShouldAnswer404ForAnHrefWhoseAddressBookDoesNotExist() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String addressBook = "/addressbooks/" + testUser.id() + "/contacts";
+        putCard(testUser, addressBook + "/abcdef.vcf");
+        String deletedBookHref = "/addressbooks/" + testUser.id() + "/no-such-book/abcdef.vcf";
+
+        // WHEN the client multigets an existing card and one of an address book that does not exist
+        String responseBody = addressbookMultiget(testUser, addressBook, addressBook + "/abcdef.vcf", deletedBookHref);
+
+        // THEN the report does not fail as a whole: the existing card is returned, the other href gets a 404
+        assertThat(multigetStatuses(responseBody, addressBook + "/abcdef.vcf")).containsExactly("HTTP/1.1 200 OK");
+        assertThat(multigetStatuses(responseBody, deletedBookHref)).containsExactly("HTTP/1.1 404 Not Found");
+    }
+
     private void putCard(OpenPaasUser user, String href) {
         given()
             .header("Authorization", user.impersonatedBasicAuth())
