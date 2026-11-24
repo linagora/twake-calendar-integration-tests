@@ -32,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -859,4 +860,68 @@ public abstract class CardDavSharingContract {
             .hasSize(1);
     }
 
+
+    @Test
+    void propfindOnAnotherUsersHomeShouldOnlyListTheAddressBooksTheyCanRead() throws Exception {
+        // GIVEN Alice owns a private address book and publishes her "collected" one
+        String privateBookId = "private-" + UUID.randomUUID();
+        cardDavClient.createAddressBook(alice, privateBookId, "Alice private book");
+        cardDavClient.setPublicRight(alice, alice.id(), "collected", PublicRight.READ);
+
+        // AND Alice subscribes to Cedric's public address book
+        cardDavClient.setPublicRight(cedric, cedric.id(), "collected", PublicRight.READ);
+        cardDavClient.subscribe(alice, cedric.id(), "collected", "Cedric's book");
+        AddressBookURL subscription = cardDavClient.findSubscribedAddressBook(alice, cedric.id(), "collected").orElseThrow();
+
+        // WHEN Bob lists Alice's address book home
+        List<String> hrefs = propfindHomeHrefs(bob, alice);
+
+        // THEN Bob only sees the address books he may read
+        assertThat(hrefs)
+            .contains("/addressbooks/" + alice.id() + "/collected/")
+            .doesNotContain("/addressbooks/" + alice.id() + "/" + privateBookId + "/",
+                "/addressbooks/" + alice.id() + "/contacts/",
+                subscription.asUri() + "/");
+    }
+
+    @Test
+    void ownerShouldStillListAllTheAddressBooksOfTheirHome() throws Exception {
+        // GIVEN Alice owns a private address book and subscribes to Bob's public address book
+        String privateBookId = "private-" + UUID.randomUUID();
+        cardDavClient.createAddressBook(alice, privateBookId, "Alice private book");
+        cardDavClient.setPublicRight(bob, bob.id(), "collected", PublicRight.READ);
+        cardDavClient.subscribe(alice, bob.id(), "collected", "Bob's book");
+        AddressBookURL subscription = cardDavClient.findSubscribedAddressBook(alice, bob.id(), "collected").orElseThrow();
+
+        // WHEN Alice lists her own address book home
+        List<String> hrefs = propfindHomeHrefs(alice, alice);
+
+        // THEN she sees all of her address books, private ones and subscriptions included
+        assertThat(hrefs)
+            .contains("/addressbooks/" + alice.id() + "/contacts/",
+                "/addressbooks/" + alice.id() + "/collected/",
+                "/addressbooks/" + alice.id() + "/" + privateBookId + "/",
+                subscription.asUri() + "/");
+    }
+
+    private List<String> propfindHomeHrefs(OpenPaasUser requester, OpenPaasUser homeOwner) throws Exception {
+        String responseBody = given()
+            .header("Authorization", requester.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .contentType("application/xml")
+            .accept("application/xml")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + homeOwner.id())
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        return XMLUtil.extractMultipleValueByXPath(responseBody, "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
+    }
 }
