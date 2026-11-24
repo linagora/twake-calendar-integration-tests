@@ -349,6 +349,78 @@ public abstract class TeamCalendarSchedulingContract {
     }
 
     @Test
+    void writeMemberShouldNotScheduleInTheNameOfAMemberForTheirPersonalEvent() {
+        // Given bobMember organizes a personal meeting with nonMember from his own calendar
+        String eventUid = "personal-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, CalendarURL.from(bobMember.id()), eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Bob personal meeting"));
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+        URI bobEventUri = CalendarURL.from(bobMember.id()).eventHref(eventUid);
+        String nonMemberBefore = calDavClient.getCalendarEvent(nonMember, nonMemberEventUri);
+        String bobBefore = calDavClient.getCalendarEvent(bobMember, bobEventUri);
+
+        // When aliceMember writes a Team Calendar copy of that UID still naming bobMember, a write member, as ORGANIZER
+        CalendarURL aliceTeamCalendar = calDavClient.findDelegatedCalendar(aliceMember, teamCalendar.id());
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(aliceMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Rewritten by Alice"))
+        .when()
+            .put(aliceTeamCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then nothing is scheduled in bobMember's name: his meeting and nonMember's copy are unchanged
+        assertCalendarObjectsStayUnchanged(nonMember, nonMemberEventUri, nonMemberBefore, bobMember, bobEventUri, bobBefore);
+
+        // And deleting the Team Calendar copy cancels nothing in bobMember's name either
+        calDavClient.deleteCalendarEvent(aliceMember, aliceTeamCalendar.eventHref(eventUid));
+        assertCalendarObjectsStayUnchanged(nonMember, nonMemberEventUri, nonMemberBefore, bobMember, bobEventUri, bobBefore);
+    }
+
+    @Test
+    void writeMemberShouldNotTakeOverAnEventAMemberOrganizesFromAnotherTeamCalendar() {
+        // Given bobMember organizes a meeting with nonMember from another Team Calendar, which aliceMember cannot see
+        OpenPaaSTeamCalendar otherTeamCalendar = dockerExtension().twakeCalendarProvisioningService()
+            .createTeamCalendar("sales-" + UUID.randomUUID(), "Sales Team")
+            .block();
+        dockerExtension().twakeCalendarProvisioningService()
+            .addTeamCalendarMember(otherTeamCalendar, bobMember, TeamCalendarRole.MEMBER)
+            .block();
+        CalendarURL bobOtherTeamCalendar = calDavClient.findDelegatedCalendar(bobMember, otherTeamCalendar.id());
+        String eventUid = "team-event-" + UUID.randomUUID();
+        calDavClient.upsertCalendarEvent(bobMember, bobOtherTeamCalendar, eventUid,
+            calendarData(eventUid, bobMember.email(), List.of(nonMember.email()), "Sales Team meeting"));
+        URI nonMemberEventUri = awaitCalendarObjectUriByEventUid(nonMember, CalendarURL.from(nonMember.id()), eventUid);
+        URI bobEventUri = bobOtherTeamCalendar.eventHref(eventUid);
+        String nonMemberBefore = calDavClient.getCalendarEvent(nonMember, nonMemberEventUri);
+        String bobBefore = calDavClient.getCalendarEvent(bobMember, bobEventUri);
+
+        // When aliceMember writes a copy of that UID in the Operations Team Calendar, organized by herself
+        CalendarURL aliceTeamCalendar = calDavClient.findDelegatedCalendar(aliceMember, teamCalendar.id());
+        given()
+            .header("Authorization", OpenPaasUser.impersonatedBasicAuth(aliceMember.email()))
+            .header("Content-Type", "text/calendar ; charset=utf-8")
+            .body(calendarData(eventUid, aliceMember.email(), List.of(bobMember.email(), nonMember.email()), "Taken over by Alice"))
+        .when()
+            .put(aliceTeamCalendar.eventHref(eventUid).toString())
+        .then()
+            .statusCode(anyOf(is(201), is(204)));
+
+        // Then the meeting is not handed over to aliceMember: bobMember's and nonMember's copies are unchanged
+        assertCalendarObjectsStayUnchanged(nonMember, nonMemberEventUri, nonMemberBefore, bobMember, bobEventUri, bobBefore);
+    }
+
+    private void assertCalendarObjectsStayUnchanged(OpenPaasUser attendee, URI attendeeEventUri, String attendeeBefore,
+                                                    OpenPaasUser organizer, URI organizerEventUri, String organizerBefore) {
+        TestUtil.awaitEvery500Millis().during(3, TimeUnit.SECONDS).atMost(10, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertThat(calDavClient.getCalendarEvent(attendee, attendeeEventUri)).isEqualTo(attendeeBefore);
+                assertThat(calDavClient.getCalendarEvent(organizer, organizerEventUri)).isEqualTo(organizerBefore);
+            });
+    }
+
+    @Test
     void recurringTeamCalendarUpdateShouldRejectInconsistentOccurrenceOrganizer() {
         // Given bobMember created a recurring Team Calendar event with a consistent organizer across occurrences
         String eventUid = "team-event-" + UUID.randomUUID();
