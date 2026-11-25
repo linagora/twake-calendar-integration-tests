@@ -287,6 +287,55 @@ public abstract class PrincipalMultitenancyContract {
             .statusCode(403);
     }
 
+    @Test
+    void domainPrincipalSearchShouldNotReturnAnotherTenantsDomain() throws Exception {
+        // Given Bob is authenticated in the default domain and another tenant's domain exists
+        String body = """
+                <d:principal-property-search xmlns:d="DAV:">
+                  <d:property-search>
+                    <d:prop>
+                      <d:displayname/>
+                    </d:prop>
+                    <d:match>%s</d:match>
+                  </d:property-search>
+                  <d:prop>
+                    <d:displayname/>
+                  </d:prop>
+                </d:principal-property-search>""";
+
+        // When Bob searches domain principals by the name of the other tenant's domain
+        String foreignSearch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body(body.formatted(SECOND_DOMAIN))
+        .when()
+            .request("REPORT", "/principals/domains")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        // Then no domain principal is returned, the other tenant's included
+        assertThat(extractPrincipalHrefs(foreignSearch))
+            .as("Bob must not discover another tenant's domain principal by name")
+            .isEmpty();
+
+        // When Bob searches domain principals by the name of his own domain
+        String ownSearch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .header("Depth", "0")
+            .body(body.formatted(bob.email().substring(bob.email().indexOf('@') + 1)))
+        .when()
+            .request("REPORT", "/principals/domains")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        // Then only his own domain principal is returned
+        assertThat(extractPrincipalHrefs(ownSearch))
+            .singleElement()
+            .satisfies(href -> assertThat(href).contains("/principals/domains/" + dockerExtension().domainId()));
+    }
+
     private String generateJwtFor(OpenPaasUser user) {
         String quotedJwt = given()
             .baseUri(dockerExtension().getDockerTwakeCalendarSetupSingleton()

@@ -66,6 +66,7 @@ import com.linagora.dav.CalDavClient.DelegationRight;
 import com.linagora.dav.CalendarURL;
 import com.linagora.dav.CalendarUtil;
 import com.linagora.dav.DockerTwakeCalendarExtension;
+import com.linagora.dav.DockerTwakeCalendarSetup.DockerService;
 import com.linagora.dav.ITIPJsonBodyRequest;
 import com.linagora.dav.JsonCalendarData;
 import com.linagora.dav.JsonCalendarEventData;
@@ -74,6 +75,10 @@ import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.TwakeCalendarEvent;
 import com.linagora.dav.XMLUtil;
 import com.linagora.dav.dto.share.SubscribedCalendarRequest;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Updates;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
@@ -81,6 +86,7 @@ import io.restassured.response.Response;
 import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.javacrumbs.jsonunit.core.Option;
+import reactor.core.publisher.Mono;
 
 public abstract class CalDavDelegationContract {
     private static final Map<String, String> DAV_NAMESPACES = Map.of("d", "DAV:");
@@ -540,6 +546,8 @@ public abstract class CalDavDelegationContract {
         assertThatCannotReadAliceSourceCalendar(bob, eventUid);
     }
 
+    private static final int DECLINED_INVITE_STATUS = 3;
+
     private static final String INITIAL_SYNC_TOKEN = "http://sabre.io/ns/sync/1";
 
     @ParameterizedTest
@@ -619,6 +627,133 @@ public abstract class CalDavDelegationContract {
             .statusCode(SC_NOT_FOUND);
         assertThatCalendar(calDavClient.getCalendarEvent(alice, URI.create(aliceSourceEventPath(eventUid))))
             .isEqualTo(original);
+    }
+
+    @ParameterizedTest(name = "{1} {0}")
+    @CsvSource({"VTODO, PRIVATE", "VTODO, CONFIDENTIAL", "VJOURNAL, PRIVATE", "VJOURNAL, CONFIDENTIAL"})
+    protected void privateOrConfidentialTaskOrJournalShouldBeMaskedForReadOnlySharee(String component, String classification) throws Exception {
+        // Given Alice keeps a classified task or journal in a calendar she shares read-only with Bob.
+        CalendarURL calendar = givenAliceCalendarAcceptingTasksAndJournals();
+        calDavClient.grantDelegation(alice, calendar.calendarId(), bob, DelegationRight.READ);
+        String uid = component.toLowerCase() + "-" + UUID.randomUUID();
+        String calendarData = classifiedTaskOrJournal(component, uid, classification);
+        calDavClient.upsertCalendarEvent(alice, calendar, uid, calendarData);
+
+        // When Bob gets it, he reads only the Busy placeholder.
+        String bobGet = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(calendar.eventHref(uid))
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        assertThat(bobGet).contains("BEGIN:" + component, "UID:" + uid, "SUMMARY:Busy");
+        assertThatDoesNotLeakPrivateEventDetails(bobGet);
+
+        // And a calendar-query on the hidden summary does not find it.
+        String query = """
+            <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+              <d:prop><d:getetag/><c:calendar-data/></d:prop>
+              <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="{component}">
+                <c:prop-filter name="SUMMARY"><c:text-match>{summary}</c:text-match></c:prop-filter>
+              </c:comp-filter></c:comp-filter></c:filter>
+            </c:calendar-query>
+            """.replace("{component}", component);
+        byte[] hiddenMatch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Depth", "1")
+            .body(query.replace("{summary}", "Sprint planning"))
+        .when()
+            .request("REPORT", calendar.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asByteArray();
+        assertThat(XMLUtil.extractEventIdsFromXml(hiddenMatch)).isEmpty();
+
+        // And a calendar-query on the placeholder finds it, still redacted.
+        byte[] visibleMatch = given()
+            .header("Authorization", bob.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .accept("application/xml")
+            .header("Depth", "1")
+            .body(query.replace("{summary}", "Busy"))
+        .when()
+            .request("REPORT", calendar.asUri().toString())
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asByteArray();
+        assertThat(XMLUtil.extractEventIdsFromXml(visibleMatch)).containsExactly(uid);
+        assertThatDoesNotLeakPrivateEventDetails(new String(visibleMatch, StandardCharsets.UTF_8));
+
+        // Then Alice still reads it in full.
+        String aliceGet = given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .accept("text/calendar")
+        .when()
+            .get(calendar.eventHref(uid))
+        .then()
+            .statusCode(SC_OK)
+            .extract().asString();
+        assertThat(aliceGet).contains("Sprint planning #01", "Confidential information that Bob should not see",
+            "Secret Room", "Private custom property");
+    }
+
+    private CalendarURL givenAliceCalendarAcceptingTasksAndJournals() {
+        CalendarURL calendar = new CalendarURL(alice.id(), "tasks-" + UUID.randomUUID());
+        given()
+            .header("Authorization", alice.impersonatedBasicAuth())
+            .contentType("application/xml")
+            .body("""
+                <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                  <D:set><D:prop>
+                    <D:displayname>Tasks and journals</D:displayname>
+                    <C:supported-calendar-component-set>
+                      <C:comp name="VEVENT"/><C:comp name="VTODO"/><C:comp name="VJOURNAL"/>
+                    </C:supported-calendar-component-set>
+                  </D:prop></D:set>
+                </C:mkcalendar>
+                """)
+        .when()
+            .request("MKCALENDAR", calendar.asUri().toString())
+        .then()
+            .statusCode(201);
+        calDavClient.updateCalendarAcl(alice, calendar, "");
+        return calendar;
+    }
+
+    private static String classifiedTaskOrJournal(String component, String uid, String classification) {
+        String alarm = component.equals("VTODO") ? """
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            TRIGGER:-PT15M
+            DESCRIPTION:Secret alarm text
+            END:VALARM
+            """ : "";
+        String due = component.equals("VTODO") ? "DUE:20300411T110000Z\n" : "";
+        return """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Example Corp.//CalDAV Client//EN
+            BEGIN:{component}
+            UID:{uid}
+            DTSTAMP:20300401T080000Z
+            DTSTART;X-SECRET=secret-start-parameter:20300411T100000Z
+            {due}SUMMARY:Sprint planning #01
+            DESCRIPTION:Confidential information that Bob should not see
+            LOCATION:Secret Room
+            X-PRIVATE-NOTE:Private custom property
+            CLASS:{classification}
+            {alarm}END:{component}
+            END:VCALENDAR
+            """.replace("{component}", component)
+            .replace("{uid}", uid)
+            .replace("{due}", due)
+            .replace("{classification}", classification)
+            .replace("{alarm}", alarm)
+            .replace("\n", "\r\n");
     }
 
     private String givenAlicePrivateSourceCalendarWithEvent(String eventClass) {
@@ -1461,6 +1596,48 @@ public abstract class CalDavDelegationContract {
         awaitAtMost.untilAsserted(() -> assertThat(messages)
             .anySatisfy(json ->
                 assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + testUser2.id())));
+    }
+
+    @Test
+    void declinedShareeShouldNotReceiveEventMessages() throws Exception {
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:created", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:updated", "");
+        dockerExtension().getChannel().queueBind(QUEUE_NAME, "calendar:event:deleted", "");
+
+        // Given Bob shares his calendar read-only with Alice and Cedric, and Alice declined the share.
+        // The JSON invite-reply API only exposes accepted/noresponse, so seed the declined state directly.
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        calDavClient.grantDelegations(bob, bob.id(), Map.of(alice, DelegationRight.READ, cedric, DelegationRight.READ));
+        CalendarURL aliceCopy = calDavClient.findDelegatedCalendar(alice, bob.id());
+        String mongoUri = dockerExtension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerService.MONGO, "mongodb").toString();
+        try (MongoClient mongo = MongoClients.create(mongoUri)) {
+            long modified = Mono.from(mongo.getDatabase("sabre").getCollection("calendarinstances")
+                .updateOne(Filters.and(
+                    Filters.eq("principaluri", "principals/users/" + alice.id()),
+                    Filters.eq("uri", aliceCopy.calendarId())),
+                    Updates.set("share_invitestatus", DECLINED_INVITE_STATUS)))
+                .block().getModifiedCount();
+            assertThat(modified).isEqualTo(1);
+        }
+
+        // When Bob creates an event in the shared calendar.
+        String eventUid = UUID.randomUUID().toString();
+        calDavClient.upsertCalendarEvent(bob, eventUid, TwakeCalendarEvent.builder()
+            .uid(eventUid)
+            .organizer(bob.email())
+            .summary("Sprint planning #01")
+            .dtstart("20300411T100000")
+            .dtend("20300411T110000")
+            .build()
+            .toString());
+
+        // Then Cedric, who accepted, is notified on his copy, but Alice is not.
+        BlockingQueue<JsonNode> messages = AmqpTestHelper.listenToQueue(dockerExtension().getChannel(), QUEUE_NAME);
+        awaitAtMost.untilAsserted(() -> assertThat(messages)
+            .anySatisfy(json -> assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + cedric.id())));
+        awaitEvery500Millis().during(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(messages)
+            .noneSatisfy(json -> assertThat(json.path("eventPath").asText()).startsWith("/calendars/" + alice.id())));
     }
 
     @Test
@@ -2502,6 +2679,63 @@ public abstract class CalDavDelegationContract {
         assertThat(response)
             .doesNotContain("mailto:" + cedric.email())
             .doesNotContain("principals/users/" + cedric.id());
+    }
+
+    @ParameterizedTest(name = "{0} by {1}")
+    @CsvSource({"shared-owner, owner", "not-shared, owner", "shared-owner, delegatedAdmin", "not-shared, delegatedAdmin"})
+    protected void xmlShareRequestWithOwnerAccessLevelShouldBeRejected(String accessLevel, String requester) {
+        // Given Bob owns a calendar, which Alice administrates through her delegated copy.
+        OpenPaasUser cedric = dockerExtension().newTestUser();
+        String calendarId = UUID.randomUUID().toString();
+        calDavClient.createNewCalendar(bob, calendarId, "Calendar A", 2);
+        calDavClient.grantDelegation(bob, calendarId, alice, DelegationRight.ADMIN);
+        CalendarURL delegatedCalendar = calDavClient.findDelegatedCalendar(alice, new CalendarURL(bob.id(), calendarId));
+        boolean byOwner = requester.equals("owner");
+        OpenPaasUser sharer = byOwner ? bob : alice;
+        String sharedPath = (byOwner ? new CalendarURL(bob.id(), calendarId) : delegatedCalendar).asUri().toString();
+        String bobCalendarsBefore = calDavClient.getUserCalendarsJson(bob);
+        String aliceCalendarsBefore = calDavClient.getUserCalendarsJson(alice);
+        String cedricCalendarsBefore = calDavClient.getUserCalendarsJson(cedric);
+
+        // When the calendar is shared with Cedric at an owner access level over the XML share-resource route.
+        given()
+            .header("Authorization", sharer.impersonatedBasicAuth())
+            .contentType("application/davsharing+xml; charset=utf-8")
+            .accept("application/xml")
+            .body(xmlShareResource(cedric, accessLevel))
+        .when()
+            .post(sharedPath)
+        .then()
+            .statusCode(SC_BAD_REQUEST);
+
+        // Then no instance is created and no calendar list changes.
+        assertThat(calDavClient.getUserCalendarsJson(cedric)).isEqualTo(cedricCalendarsBefore);
+        assertThat(calDavClient.getUserCalendarsJson(bob)).isEqualTo(bobCalendarsBefore);
+        assertThat(calDavClient.getUserCalendarsJson(alice)).isEqualTo(aliceCalendarsBefore);
+
+        // And the same route still shares the calendar at a sharee access level.
+        given()
+            .header("Authorization", sharer.impersonatedBasicAuth())
+            .contentType("application/davsharing+xml; charset=utf-8")
+            .accept("application/xml")
+            .body(xmlShareResource(cedric, "read"))
+        .when()
+            .post(sharedPath)
+        .then()
+            .statusCode(anyOf(is(SC_OK), is(204)));
+        assertThat(calDavClient.findDelegatedCalendar(cedric, new CalendarURL(bob.id(), calendarId))).isNotNull();
+    }
+
+    private static String xmlShareResource(OpenPaasUser sharee, String accessLevel) {
+        return """
+            <D:share-resource xmlns:D="DAV:">
+              <D:sharee>
+                <D:href>mailto:{email}</D:href>
+                <D:share-access><D:{access}/></D:share-access>
+              </D:sharee>
+            </D:share-resource>
+            """.replace("{email}", sharee.email())
+            .replace("{access}", accessLevel);
     }
 
     @Test

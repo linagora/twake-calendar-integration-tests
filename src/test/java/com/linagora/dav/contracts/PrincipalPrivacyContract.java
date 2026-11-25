@@ -442,6 +442,34 @@ public abstract class PrincipalPrivacyContract {
             .noneSatisfy(href -> assertThat(href).contains("/principals/resources/" + resource.id()));
     }
 
+    @Test
+    void propfindDomainPrincipalGroupMemberSetShouldOnlyListTheCaller() throws Exception {
+        // Given Bob and Alice are members of the same domain.
+        OpenPaasUser alice = dockerExtension().newTestUser();
+
+        // When Bob reads the member set of the domain principal.
+        String responseBody = given()
+            .header("Depth", "0")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:group-member-set/>
+                  </d:prop>
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/principals/domains/" + dockerExtension().domainId())
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        // Then the member set holds at most Bob himself, never the other members of the domain.
+        List<String> members = XMLUtil.extractMultipleValueByXPath(responseBody,
+            "//d:group-member-set/d:href", Map.of("d", "DAV:"));
+        assertThat(members)
+            .allSatisfy(href -> assertThat(href).contains("/principals/users/" + bob.id()))
+            .noneSatisfy(href -> assertThat(href).contains(alice.id()));
+    }
+
     private List<String> extractPrincipalHrefs(String responseBody) throws Exception {
         return XMLUtil.extractMultipleValueByXPath(responseBody, "//d:multistatus/d:response/d:href", Map.of("d", "DAV:"));
     }

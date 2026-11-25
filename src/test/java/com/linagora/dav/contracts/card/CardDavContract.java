@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.assertj.core.api.AssertionsForInterfaceTypes;
@@ -1636,6 +1637,34 @@ public abstract class CardDavContract {
             .areSimilar();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"999999", "abc", "-1"})
+    void syncCollectionWithATokenTheServerNeverIssuedShouldBeRefused(String token) {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        // WHEN the client syncs with a token above the current one, or not a number
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
+                <?xml version="1.0" encoding="utf-8" ?>
+                <d:sync-collection xmlns:d="DAV:">
+                  <d:sync-token>http://sabre.io/ns/sync/%s</d:sync-token>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:sync-collection>
+                """.formatted(token))
+        .when()
+            .request("REPORT", "/addressbooks/" + testUser.id() + "/contacts")
+        // THEN the token is refused rather than answered "nothing changed" or "everything changed"
+        .then()
+            .statusCode(403)
+            .extract().asString();
+
+        assertThat(responseBody).contains("valid-sync-token");
+    }
+
     @Test
     void reportSyncTokenWhenNoUpdate() {
         OpenPaasUser testUser = dockerExtension().newTestUser();
@@ -2140,5 +2169,167 @@ public abstract class CardDavContract {
             .ignoreChildNodesOrder()
             .withDifferenceEvaluator(IGNORE_ETAG)
             .areSimilar();
+    }
+
+    @Test
+    void xmlMkcolWithADisplayNameHoldingElementsShouldBeRejected() {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+
+        // WHEN the user creates an address book whose display name holds child elements
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
+                <d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:set>
+                    <d:prop>
+                      <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>
+                      <d:displayname><x:y xmlns:x="urn:x"/></d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:mkcol>""")
+        .when()
+            .request("MKCOL", "/addressbooks/" + testUser.id() + "/complexbook")
+        // THEN it is refused
+        .then()
+            .statusCode(400);
+
+        // AND no address book was created
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "0")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id() + "/complexbook")
+        .then()
+            .statusCode(404);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "<d:displayname><x:y xmlns:x=\"urn:x\"/></d:displayname>",
+        "<card:addressbook-description><x:y xmlns:x=\"urn:x\"/></card:addressbook-description>"})
+    void xmlProppatchWithANameHoldingElementsShouldBeRejected(String property) throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        createXmlAddressBook(testUser, "plainbook");
+
+        // WHEN the user sets a display name or description holding child elements on an address book
+        String responseBody = given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:set>
+                    <d:prop>%s</d:prop>
+                  </d:set>
+                </d:propertyupdate>""".formatted(property))
+        .when()
+            .request("PROPPATCH", "/addressbooks/" + testUser.id() + "/plainbook")
+        .then()
+            .statusCode(207)
+            .extract().asString();
+
+        // THEN the property is refused with a 400 propstat
+        assertThat(XMLUtil.extractMultipleValueByXPath(responseBody, "//d:propstat/d:status", Map.of("d", "DAV:")))
+            .containsExactly("HTTP/1.1 400 Bad Request");
+
+        // AND the home of the user still lists
+        given()
+            .header("Authorization", testUser.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
+                <d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:prop>
+                    <d:displayname/>
+                    <card:addressbook-description/>
+                  </d:prop>
+                </d:propfind>""")
+        .when()
+            .request("PROPFIND", "/addressbooks/" + testUser.id())
+        .then()
+            .statusCode(207);
+    }
+
+    private void createXmlAddressBook(OpenPaasUser user, String addressBookId) {
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .body("""
+                <d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:set>
+                    <d:prop>
+                      <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>
+                      <d:displayname>Plain book</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:mkcol>""")
+        .when()
+            .request("MKCOL", "/addressbooks/" + user.id() + "/" + addressBookId)
+        .then()
+            .statusCode(201);
+    }
+
+    @Test
+    void addressbookMultigetShouldAnswer404ForAnUnknownHref() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String addressBook = "/addressbooks/" + testUser.id() + "/contacts";
+        putCard(testUser, addressBook + "/abcdef.vcf");
+
+        // WHEN the client multigets an existing card and one that does not exist
+        String responseBody = addressbookMultiget(testUser, addressBook, addressBook + "/abcdef.vcf", addressBook + "/missing.vcf");
+
+        // THEN the existing card is returned and the unknown href gets a 404 response
+        assertThat(multigetStatuses(responseBody, addressBook + "/abcdef.vcf")).containsExactly("HTTP/1.1 200 OK");
+        assertThat(multigetStatuses(responseBody, addressBook + "/missing.vcf")).containsExactly("HTTP/1.1 404 Not Found");
+    }
+
+    @Test
+    void addressbookMultigetShouldAnswer404ForAnHrefWhoseAddressBookDoesNotExist() throws Exception {
+        OpenPaasUser testUser = dockerExtension().newTestUser();
+        String addressBook = "/addressbooks/" + testUser.id() + "/contacts";
+        putCard(testUser, addressBook + "/abcdef.vcf");
+        String deletedBookHref = "/addressbooks/" + testUser.id() + "/no-such-book/abcdef.vcf";
+
+        // WHEN the client multigets an existing card and one of an address book that does not exist
+        String responseBody = addressbookMultiget(testUser, addressBook, addressBook + "/abcdef.vcf", deletedBookHref);
+
+        // THEN the report does not fail as a whole: the existing card is returned, the other href gets a 404
+        assertThat(multigetStatuses(responseBody, addressBook + "/abcdef.vcf")).containsExactly("HTTP/1.1 200 OK");
+        assertThat(multigetStatuses(responseBody, deletedBookHref)).containsExactly("HTTP/1.1 404 Not Found");
+    }
+
+    private void putCard(OpenPaasUser user, String href) {
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .contentType("text/vcard; charset=utf-8")
+            .body(STRING.getBytes(StandardCharsets.UTF_8))
+        .when()
+            .put(href)
+        .then()
+            .statusCode(201);
+    }
+
+    private String addressbookMultiget(OpenPaasUser user, String addressBook, String... hrefs) {
+        String hrefElements = Stream.of(hrefs)
+            .map(href -> "<d:href>" + href + "</d:href>")
+            .collect(Collectors.joining("\n"));
+
+        return given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .body("""
+                <card:addressbook-multiget xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                  %s
+                </card:addressbook-multiget>""".formatted(hrefElements))
+        .when()
+            .request("REPORT", addressBook)
+        .then()
+            .statusCode(207)
+            .extract().asString();
+    }
+
+    private List<String> multigetStatuses(String responseBody, String href) throws Exception {
+        return XMLUtil.extractMultipleValueByXPath(responseBody,
+            "//d:response[d:href='" + href + "']/d:status | //d:response[d:href='" + href + "']/d:propstat/d:status",
+            Map.of("d", "DAV:"));
     }
 }

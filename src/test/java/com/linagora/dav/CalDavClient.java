@@ -1119,11 +1119,24 @@ public class CalDavClient {
     }
 
     public Mono<Void> sendITIPRequest(OpenPaasUser requester, URI recipientCalendarUri, String jsonBody) {
-        return httpClient.headers(headers -> requester.impersonatedBasicAuth(headers)
-                .add(HttpHeaderNames.ACCEPT, "application/json")
-                .add(HttpHeaderNames.CONTENT_TYPE, "application/json"))
-            .request(HttpMethod.valueOf("ITIP"))
-            .uri(recipientCalendarUri.toString())
+        return sendITIPRequest(requester, recipientCalendarUri, jsonBody, false);
+    }
+
+    /**
+     * Sends an ITIP message to any path, with the ITIP verb, or with a POST carrying an
+     * "X-Http-Method-Override: ITIP" header the way the web client does.
+     */
+    public Mono<Void> sendITIPRequest(OpenPaasUser requester, URI requestUri, String jsonBody, boolean viaMethodOverride) {
+        return httpClient.headers(headers -> {
+                requester.impersonatedBasicAuth(headers)
+                    .add(HttpHeaderNames.ACCEPT, "application/json")
+                    .add(HttpHeaderNames.CONTENT_TYPE, "application/json");
+                if (viaMethodOverride) {
+                    headers.add("X-Http-Method-Override", "ITIP");
+                }
+            })
+            .request(viaMethodOverride ? HttpMethod.POST : HttpMethod.valueOf("ITIP"))
+            .uri(requestUri.toString())
             .send(Mono.just(Unpooled.wrappedBuffer(jsonBody.getBytes(StandardCharsets.UTF_8))))
             .responseSingle((response, responseContent) -> {
                 if (response.status().code() == 204) {
@@ -1134,7 +1147,7 @@ public class CalDavClient {
                     .flatMap(body -> Mono.error(new RuntimeException("""
                         Unexpected status code: %d when sending ITIP to '%s'
                         %s
-                        """.formatted(response.status().code(), recipientCalendarUri, body))));
+                        """.formatted(response.status().code(), requestUri, body))));
             });
     }
 }
