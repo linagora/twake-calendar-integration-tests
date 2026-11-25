@@ -20,7 +20,7 @@ services:
       - emaily
 
   opensearch:
-    image: opensearchproject/opensearch:2.19.2
+    image: opensearchproject/opensearch:3.10.0
     environment:
       - discovery.type=single-node
       - DISABLE_INSTALL_DEMO_CONFIG=true
@@ -35,12 +35,12 @@ services:
       - emaily
 
   rabbitmq:
-    image: rabbitmq:4.1.1-management
+    image: rabbitmq:4.2.9-management
     networks:
       - emaily
 
   mongo:
-    image: mongo:8.0.6
+    image: mongo:9.0.8
     healthcheck:
       test: [ "CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok === 1 ? 0 : 1)" ]
       interval: 3s
