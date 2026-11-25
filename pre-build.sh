@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # $1 Sabre v4 docker image to test against. Thought to integrate integration tests directly into Sabre CI.
 
