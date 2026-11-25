@@ -5,10 +5,9 @@ FROM ${SABRE_4_7_IMAGE}
 COPY src/test/resources/twake-calendar-side-service-conf/jwt_publickey /var/www/config/esn.key.pub
 
 # Compose passes JSON as an environment variable because CI's Docker daemon may not share the workspace.
-# Since esn-sabre 2.5.0.9 the generate_config.sh line ends with a ` \` continuation (`|| fail ...` on the next
-# line): the sed keeps it, so the failure check then applies to the whole if.
+# Preserve any trailing continuation and config-generation failure handler in newer start.sh versions.
 RUN grep -q 'SABRE_CONFIG_JSON' /var/www/scripts/start.sh || \
-    sed -i 's@^sh /var/www/scripts/generate_config.sh > /var/www/config.json\( \\\)\{0,1\}$@if [ -n "${SABRE_CONFIG_JSON:-}" ]; then printf "%s" "$SABRE_CONFIG_JSON" > /var/www/config.json; else sh /var/www/scripts/generate_config.sh > /var/www/config.json; fi\1@' /var/www/scripts/start.sh
+    sed -i 's@^sh /var/www/scripts/generate_config.sh > /var/www/config.json@if [ -n "${SABRE_CONFIG_JSON:-}" ]; then printf "%s" "$SABRE_CONFIG_JSON" > /var/www/config.json; else sh /var/www/scripts/generate_config.sh > /var/www/config.json; fi@' /var/www/scripts/start.sh
 RUN grep -q 'SABRE_CONFIG_JSON' /var/www/scripts/start.sh
 
 # Installs the Kerberos keytab passed as KERBEROS_KEYTAB_BASE64, then runs start.sh.
