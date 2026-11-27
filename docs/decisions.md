@@ -31,3 +31,10 @@ Categories: UX, UI, Product, Architecture, Infra, Tech.
 - Decided by: Benoit Tellier, [linagora/esn-sabre#911](https://github.com/linagora/esn-sabre/pull/911)
 - Why: RFC 4791 section 7.9 and RFC 6352 section 8.7. Before, an unknown href got no response at all, so a syncing client could not tell a deleted object from a dropped answer, and an href of a deleted collection failed the whole report with 404. Clients must read the 404 response as "this object is gone".
 - Scope: CalDAV and CardDAV multiget REPORTs (CalDavContract, CardDavContract).
+
+## 2026-11-27, [Product] Default directory ACLs follow current domain membership
+
+- Decision: the default domain-members ACL grants member privileges to the domain principal instead of enumerating users, so saving and restoring it follows current membership while administrator privileges follow the current role.
+- Decided by: repository owner, Codex chat, 2026-11-27, accepting [the review of esn-sabre#933](https://github.com/linagora/esn-sabre/pull/933#discussion_r4711464819).
+- Why: a fixed list of user ACEs excludes future members and grows with the domain's user count.
+- Scope: esn-sabre group address books, DOMAIN-MEMBERS.md and DomainAddressBookContract; explicit user grants remain individual grants.
