@@ -19,14 +19,25 @@
 package com.linagora.dav.contracts.card;
 
 import static io.restassured.RestAssured.given;
+import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
+import static org.apache.http.HttpStatus.SC_CONFLICT;
+import static org.apache.http.HttpStatus.SC_CREATED;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static org.apache.http.HttpStatus.SC_MULTI_STATUS;
 import static org.apache.http.HttpStatus.SC_NOT_FOUND;
 import static org.apache.http.HttpStatus.SC_NO_CONTENT;
 import static org.apache.http.HttpStatus.SC_OK;
+import static org.apache.http.HttpStatus.SC_UNAUTHORIZED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
+
+import javax.xml.transform.OutputKeys;
 
 import org.apache.commons.lang3.StringUtils;
 import org.assertj.core.api.Assertions;
@@ -34,17 +45,29 @@ import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.w3c.dom.Node;
+import org.xmlunit.assertj3.XmlAssert;
+import org.xmlunit.builder.Input;
+import org.xmlunit.builder.Transform;
+import org.xmlunit.xpath.JAXPXPathEngine;
 
 import com.linagora.dav.CardDavClient;
 import com.linagora.dav.DockerTwakeCalendarExtension;
 import com.linagora.dav.DockerTwakeCalendarSetup;
 import com.linagora.dav.OpenPaasUser;
 import com.linagora.dav.VCardContact;
+import com.linagora.dav.XMLUtil;
+import com.mongodb.client.model.Filters;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
+import reactor.core.publisher.Mono;
 
 public abstract class DomainAddressBookContract {
 
@@ -57,6 +80,42 @@ public abstract class DomainAddressBookContract {
     private String domainName;
     private static final String DOMAIN_ADDRESS_BOOK = "dab";
     private static final String DOMAIN_MEMBERS_ADDRESS_BOOK = "domain-members";
+
+    private static final String RESTRICTED_DOMAIN_MEMBERS_ACL = """
+        <d:acl xmlns:d="DAV:"/>
+        """;
+    private static final String DOMAIN_MEMBERS_READ_ACL = """
+        <d:acl xmlns:d="DAV:">
+          <d:ace>
+            <d:principal>
+              <d:href>/principals/domains/DOMAIN_ID</d:href>
+            </d:principal>
+            <d:grant>
+              <d:privilege>
+                <d:read/>
+              </d:privilege>
+            </d:grant>
+          </d:ace>
+        </d:acl>
+        """;
+    private static final String DOMAIN_MEMBER_VCARD = """
+        BEGIN:VCARD
+        VERSION:3.0
+        UID:directory-contact
+        FN:Directory Contact
+        EMAIL:directory.contact@example.org
+        END:VCARD
+        """.replace("\n", "\r\n");
+
+    private static final String DOMAIN_MEMBERS_DISPLAY_NAME_UPDATE = """
+        <d:propertyupdate xmlns:d="DAV:">
+          <d:set>
+            <d:prop>
+              <d:displayname>Current administrator role</d:displayname>
+            </d:prop>
+          </d:set>
+        </d:propertyupdate>
+        """;
 
     @BeforeEach
     void setUp() {
@@ -958,5 +1017,794 @@ public abstract class DomainAddressBookContract {
             .get(destination)
         .then()
             .statusCode(SC_NOT_FOUND);
+    }
+
+    protected static Stream<Arguments> domainMembersReadRequests() {
+        return Stream.of(false, true).flatMap(domainAdministrator -> Stream.of(
+            Arguments.of(domainAdministrator, "GET", "/directory-contact.vcf", "", "text/vcard", SC_OK),
+            Arguments.of(domainAdministrator, "GET", "?export", "", "text/vcard", SC_OK),
+            Arguments.of(domainAdministrator, "GET", ".json", "", "application/json", SC_OK),
+            Arguments.of(domainAdministrator, "GET", ".json?email=directory.contact%40example.org", "", "application/json", SC_OK),
+            Arguments.of(domainAdministrator, "PROPFIND", "", """
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:getetag/>
+                  </d:prop>
+                </d:propfind>
+                """, "application/xml", SC_MULTI_STATUS),
+            Arguments.of(domainAdministrator, "REPORT", "", """
+                <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+                  <d:prop>
+                    <c:address-data/>
+                  </d:prop>
+                </c:addressbook-query>
+                """, "application/xml", SC_MULTI_STATUS),
+            Arguments.of(domainAdministrator, "REPORT", "", """
+                <c:addressbook-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+                  <d:prop>
+                    <c:address-data/>
+                  </d:prop>
+                  <d:href>BOOK_PATH/directory-contact.vcf</d:href>
+                </c:addressbook-multiget>
+                """, "application/xml", SC_MULTI_STATUS),
+            Arguments.of(domainAdministrator, "REPORT", "", """
+                <d:sync-collection xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+                  <d:sync-token/>
+                  <d:sync-level>1</d:sync-level>
+                  <d:prop>
+                    <d:getetag/>
+                    <c:address-data/>
+                  </d:prop>
+                </d:sync-collection>
+                """, "application/xml", SC_MULTI_STATUS)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("domainMembersReadRequests")
+    protected void restrictedPolicyShouldDenyMembersButPreserveDomainAdministratorReads(boolean domainAdministrator, String method,
+                                                                                 String suffix, String body,
+                                                                                 String accept, int initialStatus) {
+        OpenPaasUser administrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        // Given both members and domain administrators can read the existing directory.
+        OpenPaasUser user = domainAdministrator ? administrator : openPaasUser;
+        given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .accept(accept)
+            .body(body.replace("BOOK_PATH", bookPath))
+            .request(method, bookPath + suffix)
+        .then()
+            .statusCode(initialStatus);
+
+        // When the domain's technical token restricts access.
+        given()
+            .header("TwakeCalendarToken", technicalToken)
+            .body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+            .request("ACL", bookPath)
+        .then()
+            .statusCode(SC_OK);
+
+        // Then members are denied, while domain administrators retain access to the preserved card.
+        String denied = given()
+            .header("Authorization", user.impersonatedBasicAuth())
+            .header("Depth", "1")
+            .accept(accept)
+            .body(body.replace("BOOK_PATH", bookPath))
+            .request(method, bookPath + suffix)
+        .then()
+            .statusCode(domainAdministrator ? initialStatus : SC_FORBIDDEN).extract().asString();
+        if (!domainAdministrator) {
+            assertThat(denied).doesNotContain("directory.contact@example.org", "BEGIN:VCARD");
+        }
+        String stored = given()
+            .header("TwakeCalendarToken", technicalToken)
+            .accept("text/vcard")
+            .get(bookPath + "/directory-contact.vcf")
+        .then()
+            .statusCode(SC_OK).extract().asString();
+        assertThat(stored).contains("directory.contact@example.org");
+    }
+
+    @Test
+    protected void technicalTokenCanSynchronizeAndRestoreAccessWithoutRepopulatingCards() {
+        OpenPaasUser administrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        // Given an idempotent restriction, with the existing card still present.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            given().header("TwakeCalendarToken", technicalToken)
+                .body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+                .request("ACL", bookPath)
+            .then().statusCode(SC_OK);
+        }
+
+        // LDAP synchronization exports the existing cards before computing its changes.
+        String beforeSync = given().header("TwakeCalendarToken", technicalToken).accept("text/vcard")
+            .get(bookPath + "?export")
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(beforeSync).contains("directory.contact@example.org");
+
+        // When synchronization updates, adds and deletes cards while end users are denied access.
+        given().header("TwakeCalendarToken", technicalToken).contentType("text/vcard")
+            .body(DOMAIN_MEMBER_VCARD.replace("FN:Directory Contact", "FN:Updated Directory Contact"))
+            .put(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_NO_CONTENT);
+        for (String uid : List.of("added", "deleted")) {
+            given().header("TwakeCalendarToken", technicalToken).contentType("text/vcard")
+                .body(DOMAIN_MEMBER_VCARD.replace("UID:directory-contact", "UID:" + uid))
+                .put(bookPath + "/" + uid + ".vcf")
+            .then().statusCode(SC_CREATED);
+        }
+        given().header("TwakeCalendarToken", technicalToken).delete(bookPath + "/deleted.vcf")
+        .then().statusCode(SC_NO_CONTENT);
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/added.vcf")
+        .then().statusCode(SC_FORBIDDEN);
+
+        String afterSync = given().header("TwakeCalendarToken", technicalToken).accept("text/vcard")
+            .get(bookPath + "?export")
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(afterSync).contains("FN:Updated Directory Contact", "UID:added").doesNotContain("UID:deleted");
+
+        // Then restoring access twice exposes the same cards without a reimport.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            given().header("TwakeCalendarToken", technicalToken)
+                .body(DOMAIN_MEMBERS_READ_ACL.replace("DOMAIN_ID", domainId))
+                .request("ACL", bookPath)
+            .then().statusCode(SC_OK);
+        }
+        for (OpenPaasUser user : List.of(openPaasUser, administrator)) {
+            String card = given().header("Authorization", user.impersonatedBasicAuth()).accept("text/vcard")
+                .get(bookPath + "/directory-contact.vcf")
+            .then().statusCode(SC_OK).extract().asString();
+            assertThat(card).contains("Updated Directory Contact");
+            given().header("Authorization", user.impersonatedBasicAuth()).get(bookPath + "/added.vcf")
+            .then().statusCode(SC_OK);
+        }
+        given().header("TwakeCalendarToken", technicalToken).get(bookPath + "/deleted.vcf")
+        .then().statusCode(SC_NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    protected void endUsersCannotChangeAclEvenAsDomainAdministrators(boolean domainAdministrator) {
+        OpenPaasUser administrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        // Given a restricted directory, only the technical token may reopen it.
+        given().header("TwakeCalendarToken", technicalToken)
+            .body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+            .request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        OpenPaasUser user = domainAdministrator ? administrator : openPaasUser;
+        for (String policy : List.of(RESTRICTED_DOMAIN_MEMBERS_ACL, DOMAIN_MEMBERS_READ_ACL)) {
+            given().header("Authorization", user.impersonatedBasicAuth())
+                .body(policy.replace("DOMAIN_ID", domainId))
+                .request("ACL", bookPath)
+            .then().statusCode(SC_FORBIDDEN);
+        }
+    }
+
+    @Test
+    protected void foreignTechnicalTokenCannotChangeOrReadTheDirectory() {
+        String bookPath = createDomainMembersDirectory();
+        // Given a valid technical token issued for a different domain.
+        String foreignId = extension().twakeCalendarProvisioningService()
+            .createDomainIfNotExists("foreign-" + UUID.randomUUID() + ".test").getObjectId("_id").toString();
+        String foreignToken = extension().twakeCalendarProvisioningService().generateToken(foreignId);
+
+        // Then it cannot change either access policy or read a card.
+        for (String policy : List.of(RESTRICTED_DOMAIN_MEMBERS_ACL, DOMAIN_MEMBERS_READ_ACL)) {
+            given().header("TwakeCalendarToken", foreignToken)
+                .body(policy.replace("DOMAIN_ID", domainId))
+                .request("ACL", bookPath)
+            .then().statusCode(SC_FORBIDDEN);
+        }
+        given().header("TwakeCalendarToken", foreignToken).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_FORBIDDEN);
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+    }
+
+    protected static Stream<Arguments> invalidDomainMembersAcls() {
+        return Stream.of(
+            Arguments.of("", SC_BAD_REQUEST, ""),
+            Arguments.of("""
+                <d:acl xmlns:d="DAV:">
+                """, SC_BAD_REQUEST, ""),
+            Arguments.of("""
+                <d:not-acl xmlns:d="DAV:"/>
+                """, SC_BAD_REQUEST, ""),
+            Arguments.of("""
+                <d:acl xmlns:d="DAV:">
+                  <d:ace/>
+                </d:acl>
+                """, SC_BAD_REQUEST, ""),
+            Arguments.of("""
+                <d:acl xmlns:d="DAV:">
+                  <ace/>
+                </d:acl>
+                """, SC_BAD_REQUEST, ""),
+            Arguments.of(DOMAIN_MEMBERS_READ_ACL.replace("</d:acl>", "  <ace/>\n</d:acl>"), SC_BAD_REQUEST, ""),
+            Arguments.of(DOMAIN_MEMBERS_READ_ACL.replace("<d:read/>", "<d:unknown/>"), SC_FORBIDDEN, "not-supported-privilege"),
+            Arguments.of(DOMAIN_MEMBERS_READ_ACL.replace("/principals/domains/DOMAIN_ID", "/principals/users/000000000000000000000000"), SC_FORBIDDEN, "recognized-principal"),
+            Arguments.of(DOMAIN_MEMBERS_READ_ACL.replace("</d:ace>", "  <d:protected/>\n  </d:ace>"), SC_CONFLICT, "no-ace-conflict"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidDomainMembersAcls")
+    protected void invalidAclShouldLeaveExistingPermissionsUnchanged(String body, int status, String condition) throws Exception {
+        newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        // Given the full generated ACL, including grants beyond this member's read access.
+        String propfind = """
+            <d:propfind xmlns:d="DAV:">
+              <d:prop>
+                <d:acl/>
+              </d:prop>
+            </d:propfind>
+            """;
+        String before = given().header("TwakeCalendarToken", technicalToken).header("Depth", "0").body(propfind)
+            .request("PROPFIND", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+
+        // When an invalid ACL is submitted through the standard WebDAV method.
+        String response = given().header("TwakeCalendarToken", technicalToken)
+            .body(body.replace("DOMAIN_ID", domainId))
+            .request("ACL", bookPath)
+        .then().statusCode(status).extract().asPrettyString();
+        if (!condition.isEmpty()) {
+            assertThat(XMLUtil.extractByXPath(response, "count(/d:error/d:" + condition + ")", Map.of("d", "DAV:")))
+                .isEqualTo("1");
+        }
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+        String after = given().header("TwakeCalendarToken", technicalToken).header("Depth", "0").body(propfind)
+            .request("PROPFIND", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        XmlAssert.assertThat(editableAclFromPropfind(after))
+            .and(editableAclFromPropfind(before))
+            .ignoreWhitespace()
+            .areIdentical();
+    }
+
+    @Test
+    protected void standardAclRequiresAuthenticationAndRemainsRefusedOnPersonalBooks() {
+        String bookPath = createDomainMembersDirectory();
+        given().body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+            .request("ACL", bookPath)
+        .then().statusCode(SC_UNAUTHORIZED);
+        given().header("TwakeCalendarToken", technicalToken)
+            .body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+            .request("ACL", "/addressbooks/" + openPaasUser.id() + "/contacts")
+        .then().statusCode(SC_CONFLICT);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    protected void aggregatedDirectoryShouldHonorMemberAclAndPreserveAdministratorAccess(boolean domainAdministrator) {
+        OpenPaasUser administrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        OpenPaasUser user = domainAdministrator ? administrator : openPaasUser;
+        String path = "/contacts/" + user.id() + ".json?domainMember=true";
+        // Given the aggregate includes the directory before access is restricted.
+        String before = given().header("Authorization", user.impersonatedBasicAuth()).accept(ContentType.JSON).get(path)
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(before).contains("directory.contact@example.org");
+        given().header("TwakeCalendarToken", technicalToken)
+            .body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+            .request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        String after = given().header("Authorization", user.impersonatedBasicAuth()).accept(ContentType.JSON).get(path)
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(after.contains("directory.contact@example.org")).isEqualTo(domainAdministrator);
+
+        // Restoring domain read access makes the directory visible to aggregation again.
+        given().header("TwakeCalendarToken", technicalToken).body(DOMAIN_MEMBERS_READ_ACL.replace("DOMAIN_ID", domainId))
+            .request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        String restored = given().header("Authorization", user.impersonatedBasicAuth()).accept(ContentType.JSON).get(path)
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(restored).contains("directory.contact@example.org");
+    }
+
+    @Test
+    protected void standardAclCanGrantOnePrincipalAndBeReadBackWithPropfind() throws Exception {
+        OpenPaasUser administrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        // Given an ACL granting one member, while administrators retain protected role grants.
+        OpenPaasUser anotherMember = newDomainUser();
+        String acl = DOMAIN_MEMBERS_READ_ACL.replace("/principals/domains/DOMAIN_ID", "/principals/users/" + openPaasUser.id());
+        given().header("TwakeCalendarToken", technicalToken).body(acl).request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+        given().header("Authorization", administrator.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+        given().header("Authorization", anotherMember.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_FORBIDDEN);
+
+        // Then DAV:acl distinguishes the editable grant from protected administrator rights.
+        String result = given().header("TwakeCalendarToken", technicalToken).header("Depth", "0")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:acl/>
+                  </d:prop>
+                </d:propfind>
+                """)
+            .request("PROPFIND", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        assertThat(result).contains("principals/users/" + openPaasUser.id(), "principals/users/" + administrator.id());
+        assertThat(editableAclFromPropfind(result)).contains("principals/users/" + openPaasUser.id())
+            .doesNotContain("principals/users/" + administrator.id());
+    }
+
+    @Test
+    protected void savedAclCanBeRestoredWithoutReplacingAdministratorRights() throws Exception {
+        OpenPaasUser administrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectory();
+        // Given the editable member ACL, excluding protected administrator privileges.
+        String propfind = """
+            <d:propfind xmlns:d="DAV:">
+              <d:prop>
+                <d:acl/>
+              </d:prop>
+            </d:propfind>
+            """;
+        String before = given().header("TwakeCalendarToken", technicalToken).header("Depth", "0").body(propfind)
+            .request("PROPFIND", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        String savedAcl = editableAclFromPropfind(before);
+        assertThat(savedAcl).doesNotContain("write", "technicalUser", "principals/users/" + administrator.id());
+
+        // When access is revoked and the saved editable ACEs are reapplied.
+        given().header("TwakeCalendarToken", technicalToken).body(RESTRICTED_DOMAIN_MEMBERS_ACL).request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        given().header("Authorization", administrator.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_FORBIDDEN);
+        given().header("TwakeCalendarToken", technicalToken).body(savedAcl).request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+
+        // Then the editable ACL matches and the administrator retains write-properties access.
+        String after = given().header("TwakeCalendarToken", technicalToken).header("Depth", "0").body(propfind)
+            .request("PROPFIND", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        XmlAssert.assertThat(editableAclFromPropfind(after))
+            .and(savedAcl)
+            .ignoreWhitespace()
+            .areIdentical();
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+        String update = given().header("Authorization", administrator.impersonatedBasicAuth())
+            .body("""
+                <d:propertyupdate xmlns:d="DAV:">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>Restored directory</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:propertyupdate>
+                """)
+            .request("PROPPATCH", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        assertThat(XMLUtil.extractByXPath(update, "//d:propstat[d:prop/d:displayname]/d:status", Map.of("d", "DAV:")))
+            .isEqualTo("HTTP/1.1 200 OK");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    protected void restrictedDirectoryShouldBlockMemberSyncButPreserveDomainAdministratorSync(boolean domainAdministrator) throws Exception {
+        // Given an end user has synchronized the directory before access is revoked.
+        OpenPaasUser administrator = newDomainAdministrator();
+        OpenPaasUser user = domainAdministrator ? administrator : openPaasUser;
+        String bookPath = createDomainMembersDirectory();
+        String properties = given().header("Authorization", user.impersonatedBasicAuth()).header("Depth", "0")
+            .body("""
+                <d:propfind xmlns:d="DAV:">
+                  <d:prop>
+                    <d:sync-token/>
+                  </d:prop>
+                </d:propfind>
+                """)
+            .request("PROPFIND", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        String syncToken = XMLUtil.extractByXPath(properties, "//d:propstat/d:prop/d:sync-token", Map.of("d", "DAV:"));
+        assertThat(syncToken).isNotBlank();
+        String report = """
+            <d:sync-collection xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
+              <d:sync-token>SYNC_TOKEN</d:sync-token>
+              <d:sync-level>1</d:sync-level>
+              <d:prop>
+                <d:getetag/>
+                <c:address-data/>
+              </d:prop>
+            </d:sync-collection>
+            """.replace("SYNC_TOKEN", syncToken);
+
+        // When the technical token changes a contact while the directory has an empty ACL.
+        given().header("TwakeCalendarToken", technicalToken).body(RESTRICTED_DOMAIN_MEMBERS_ACL).request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        given().header("TwakeCalendarToken", technicalToken).contentType("text/vcard")
+            .body(DOMAIN_MEMBER_VCARD.replace("FN:Directory Contact", "FN:Updated While Restricted"))
+            .put(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_NO_CONTENT);
+
+        // Then an old sync token does not bypass member revocation; administrators retain access.
+        String userReport = given().header("Authorization", user.impersonatedBasicAuth()).header("Depth", "1")
+            .body(report).request("REPORT", bookPath)
+        .then().statusCode(domainAdministrator ? SC_MULTI_STATUS : SC_FORBIDDEN).extract().asString();
+        if (domainAdministrator) {
+            assertThat(userReport).contains(bookPath + "/directory-contact.vcf", "Updated While Restricted");
+        } else {
+            assertThat(userReport).doesNotContain("directory.contact@example.org", "Updated While Restricted",
+                bookPath + "/directory-contact.vcf");
+        }
+        String technicalReport = given().header("TwakeCalendarToken", technicalToken).header("Depth", "1")
+            .body(report).request("REPORT", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        assertThat(technicalReport).contains(bookPath + "/directory-contact.vcf", "Updated While Restricted");
+        assertThat(XMLUtil.extractByXPath(technicalReport, "/d:multistatus/d:sync-token", Map.of("d", "DAV:")))
+            .isNotBlank().isNotEqualTo(syncToken);
+
+        // Restoring member access also allows the end user to resume from the previous token.
+        given().header("TwakeCalendarToken", technicalToken).body(DOMAIN_MEMBERS_READ_ACL.replace("DOMAIN_ID", domainId))
+            .request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+        String resumed = given().header("Authorization", user.impersonatedBasicAuth()).header("Depth", "1")
+            .body(report).request("REPORT", bookPath)
+        .then().statusCode(SC_MULTI_STATUS).extract().asPrettyString();
+        assertThat(resumed).contains(bookPath + "/directory-contact.vcf", "Updated While Restricted");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    protected void legacyDirectoryDelegationCannotBypassRevocation(boolean domainMember) {
+        // Given an accepted legacy delegation; current HTTP APIs deliberately forbid creating it.
+        String bookPath = createDomainMembersDirectory();
+        String mirrorUri = "legacy-" + UUID.randomUUID();
+        String mongoUri = extension().getDockerTwakeCalendarSetupSingleton()
+            .getServiceUri(DockerTwakeCalendarSetup.DockerService.MONGO, "mongodb").toString();
+        try (MongoClient mongo = MongoClients.create(mongoUri)) {
+            Document addressBook = Mono.from(mongo.getDatabase("sabre").getCollection("addressbooks")
+                .find(Filters.and(Filters.eq("principaluri", "principals/domains/" + domainId),
+                    Filters.eq("uri", DOMAIN_MEMBERS_ADDRESS_BOOK))).first()).block();
+            assertThat(addressBook).isNotNull();
+            Document delegation = new Document("addressbookid", addressBook.getObjectId("_id"))
+                .append("principaluri", "principals/users/" + openPaasUser.id())
+                .append("uri", mirrorUri)
+                .append("displayname", "Legacy directory")
+                .append("description", "Legacy domain-members delegation")
+                .append("share_access", CardDavClient.DelegationRight.READ.getValue())
+                .append("share_href", "mailto:" + openPaasUser.email())
+                .append("share_invitestatus", 2); // Sabre's INVITE_ACCEPTED.
+            assertThat(Mono.from(mongo.getDatabase("sabre").getCollection("sharedaddressbooks")
+                .insertOne(delegation)).block().wasAcknowledged()).isTrue();
+        }
+        String aggregatePath = "/contacts/" + openPaasUser.id() + ".json?domainMember=" + domainMember;
+        String before = given().header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .accept(ContentType.JSON).get(aggregatePath)
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(before).contains("directory.contact@example.org");
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth()).get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+
+        // When the technical token replaces all user grants with an empty ACL.
+        given().header("TwakeCalendarToken", technicalToken).body(RESTRICTED_DOMAIN_MEMBERS_ACL).request("ACL", bookPath)
+        .then().statusCode(SC_OK);
+
+        // Then neither direct reads nor aggregation through the old delegation exposes the card.
+        String denied = given().header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .get(bookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_FORBIDDEN).extract().asString();
+        assertThat(denied).doesNotContain("directory.contact@example.org");
+        given().header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .get("/addressbooks/" + openPaasUser.id() + "/" + mirrorUri + "/directory-contact.vcf")
+        .then().statusCode(SC_NOT_FOUND);
+        String after = given().header("Authorization", openPaasUser.impersonatedBasicAuth())
+            .accept(ContentType.JSON).get(aggregatePath)
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(after).doesNotContain("directory.contact@example.org", bookPath + "/directory-contact.vcf");
+
+        // The accepted delegation remains in storage, so absence of data comes from ACL enforcement.
+        try (MongoClient mongo = MongoClients.create(mongoUri)) {
+            assertThat(Mono.from(mongo.getDatabase("sabre").getCollection("sharedaddressbooks")
+                .countDocuments(Filters.and(Filters.eq("uri", mirrorUri), Filters.eq("share_invitestatus", 2))))
+                .block()).isEqualTo(1L);
+        }
+    }
+
+    @Test
+    protected void restoredDomainAclShouldAllowNewMembersToRead() {
+        // Given the directory default ACL has been saved and restored.
+        String bookPath = createDomainMembersDirectoryWithRestoredAcl();
+
+        // When a new user joins the domain after restoration.
+        OpenPaasUser newMember = newDomainUser();
+
+        // Then both new and existing members can read the directory contact.
+        given()
+            .header("Authorization", newMember.impersonatedBasicAuth())
+        .when()
+            .get(bookPath + "/directory-contact.vcf")
+        .then()
+            .statusCode(SC_OK);
+
+        given()
+            .header("Authorization", openPaasUser.impersonatedBasicAuth())
+        .when()
+            .get(bookPath + "/directory-contact.vcf")
+        .then()
+            .statusCode(SC_OK);
+    }
+
+    @Test
+    protected void restoredDomainAclShouldKeepReadAccessForFormerAdministrators() {
+        // Given the default ACL is restored while the user is a domain administrator.
+        OpenPaasUser previousAdministrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectoryWithRestoredAcl();
+
+        // When the user loses the administrator role but remains a domain member.
+        given(extension().webAdminRequestSpecification())
+        .when()
+            .delete("/domains/" + domainName + "/admins/" + previousAdministrator.email())
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then the former administrator retains ordinary member read access.
+        given()
+            .header("Authorization", previousAdministrator.impersonatedBasicAuth())
+        .when()
+            .get(bookPath + "/directory-contact.vcf")
+        .then()
+            .statusCode(SC_OK);
+    }
+
+    @Test
+    protected void restoredDomainAclShouldRevokeWriteAccessFromFormerAdministrators() {
+        // Given the default ACL is restored while the user is a domain administrator.
+        OpenPaasUser previousAdministrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectoryWithRestoredAcl();
+
+        // When the user loses the administrator role but remains a domain member.
+        given(extension().webAdminRequestSpecification())
+        .when()
+            .delete("/domains/" + domainName + "/admins/" + previousAdministrator.email())
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then the former administrator can no longer change the directory properties.
+        given()
+            .header("Authorization", previousAdministrator.impersonatedBasicAuth())
+            .body(DOMAIN_MEMBERS_DISPLAY_NAME_UPDATE)
+        .when()
+            .request("PROPPATCH", bookPath)
+        .then()
+            .statusCode(SC_FORBIDDEN);
+    }
+
+    @Test
+    protected void restoredDomainAclShouldGrantWriteAccessToNewAdministrators() throws Exception {
+        // Given the directory default ACL has been saved and restored.
+        String bookPath = createDomainMembersDirectoryWithRestoredAcl();
+
+        // When a user becomes a domain administrator after restoration.
+        OpenPaasUser newAdministrator = newDomainAdministrator();
+
+        // Then the new administrator can read the contact and update the directory properties.
+        given()
+            .header("Authorization", newAdministrator.impersonatedBasicAuth())
+        .when()
+            .get(bookPath + "/directory-contact.vcf")
+        .then()
+            .statusCode(SC_OK);
+
+        String update = given()
+            .header("Authorization", newAdministrator.impersonatedBasicAuth())
+            .body(DOMAIN_MEMBERS_DISPLAY_NAME_UPDATE)
+        .when()
+            .request("PROPPATCH", bookPath)
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asPrettyString();
+
+        assertThat(XMLUtil.extractByXPath(update, "//d:propstat[d:prop/d:displayname]/d:status", Map.of("d", "DAV:")))
+            .isEqualTo("HTTP/1.1 200 OK");
+    }
+
+    @Test
+    protected void restoredDomainAclShouldKeepMemberGrantsAfterAdministratorChange() {
+        // Given the restored member ACL grants access through the domain principal.
+        OpenPaasUser previousAdministrator = newDomainAdministrator();
+        String bookPath = createDomainMembersDirectoryWithRestoredAcl();
+        String savedAcl = editableAclFromPropfind(readDomainAcl(bookPath));
+
+        assertThat(savedAcl)
+            .contains("/principals/domains/" + domainId)
+            .doesNotContain("principals/users/");
+
+        // When a new administrator replaces the previous administrator.
+        newDomainAdministrator();
+        given(extension().webAdminRequestSpecification())
+        .when()
+            .delete("/domains/" + domainName + "/admins/" + previousAdministrator.email())
+        .then()
+            .statusCode(SC_NO_CONTENT);
+
+        // Then the editable member grants remain unchanged.
+        XmlAssert.assertThat(editableAclFromPropfind(readDomainAcl(bookPath)))
+            .and(savedAcl)
+            .ignoreWhitespace()
+            .areIdentical();
+    }
+
+    private String readDomainAcl(String bookPath) {
+        String propfind = """
+            <d:propfind xmlns:d="DAV:">
+              <d:prop>
+                <d:acl/>
+              </d:prop>
+            </d:propfind>
+            """;
+        return given()
+            .header("TwakeCalendarToken", technicalToken)
+            .header("Depth", "0")
+            .body(propfind)
+        .when()
+            .request("PROPFIND", bookPath)
+        .then()
+            .statusCode(SC_MULTI_STATUS)
+            .extract().asPrettyString();
+    }
+
+    @ParameterizedTest
+    @MethodSource("domainMembersReadRequests")
+    protected void foreignDomainMemberOrAdministratorCannotReadDirectory(boolean domainAdministrator, String method,
+                                                                         String suffix, String body,
+                                                                         String accept, int initialStatus) {
+        // Given the caller can read its own domain, and another domain has a distinct directory contact.
+        OpenPaasUser caller = domainAdministrator ? newDomainAdministrator() : openPaasUser;
+        String ownBookPath = createDomainMembersDirectory();
+        String otherDomainName = "foreign-directory-" + UUID.randomUUID() + ".test";
+        String otherDomainId = extension().twakeCalendarProvisioningService().createDomainIfNotExists(otherDomainName)
+            .getObjectId("_id").toString();
+        OpenPaasUser otherMember = extension().twakeCalendarProvisioningService().createUser("member", otherDomainName).block();
+        String otherToken = extension().twakeCalendarProvisioningService().generateToken(otherDomainId);
+        String otherBookPath = "/addressbooks/" + otherDomainId + "/domain-members";
+        cardDavClient.createDomainMembersAddressBook(otherDomainId, otherToken);
+        cardDavClient.upsertDomainMemberContact(otherDomainId, "directory-contact",
+            DOMAIN_MEMBER_VCARD.replace("directory.contact@example.org", "foreign.contact@example.org")
+                .getBytes(StandardCharsets.UTF_8), otherToken);
+        if (domainAdministrator) {
+            given().header("TwakeCalendarToken", technicalToken).body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+                .request("ACL", ownBookPath)
+            .then().statusCode(SC_OK);
+        }
+        given().header("Authorization", caller.impersonatedBasicAuth()).header("Depth", "1").accept(accept)
+            .body(body.replace("BOOK_PATH", ownBookPath)).request(method, ownBookPath + suffix)
+        .then().statusCode(initialStatus);
+
+        // Then the same read is denied in the other domain, before and after its ACL is emptied.
+        for (String policy : List.of("default", "restricted")) {
+            if (policy.equals("restricted")) {
+                given().header("TwakeCalendarToken", otherToken).body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+                    .request("ACL", otherBookPath)
+                .then().statusCode(SC_OK);
+            }
+            String denied = given().header("Authorization", caller.impersonatedBasicAuth()).header("Depth", "1")
+                .accept(accept).body(body.replace("BOOK_PATH", otherBookPath)).request(method, otherBookPath + suffix)
+            .then().statusCode(SC_FORBIDDEN).extract().asString();
+            assertThat(denied).doesNotContain("foreign.contact@example.org", "BEGIN:VCARD");
+            given().header("Authorization", caller.impersonatedBasicAuth()).accept(ContentType.JSON)
+                .get("/contacts/" + otherMember.id() + ".json?domainMember=true")
+            .then().statusCode(SC_FORBIDDEN);
+            String ownContacts = given().header("Authorization", caller.impersonatedBasicAuth()).accept(ContentType.JSON)
+                .get("/contacts/" + caller.id() + ".json?domainMember=true")
+            .then().statusCode(SC_OK).extract().asString();
+            assertThat(ownContacts).contains("directory.contact@example.org").doesNotContain("foreign.contact@example.org");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PUT", "DELETE", "PROPPATCH", "ACL"})
+    protected void domainAdministratorCannotModifyAnotherDomainsDirectory(String method) {
+        // Given two domains; this user administers only the first one.
+        OpenPaasUser administrator = newDomainAdministrator();
+        String ownBookPath = createDomainMembersDirectory();
+        given().header("Authorization", administrator.impersonatedBasicAuth()).get(ownBookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK);
+        String otherDomainName = "foreign-directory-" + UUID.randomUUID() + ".test";
+        String otherDomainId = extension().twakeCalendarProvisioningService().createDomainIfNotExists(otherDomainName)
+            .getObjectId("_id").toString();
+        String otherToken = extension().twakeCalendarProvisioningService().generateToken(otherDomainId);
+        String otherBookPath = "/addressbooks/" + otherDomainId + "/domain-members";
+        cardDavClient.createDomainMembersAddressBook(otherDomainId, otherToken);
+        cardDavClient.upsertDomainMemberContact(otherDomainId, "directory-contact",
+            DOMAIN_MEMBER_VCARD.getBytes(StandardCharsets.UTF_8), otherToken);
+        String payload = switch (method) {
+            case "PUT" -> DOMAIN_MEMBER_VCARD.replace("FN:Directory Contact", "FN:Cross-domain overwrite");
+            case "ACL" -> DOMAIN_MEMBERS_READ_ACL.replace("DOMAIN_ID", otherDomainId);
+            case "PROPPATCH" -> """
+                <d:propertyupdate xmlns:d="DAV:">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>Cross-domain rename</d:displayname>
+                    </d:prop>
+                  </d:set>
+                </d:propertyupdate>
+                """;
+            default -> "";
+        };
+        String target = otherBookPath + (List.of("PUT", "DELETE").contains(method) ? "/directory-contact.vcf" : "");
+
+        // Then administrator role grants never authorize writes or ACL changes in another domain.
+        for (String policy : List.of("default", "restricted")) {
+            if (policy.equals("restricted")) {
+                given().header("TwakeCalendarToken", otherToken).body(RESTRICTED_DOMAIN_MEMBERS_ACL)
+                    .request("ACL", otherBookPath)
+                .then().statusCode(SC_OK);
+            }
+            given().header("Authorization", administrator.impersonatedBasicAuth())
+                .contentType(method.equals("PUT") ? "text/vcard" : "application/xml")
+                .body(payload).request(method, target)
+            .then().statusCode(SC_FORBIDDEN);
+        }
+        String preserved = given().header("TwakeCalendarToken", otherToken).accept("text/vcard")
+            .get(otherBookPath + "/directory-contact.vcf")
+        .then().statusCode(SC_OK).extract().asString();
+        assertThat(preserved).contains("FN:Directory Contact").doesNotContain("Cross-domain overwrite");
+    }
+
+    private static String editableAclFromPropfind(String response) {
+        JAXPXPathEngine xpath = new JAXPXPathEngine();
+        xpath.setNamespaceContext(Map.of("d", "DAV:"));
+        Node acl = xpath.selectNodes("/d:multistatus/d:response[1]/d:propstat/d:prop/d:acl",
+            Input.fromString(response).build()).iterator().next();
+        // Protected and inherited grants are reported by PROPFIND but cannot be resubmitted through ACL.
+        for (Node ace : xpath.selectNodes("d:ace[d:protected or d:inherited]", acl)) {
+            acl.removeChild(ace);
+        }
+        return Transform.source(Input.fromNode(acl).build())
+            .withOutputProperty(OutputKeys.INDENT, "yes")
+            .withOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes")
+            .build().toString();
+    }
+
+    private String createDomainMembersDirectory() {
+        cardDavClient.createDomainMembersAddressBook(domainId, technicalToken);
+        cardDavClient.upsertDomainMemberContact(domainId, "directory-contact", DOMAIN_MEMBER_VCARD.getBytes(StandardCharsets.UTF_8), technicalToken);
+        return "/addressbooks/" + domainId + "/domain-members";
+    }
+
+    private String createDomainMembersDirectoryWithRestoredAcl() {
+        String bookPath = createDomainMembersDirectory();
+        String savedAcl = editableAclFromPropfind(readDomainAcl(bookPath));
+
+        given()
+            .header("TwakeCalendarToken", technicalToken)
+            .body("<d:acl xmlns:d=\"DAV:\"/>")
+        .when()
+            .request("ACL", bookPath)
+        .then()
+            .statusCode(SC_OK);
+
+        given()
+            .header("TwakeCalendarToken", technicalToken)
+            .body(savedAcl)
+        .when()
+            .request("ACL", bookPath)
+        .then()
+            .statusCode(SC_OK);
+
+        return bookPath;
+    }
+
+    private OpenPaasUser newDomainAdministrator() {
+        OpenPaasUser administrator = newDomainUser();
+        given(extension().webAdminRequestSpecification())
+            .put("/domains/" + domainName + "/admins/" + administrator.email())
+        .then()
+            .statusCode(SC_NO_CONTENT);
+        return administrator;
     }
 }
